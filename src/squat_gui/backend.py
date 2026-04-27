@@ -16,6 +16,14 @@ class OptionalBackendStatus:
     message: str
 
 
+@dataclass(frozen=True)
+class BiomodCacheKey:
+    load_kg: int
+    shank_percent: float
+    thigh_percent: float
+    trunk_percent: float
+
+
 def detect_optional_backends() -> OptionalBackendStatus:
     biobuddy_available = find_spec("biobuddy") is not None
     biorbd_available = find_spec("biorbd") is not None
@@ -31,22 +39,47 @@ def detect_optional_backends() -> OptionalBackendStatus:
     return OptionalBackendStatus(biobuddy_available, biorbd_available, message)
 
 
-def _segment_block(segment: SegmentSpec, parent: str, rt: str, translations: str, rotations: str = "z") -> str:
-    inertia = segment.inertia
-    return f"""
-segment {segment.name}
-    parent {parent}
-    RT {rt}
-    translations {translations}
-    rotations {rotations}
-    mass {segment.mass:.8f}
-    inertia
-        {inertia:.8f} 0 0
-        0 {inertia:.8f} 0
-        0 0 {inertia:.8f}
-    com 0 {segment.length * segment.com_fraction:.8f} 0
-endsegment
-"""
+def biomod_cache_key(anthro: Anthropometry) -> BiomodCacheKey:
+    return BiomodCacheKey(
+        load_kg=int(round(anthro.bar_mass)),
+        shank_percent=round((anthro.shank_scale - 1.0) * 100.0, 1),
+        thigh_percent=round((anthro.thigh_scale - 1.0) * 100.0, 1),
+        trunk_percent=round((anthro.trunk_scale - 1.0) * 100.0, 1),
+    )
+
+
+def _matrix_block(translation: tuple[float, float, float]) -> str:
+    tx, ty, tz = translation
+    return (
+        "\tRTinMatrix\t1\n"
+        "\tRT\n"
+        f"\t\t1.000000\t0.000000\t0.000000\t{tx:.6f}\n"
+        f"\t\t0.000000\t1.000000\t0.000000\t{ty:.6f}\n"
+        f"\t\t0.000000\t0.000000\t1.000000\t{tz:.6f}\n"
+        "\t\t0.000000\t0.000000\t0.000000\t1.000000\n"
+    )
+
+
+def _segment_block(
+    segment: SegmentSpec,
+    parent: str,
+    translation: tuple[float, float, float],
+    *,
+    rotations: str | None = "z",
+) -> str:
+    inertia = max(segment.inertia, 1e-8)
+    out = [f"segment\t{segment.name}\n", f"\tparent\t{parent}\n", _matrix_block(translation)]
+    if rotations is not None:
+        out.append(f"\trotations\t{rotations}\n")
+        out.append("\trangesQ\n\t\t-3.141593\t3.141593\n")
+    out.append(f"\tmass\t{segment.mass:.8f}\n")
+    out.append(f"\tCenterOfMass\t0.00000000\t{segment.length * segment.com_fraction:.8f}\t0.00000000\n")
+    out.append("\tinertia\n")
+    out.append(f"\t\t{inertia:.8f}\t0.00000000\t0.00000000\n")
+    out.append(f"\t\t0.00000000\t{inertia:.8f}\t0.00000000\n")
+    out.append(f"\t\t0.00000000\t0.00000000\t{inertia:.8f}\n")
+    out.append("endsegment\n\n")
+    return "".join(out)
 
 
 def biomod_text(anthro: Anthropometry) -> str:
@@ -54,46 +87,36 @@ def biomod_text(anthro: Anthropometry) -> str:
     shank = anthro.shank
     thigh = anthro.thigh
     trunk = anthro.trunk
-    return f"""version 4
-
-// Squat 2D generated from squat_gui.
-// The current GUI uses an analytical fallback and keeps this file ready for biorbd.
-
-segment ground
-    translations xy
-    rotations z
-    mass 0
-endsegment
-
-segment {foot.name}
-    parent ground
-    RT 0 0 0 xyz 0 0 0
-    translations none
-    rotations none
-    mass {foot.mass:.8f}
-    inertia
-        {foot.inertia:.8f} 0 0
-        0 {foot.inertia:.8f} 0
-        0 0 {foot.inertia:.8f}
-    com {foot.length * foot.com_fraction:.8f} 0.02500000 0
-endsegment
-{_segment_block(shank, foot.name, f"{anthro.ankle_x_from_heel:.8f} {anthro.ankle_height:.8f} 0 xyz 0 0 0", "none")}
-{_segment_block(thigh, shank.name, f"0 {shank.length:.8f} 0 xyz 0 0 0", "none")}
-{_segment_block(trunk, thigh.name, f"0 {thigh.length:.8f} 0 xyz 0 0 0", "none")}
-
-segment barre
-    parent {trunk.name}
-    RT 0 {trunk.length:.8f} 0 xyz 0 0 0
-    translations none
-    rotations none
-    mass {anthro.bar_mass:.8f}
-    inertia
-        0.00000000 0 0
-        0 0.00000000 0
-        0 0 0.00000000
-    com 0 0 0
-endsegment
-"""
+    bar_inertia = max(anthro.bar_mass * 0.01**2, 1e-8)
+    return (
+        "version 4\n\n"
+        f"gravity\t0.000000\t{-9.80665:.6f}\t0.000000\n\n"
+        "// Squat 2D generated from squat_gui.\n"
+        "// Coordinates: x horizontal, y vertical, z out of plane.\n\n"
+        f"segment\t{foot.name}\n"
+        "\tparent\tbase\n"
+        f"{_matrix_block((0.0, 0.0, 0.0))}"
+        f"\tmass\t{foot.mass:.8f}\n"
+        f"\tCenterOfMass\t{foot.length * foot.com_fraction:.8f}\t0.02500000\t0.00000000\n"
+        "\tinertia\n"
+        f"\t\t{foot.inertia:.8f}\t0.00000000\t0.00000000\n"
+        f"\t\t0.00000000\t{foot.inertia:.8f}\t0.00000000\n"
+        f"\t\t0.00000000\t0.00000000\t{foot.inertia:.8f}\n"
+        "endsegment\n\n"
+        f"{_segment_block(shank, foot.name, (anthro.ankle_x_from_heel, anthro.ankle_height, 0.0))}"
+        f"{_segment_block(thigh, shank.name, (0.0, shank.length, 0.0))}"
+        f"{_segment_block(trunk, thigh.name, (0.0, thigh.length, 0.0))}"
+        "segment\tbarre\n"
+        f"\tparent\t{trunk.name}\n"
+        f"{_matrix_block((0.0, trunk.length, 0.0))}"
+        f"\tmass\t{anthro.bar_mass:.8f}\n"
+        "\tCenterOfMass\t0.00000000\t0.00000000\t0.00000000\n"
+        "\tinertia\n"
+        f"\t\t{bar_inertia:.8f}\t0.00000000\t0.00000000\n"
+        f"\t\t0.00000000\t{bar_inertia:.8f}\t0.00000000\n"
+        f"\t\t0.00000000\t0.00000000\t{bar_inertia:.8f}\n"
+        "endsegment\n"
+    )
 
 
 def write_biomod_file(path: str | Path, anthro: Anthropometry) -> Path:
@@ -107,3 +130,35 @@ def load_biorbd_model(path: str | Path):
     import biorbd
 
     return biorbd.Model(str(path))
+
+
+class BiorbdModelCache:
+    def __init__(self, directory: str | Path = "generated/biomod_cache") -> None:
+        self.directory = Path(directory)
+        self._models: dict[BiomodCacheKey, object] = {}
+        self._paths: dict[BiomodCacheKey, Path] = {}
+
+    def path_for(self, anthro: Anthropometry) -> Path:
+        key = biomod_cache_key(anthro)
+        stem = (
+            f"squat_load{key.load_kg:03d}_"
+            f"shank{key.shank_percent:+.1f}_"
+            f"thigh{key.thigh_percent:+.1f}_"
+            f"trunk{key.trunk_percent:+.1f}"
+        )
+        return self.directory / f"{stem.replace('+', 'p').replace('-', 'm').replace('.', 'd')}.bioMod"
+
+    def model_for(self, anthro: Anthropometry):
+        key = biomod_cache_key(anthro)
+        if key not in self._models:
+            path = self.path_for(anthro)
+            write_biomod_file(path, anthro)
+            self._paths[key] = path
+            self._models[key] = load_biorbd_model(path)
+        return self._models[key]
+
+    def cached_path_for(self, anthro: Anthropometry) -> Path:
+        key = biomod_cache_key(anthro)
+        if key not in self._paths:
+            self.model_for(anthro)
+        return self._paths[key]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from math import exp
+from typing import Any
 
 from .anthropometry import Anthropometry
 from .kinematics import (
@@ -29,6 +30,7 @@ class DynamicsResult:
     torque_components: dict[str, dict[str, float]]
     powers: dict[str, float]
     effort_ratios: dict[str, float]
+    backend: str = "analytical"
 
 
 def total_com_acceleration(anthro: Anthropometry, accs: dict[str, Vector]) -> Vector:
@@ -174,26 +176,32 @@ def inverse_dynamics(
     state: MotionState,
     max_torques: dict[str, float],
     adapt_max_by_angle: bool,
+    biorbd_model: Any | None = None,
 ) -> DynamicsResult:
     reaction, cop_x = ground_reaction_and_cop(anthro, state)
-    inertial_abs = _absolute_generalized_torque(
-        anthro,
-        state,
-        include_velocity=False,
-        include_acceleration=True,
-        include_gravity=False,
-    )
-    nle_abs = _absolute_generalized_torque(
-        anthro,
-        state,
-        include_velocity=True,
-        include_acceleration=False,
-        include_gravity=True,
-    )
-    total_abs = tuple(inertial_abs[i] + nle_abs[i] for i in range(3))
-    torques = _joint_from_absolute(total_abs)
-    inertial = _joint_from_absolute(inertial_abs)
-    nle = _joint_from_absolute(nle_abs)
+    backend = "analytical"
+    if biorbd_model is not None:
+        torques, inertial, nle = _biorbd_joint_torques(biorbd_model, state)
+        backend = "biorbd"
+    else:
+        inertial_abs = _absolute_generalized_torque(
+            anthro,
+            state,
+            include_velocity=False,
+            include_acceleration=True,
+            include_gravity=False,
+        )
+        nle_abs = _absolute_generalized_torque(
+            anthro,
+            state,
+            include_velocity=True,
+            include_acceleration=False,
+            include_gravity=True,
+        )
+        total_abs = tuple(inertial_abs[i] + nle_abs[i] for i in range(3))
+        torques = _joint_from_absolute(total_abs)
+        inertial = _joint_from_absolute(inertial_abs)
+        nle = _joint_from_absolute(nle_abs)
     contact = _contact_moments(state, reaction, cop_x)
     components = {
         joint: {
@@ -222,7 +230,51 @@ def inverse_dynamics(
             eccentric_factor * angle_adapted_max(max_torques[joint], joint_angles[joint], adapt_max_by_angle),
         )
         effort_ratios[joint] = abs(torque) / adjusted
-    return DynamicsResult(reaction, cop_x, torques, components, powers, effort_ratios)
+    return DynamicsResult(reaction, cop_x, torques, components, powers, effort_ratios, backend)
+
+
+def _biorbd_coordinates(state: MotionState) -> tuple[list[float], list[float], list[float]]:
+    q0, q1, q2 = state.q
+    qd0, qd1, qd2 = state.qdot
+    qdd0, qdd1, qdd2 = state.qddot
+    return (
+        [-q0, -(q1 - q0), -(q2 - q1)],
+        [-qd0, -(qd1 - qd0), -(qd2 - qd1)],
+        [-qdd0, -(qdd1 - qdd0), -(qdd2 - qdd1)],
+    )
+
+
+def _array_from_biorbd(value: Any) -> list[float]:
+    array = value.to_array()
+    return [float(array[index]) for index in range(len(array))]
+
+
+def _joint_dict_from_biorbd_tau(tau: list[float]) -> dict[str, float]:
+    return {
+        "cheville": -tau[0],
+        "genou": -tau[1],
+        "hanche": -tau[2],
+    }
+
+
+def _biorbd_joint_torques(biorbd_model: Any, state: MotionState) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+    q, qdot, qddot = _biorbd_coordinates(state)
+    import numpy as np
+
+    q = np.asarray(q, dtype=float)
+    qdot = np.asarray(qdot, dtype=float)
+    qddot = np.asarray(qddot, dtype=float)
+    zero = np.zeros(3)
+    total = _array_from_biorbd(biorbd_model.InverseDynamics(q, qdot, qddot))
+    nle = _array_from_biorbd(biorbd_model.NonLinearEffect(q, qdot))
+    inertial_with_static_nle = _array_from_biorbd(biorbd_model.InverseDynamics(q, zero, qddot))
+    static_nle = _array_from_biorbd(biorbd_model.NonLinearEffect(q, zero))
+    inertial = [inertial_with_static_nle[index] - static_nle[index] for index in range(3)]
+    return (
+        _joint_dict_from_biorbd_tau(total),
+        _joint_dict_from_biorbd_tau(inertial),
+        _joint_dict_from_biorbd_tau(nle),
+    )
 
 
 def simulate(
@@ -232,12 +284,19 @@ def simulate(
     frame_count: int,
     max_torques: dict[str, float],
     adapt_max_by_angle: bool,
+    model_cache: Any | None = None,
 ) -> tuple[list[MotionState], list[DynamicsResult]]:
     states: list[MotionState] = []
     dynamics: list[DynamicsResult] = []
+    biorbd_model = None
+    if model_cache is not None:
+        try:
+            biorbd_model = model_cache.model_for(anthro)
+        except Exception:
+            biorbd_model = None
     for index in range(frame_count):
         time = duration * index / max(1, frame_count - 1)
         state = motion_state(anthro, final_q, duration, time)
         states.append(state)
-        dynamics.append(inverse_dynamics(anthro, state, max_torques, adapt_max_by_angle))
+        dynamics.append(inverse_dynamics(anthro, state, max_torques, adapt_max_by_angle, biorbd_model))
     return states, dynamics
