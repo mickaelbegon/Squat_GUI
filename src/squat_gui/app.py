@@ -59,6 +59,7 @@ class SquatGui(tk.Tk):
             "hanche": tk.BooleanVar(value=True),
             "CoM": tk.BooleanVar(value=True),
         }
+        self.show_checkbuttons: dict[str, ttk.Checkbutton] = {}
         self.max_torque_vars = {
             "cheville": tk.DoubleVar(value=180.0),
             "genou": tk.DoubleVar(value=220.0),
@@ -109,9 +110,11 @@ class SquatGui(tk.Tk):
 
         plot_box = ttk.LabelFrame(controls, text="Resultats")
         plot_box.grid(row=0, column=8, columnspan=2, sticky="nsew", padx=6)
-        ttk.OptionMenu(plot_box, self.plot_choice, self.plot_choice.get(), *PLOT_CHOICES, command=lambda _value: self.redraw()).grid(row=0, column=0, columnspan=4, sticky="ew")
+        ttk.OptionMenu(plot_box, self.plot_choice, self.plot_choice.get(), *PLOT_CHOICES, command=lambda _value: self.on_plot_choice_changed()).grid(row=0, column=0, columnspan=4, sticky="ew")
         for index, name in enumerate(self.show_vars):
-            ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw).grid(row=1, column=index, padx=3)
+            checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
+            checkbutton.grid(row=1, column=index, padx=3)
+            self.show_checkbuttons[name] = checkbutton
 
         table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
         table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
@@ -209,6 +212,15 @@ class SquatGui(tk.Tk):
         self.draw_pose_editor()
         self.draw_plot()
         self.draw_animation(frame)
+
+    def on_plot_choice_changed(self) -> None:
+        torque_plot = self.plot_choice.get() in ("couples articulaires", "couples detailles")
+        if torque_plot:
+            self.show_vars["CoM"].set(False)
+            self.show_checkbuttons["CoM"].state(["disabled"])
+        else:
+            self.show_checkbuttons["CoM"].state(["!disabled"])
+        self.redraw()
 
     def world_to_canvas(self, canvas: tk.Canvas, point: tuple[float, float], bounds: tuple[float, float, float, float]) -> tuple[float, float]:
         width = max(1, canvas.winfo_width())
@@ -337,7 +349,9 @@ class SquatGui(tk.Tk):
             return
         all_values = [value for values in series.values() for value in values]
         if choice in ("couples articulaires", "couples detailles") and self.show_torque_bounds_var.get():
-            for values in self.torque_bound_series().values():
+            for joint, values in self.torque_bound_series().items():
+                if not self.show_vars[joint].get():
+                    continue
                 all_values.extend(values)
                 all_values.extend([-value for value in values])
         ymin = min(all_values)
@@ -382,7 +396,7 @@ class SquatGui(tk.Tk):
             y = y0 - (y0 - y1) * fraction
             canvas.create_line(x0 - 4, y, x0, y, fill="#69746e")
             canvas.create_line(x0, y, canvas.winfo_width() - 18, y, fill="#edf0ec")
-            canvas.create_text(x0 - 8, y, text=f"{value:.2g}", anchor="e", fill="#506158", font=("Helvetica", 9))
+            canvas.create_text(x0 - 8, y, text=self.format_axis_value(value), anchor="e", fill="#506158", font=("Helvetica", 9))
 
     def draw_x_ticks(self, canvas: tk.Canvas, x0: float, x1: float, y0: float) -> None:
         duration = max(0.1, self.duration_var.get())
@@ -391,7 +405,17 @@ class SquatGui(tk.Tk):
             x = x0 + (x1 - x0) * fraction
             value = duration * fraction
             canvas.create_line(x, y0, x, y0 + 4, fill="#69746e")
-            canvas.create_text(x, y0 + 16, text=f"{value:.2g}", anchor="n", fill="#506158", font=("Helvetica", 9))
+            canvas.create_text(x, y0 + 16, text=self.format_axis_value(value), anchor="n", fill="#506158", font=("Helvetica", 9))
+
+    def format_axis_value(self, value: float) -> str:
+        abs_value = abs(value)
+        if abs_value >= 100:
+            return f"{value:.0f}"
+        if abs_value >= 10:
+            return f"{value:.1f}"
+        if abs_value >= 1:
+            return f"{value:.2f}"
+        return f"{value:.3f}".rstrip("0").rstrip(".")
 
     def plot_unit(self, choice: str) -> str:
         if choice == "positions articulaires":
@@ -408,6 +432,8 @@ class SquatGui(tk.Tk):
         if self.plot_choice.get() not in ("couples articulaires", "couples detailles") or not self.show_torque_bounds_var.get():
             return
         for joint, values in self.torque_bound_series().items():
+            if not self.show_vars[joint].get():
+                continue
             color = JOINT_COLORS[joint]
             for sign in (1.0, -1.0):
                 points = []
