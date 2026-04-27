@@ -2,7 +2,8 @@ import math
 import unittest
 
 from squat_gui.anthropometry import Anthropometry
-from squat_gui.dynamics import simulate
+from squat_gui.dynamics import inverse_dynamics, simulate
+from squat_gui.kinematics import MotionState, pose_from_angles
 
 
 class DynamicsTests(unittest.TestCase):
@@ -45,6 +46,23 @@ class DynamicsTests(unittest.TestCase):
         self.assertAlmostEqual(states[0].q[0], 0.0)
         self.assertAlmostEqual(states[2].q[0], math.radians(20.0))
         self.assertAlmostEqual(states[-1].q[0], 0.0)
+
+    def test_eccentric_phase_increases_available_torque_by_135_percent(self) -> None:
+        anthro = Anthropometry()
+        q = (math.radians(20.0), math.radians(-55.0), math.radians(-15.0))
+        qdot = (0.1, -0.2, -0.05)
+        qddot = (0.0, 0.0, 0.0)
+        max_torques = {"cheville": 180.0, "genou": 220.0, "hanche": 260.0}
+        eccentric = MotionState(0.2, q, qdot, qddot, pose_from_angles(anthro, q), "excentrique")
+        concentric = MotionState(0.8, q, qdot, qddot, pose_from_angles(anthro, q), "concentrique")
+        eccentric_result = inverse_dynamics(anthro, eccentric, max_torques, False)
+        concentric_result = inverse_dynamics(anthro, concentric, max_torques, False)
+
+        for joint in max_torques:
+            self.assertAlmostEqual(
+                eccentric_result.effort_ratios[joint],
+                concentric_result.effort_ratios[joint] / 1.35,
+            )
 
 
 if __name__ == "__main__":
