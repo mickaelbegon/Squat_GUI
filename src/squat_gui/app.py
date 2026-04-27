@@ -15,6 +15,7 @@ from .anthropometry import Anthropometry, scale_from_percent
 from .backend import detect_optional_backends, write_biomod_file
 from .dynamics import DynamicsResult, simulate, total_com_acceleration
 from .kinematics import MotionState, com_accelerations, pose_from_angles
+from .segment_shapes import draw_segment, load_segments
 
 
 PLOT_CHOICES = [
@@ -212,10 +213,17 @@ class SquatGui(tk.Tk):
         joints = [pose.heel, pose.toe, pose.ankle, pose.knee, pose.hip, pose.shoulder]
         names = ["heel", "toe", "ankle", "knee", "hip", "shoulder"]
         points = {name: self.world_to_canvas(canvas, point, bounds) for name, point in zip(names, joints)}
-        canvas.create_line(*points["heel"], *points["toe"], width=5, fill="#333333")
-        for a, b in (("ankle", "knee"), ("knee", "hip"), ("hip", "shoulder")):
-            canvas.create_line(*points[a], *points[b], width=7, fill="#33443b", capstyle="round")
-        canvas.create_line(points["shoulder"][0] - 28, points["shoulder"][1], points["shoulder"][0] + 28, points["shoulder"][1], width=8, fill="#6d5f57", capstyle="round")
+        segments = load_segments()
+
+        def mapper(point: tuple[float, float]) -> tuple[float, float]:
+            return self.world_to_canvas(canvas, point, bounds)
+
+        foot_scale = self.anthro().foot.length / 1.07
+        draw_segment(canvas, segments["foot"], pose.ankle, 0.0, foot_scale, mapper)
+        draw_segment(canvas, segments["shank"], pose.ankle, -state.q[0], self.anthro().shank.length, mapper)
+        draw_segment(canvas, segments["thigh"], pose.knee, -state.q[1], self.anthro().thigh.length, mapper)
+        draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], self.anthro().trunk.length, mapper)
+        canvas.create_line(*points["heel"], *points["toe"], width=3, fill="#333333")
 
         com = self.world_to_canvas(canvas, pose.com, bounds)
         projection = self.world_to_canvas(canvas, (pose.com[0], 0.0), bounds)
@@ -226,9 +234,12 @@ class SquatGui(tk.Tk):
         cop = self.world_to_canvas(canvas, (result.cop_x, 0.0), bounds)
         force_end = self.world_to_canvas(canvas, (result.cop_x + result.ground_reaction[0] / 3500.0, result.ground_reaction[1] / 3500.0), bounds)
         canvas.create_line(cop[0], cop[1], force_end[0], force_end[1], arrow=tk.LAST, width=3, fill="#c15a2b")
-        for joint in (pose.ankle, pose.knee, pose.hip):
+        for joint in (pose.knee, pose.hip):
+            projected = self.project_on_force_line(joint, (result.cop_x, 0.0), result.ground_reaction)
             joint_px = self.world_to_canvas(canvas, joint, bounds)
-            canvas.create_line(joint_px[0], joint_px[1], force_end[0], force_end[1], fill="#8f8f8f", dash=(3, 5))
+            projected_px = self.world_to_canvas(canvas, projected, bounds)
+            canvas.create_line(joint_px[0], joint_px[1], projected_px[0], projected_px[1], fill="#1f77b4", dash=(4, 4), width=2)
+            canvas.create_oval(projected_px[0] - 3, projected_px[1] - 3, projected_px[0] + 3, projected_px[1] + 3, fill="#1f77b4", outline="")
 
         for name in ("cheville", "genou", "hanche"):
             ratio = min(1.0, result.effort_ratios[name])
@@ -238,6 +249,9 @@ class SquatGui(tk.Tk):
             point = {"cheville": pose.ankle, "genou": pose.knee, "hanche": pose.hip}[name]
             px = self.world_to_canvas(canvas, point, bounds)
             canvas.create_oval(px[0] - 12, px[1] - 12, px[0] + 12, px[1] + 12, outline=color, width=4)
+        for name in ("ankle", "knee", "hip", "shoulder"):
+            x, y = points[name]
+            canvas.create_oval(x - 6, y - 6, x + 6, y + 6, fill="#ffffff", outline="#1f1f1f", width=2)
 
         if with_handles:
             for name in ("knee", "hip", "shoulder"):
@@ -256,14 +270,21 @@ class SquatGui(tk.Tk):
         else:
             canvas.configure(highlightbackground="#587a5f")
         self.draw_skeleton(canvas, state, result, with_handles=True)
-        canvas.create_text(16, 16, text="Position finale", anchor="nw", fill="#22312a", font=("Helvetica", 13, "bold"))
+        canvas.create_text(16, 16, text="Position de squat", anchor="nw", fill="#22312a", font=("Helvetica", 13, "bold"))
         canvas.create_text(16, 38, text="Glisser genou, hanche ou epaules", anchor="nw", fill="#506158")
 
     def draw_animation(self, frame: int) -> None:
         canvas = self.animation_canvas
         canvas.delete("all")
         self.draw_skeleton(canvas, self.states[frame], self.results[frame], with_handles=False)
-        canvas.create_text(16, 16, text=f"Animation t={self.states[frame].time:.2f}s", anchor="nw", fill="#22312a", font=("Helvetica", 13, "bold"))
+        canvas.create_text(
+            16,
+            16,
+            text=f"Animation {self.states[frame].phase} t={self.states[frame].time:.2f}s",
+            anchor="nw",
+            fill="#22312a",
+            font=("Helvetica", 13, "bold"),
+        )
         y = 42
         for joint in ("cheville", "genou", "hanche"):
             torque = self.results[frame].torques[joint]
@@ -291,21 +312,34 @@ class SquatGui(tk.Tk):
         if abs(ymax - ymin) < 1e-9:
             ymin -= 1.0
             ymax += 1.0
+        self.draw_y_ticks(canvas, x0, y0, y1, ymin, ymax)
         colors = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM": "#2a8ca6"}
-        for name, values in series.items():
+        palette = ["#2e7d54", "#b46d22", "#6d5ea8", "#2a8ca6", "#9b3d3d", "#4c6f3d", "#8a5a22"]
+        for series_index, (name, values) in enumerate(series.items()):
+            color = colors.get(name, palette[series_index % len(palette)])
             points = []
             for index, value in enumerate(values):
                 x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
                 y = y0 - (y0 - y1) * (value - ymin) / (ymax - ymin)
                 points.extend([x, y])
             if len(points) >= 4:
-                canvas.create_line(*points, fill=colors.get(name, "#222222"), width=2)
+                canvas.create_line(*points, fill=color, width=2)
         canvas.create_text(16, 12, text=choice, anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
         legend_x = x0
-        for name in series:
-            canvas.create_line(legend_x, height - 14, legend_x + 18, height - 14, fill=colors.get(name, "#222222"), width=3)
+        for series_index, name in enumerate(series):
+            color = colors.get(name, palette[series_index % len(palette)])
+            canvas.create_line(legend_x, height - 14, legend_x + 18, height - 14, fill=color, width=3)
             canvas.create_text(legend_x + 24, height - 14, text=name, anchor="w", fill="#22312a")
-            legend_x += 95
+            legend_x += max(95, 9 * len(name))
+
+    def draw_y_ticks(self, canvas: tk.Canvas, x0: float, y0: float, y1: float, ymin: float, ymax: float) -> None:
+        for index in range(5):
+            fraction = index / 4
+            value = ymin + fraction * (ymax - ymin)
+            y = y0 - (y0 - y1) * fraction
+            canvas.create_line(x0 - 4, y, x0, y, fill="#69746e")
+            canvas.create_line(x0, y, canvas.winfo_width() - 18, y, fill="#edf0ec")
+            canvas.create_text(x0 - 8, y, text=f"{value:.2g}", anchor="e", fill="#506158", font=("Helvetica", 9))
 
     def plot_series(self, choice: str) -> dict[str, list[float]]:
         selected = [name for name, var in self.show_vars.items() if var.get()]
@@ -408,9 +442,22 @@ class SquatGui(tk.Tk):
         self.final_q = (
             max(radians(-55), min(radians(75), shank)),
             max(radians(-95), min(radians(45), thigh)),
-            max(radians(-70), min(radians(35), trunk)),
+            max(radians(-120), min(radians(50), trunk)),
         )
         self.recompute()
+
+    def project_on_force_line(
+        self,
+        joint: tuple[float, float],
+        force_origin: tuple[float, float],
+        force_vector: tuple[float, float],
+    ) -> tuple[float, float]:
+        norm_squared = force_vector[0] ** 2 + force_vector[1] ** 2
+        if norm_squared < 1e-12:
+            return force_origin
+        relative = (joint[0] - force_origin[0], joint[1] - force_origin[1])
+        factor = (relative[0] * force_vector[0] + relative[1] * force_vector[1]) / norm_squared
+        return (force_origin[0] + factor * force_vector[0], force_origin[1] + factor * force_vector[1])
 
     def on_pose_release(self, _event: tk.Event) -> None:
         self.drag_target = None
