@@ -1,0 +1,22 @@
+[project]
+name = "squat-gui"
+version = "0.1.0"
+description = "Interface 2D pour explorer la cinematique et la dynamique inverse d'un squat."
+requires-python = ">=3.9"
+dependencies = []
+
+[project.optional-dependencies]
+biomechanics = [
+    "biorbd",
+    "biobuddy",
+]
+dev = [
+    "pytest",
+]
+
+[project.scripts]
+squat-gui = "squat_gui.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
