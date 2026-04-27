@@ -32,6 +32,7 @@ class MotionState:
     qdot: tuple[float, float, float]
     qddot: tuple[float, float, float]
     pose: Pose
+    phase: str = "statique"
 
 
 def add(a: Vector, b: Vector) -> Vector:
@@ -136,8 +137,14 @@ def com_accelerations(anthro: Anthropometry, q: tuple[float, float, float], qdot
 
 
 def motion_state(anthro: Anthropometry, final_q: tuple[float, float, float], duration: float, time: float) -> MotionState:
-    trajectories = [QuinticBoundaryTrajectory(0.0, duration, 0.0, angle) for angle in final_q]
+    midpoint = duration / 2.0
+    if time <= midpoint:
+        phase = "excentrique"
+        trajectories = [QuinticBoundaryTrajectory(0.0, midpoint, 0.0, angle) for angle in final_q]
+    else:
+        phase = "concentrique"
+        trajectories = [QuinticBoundaryTrajectory(midpoint, duration, angle, 0.0) for angle in final_q]
     q = tuple(item.position(time) for item in trajectories)
     qdot = tuple(item.velocity(time) for item in trajectories)
     qddot = tuple(item.acceleration(time) for item in trajectories)
-    return MotionState(time, q, qdot, qddot, pose_from_angles(anthro, q))
+    return MotionState(time, q, qdot, qddot, pose_from_angles(anthro, q), phase)

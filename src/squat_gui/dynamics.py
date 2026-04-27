@@ -216,7 +216,11 @@ def inverse_dynamics(
     }
     effort_ratios = {}
     for joint, torque in torques.items():
-        adjusted = max(1.0, angle_adapted_max(max_torques[joint], joint_angles[joint], adapt_max_by_angle))
+        eccentric_factor = 1.35 if state.phase == "excentrique" else 1.0
+        adjusted = max(
+            1.0,
+            eccentric_factor * angle_adapted_max(max_torques[joint], joint_angles[joint], adapt_max_by_angle),
+        )
         effort_ratios[joint] = abs(torque) / adjusted
     return DynamicsResult(reaction, cop_x, torques, components, powers, effort_ratios)
 
