@@ -68,6 +68,7 @@ class SquatGui(tk.Tk):
             "hanche": tk.DoubleVar(value=260.0),
         }
         self.show_torque_bounds_var = tk.BooleanVar(value=True)
+        self.show_sprite_centers_var = tk.BooleanVar(value=False)
         self.angle_adapt_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
 
@@ -117,6 +118,7 @@ class SquatGui(tk.Tk):
             checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
             checkbutton.grid(row=1, column=index, padx=3)
             self.show_checkbuttons[name] = checkbutton
+        ttk.Checkbutton(plot_box, text="centres", variable=self.show_sprite_centers_var, command=self.redraw).grid(row=2, column=0, columnspan=4)
 
         table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
         table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
@@ -304,6 +306,11 @@ class SquatGui(tk.Tk):
         for name in ("ankle", "knee", "hip", "shoulder"):
             x, y = points[name]
             canvas.create_oval(x - 6, y - 6, x + 6, y + 6, fill="#ffffff", outline="#1f1f1f", width=2)
+        if self.show_sprite_centers_var.get():
+            for name in ("ankle", "knee", "hip", "shoulder", "toe"):
+                x, y = points[name]
+                canvas.create_line(x - 12, y, x + 12, y, fill="#26a69a", width=2)
+                canvas.create_line(x, y - 12, x, y + 12, fill="#26a69a", width=2)
 
         if with_handles:
             for name in ("knee", "hip", "shoulder"):

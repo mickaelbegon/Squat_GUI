@@ -56,30 +56,6 @@ def _load_transparent_sprite(filename: str):
     return image
 
 
-def _rotated_anchor_bbox(width: int, height: int, anchor: tuple[float, float], angle_deg: float) -> tuple[float, float, float, float]:
-    from PIL import Image
-
-    # Pillow already has the exact affine math; rotating a blank layer gives us the expanded bbox.
-    blank = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    rotated = blank.rotate(angle_deg, resample=Image.Resampling.BICUBIC, center=anchor, expand=True)
-    # Recompute the anchor shift by rotating the four corners around the anchor.
-    from math import cos, radians, sin
-
-    angle = radians(angle_deg)
-    c = cos(angle)
-    s = sin(angle)
-    xs = []
-    ys = []
-    for x, y in ((0, 0), (width, 0), (0, height), (width, height)):
-        dx = x - anchor[0]
-        dy = y - anchor[1]
-        xs.append(anchor[0] + c * dx - s * dy)
-        ys.append(anchor[1] + s * dx + c * dy)
-    min_x = min(xs)
-    min_y = min(ys)
-    return rotated.size[0], rotated.size[1], anchor[0] - min_x, anchor[1] - min_y
-
-
 def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector):
     from PIL import Image
     from PIL.ImageTk import PhotoImage
@@ -99,9 +75,18 @@ def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector):
     source_angle = atan2(scaled_anchor_vector[1], scaled_anchor_vector[0])
     target_angle = atan2(target_vector_px[1], target_vector_px[0])
     angle_deg = degrees(target_angle - source_angle)
-    rotated = scaled.rotate(angle_deg, resample=Image.Resampling.BICUBIC, center=scaled_anchor, expand=True)
-    _, _, anchor_x, anchor_y = _rotated_anchor_bbox(scaled.size[0], scaled.size[1], scaled_anchor, angle_deg)
-    return PhotoImage(rotated), (anchor_x, anchor_y)
+    margin = int(max(scaled.size) * 1.5)
+    pivot = (margin, margin)
+    canvas_size = (scaled.size[0] + 2 * margin, scaled.size[1] + 2 * margin)
+    layer = Image.new("RGBA", canvas_size, (255, 255, 255, 0))
+    layer.alpha_composite(scaled, (round(pivot[0] - scaled_anchor[0]), round(pivot[1] - scaled_anchor[1])))
+    rotated_layer = layer.rotate(angle_deg, resample=Image.Resampling.BICUBIC, center=pivot, expand=False)
+    bbox = rotated_layer.getbbox()
+    if bbox is None:
+        return PhotoImage(rotated_layer), pivot
+    cropped = rotated_layer.crop(bbox)
+    anchor = (pivot[0] - bbox[0], pivot[1] - bbox[1])
+    return PhotoImage(cropped), anchor
 
 
 def draw_sprite_segment(
