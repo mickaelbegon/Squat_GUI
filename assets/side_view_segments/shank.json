@@ -1,0 +1,120 @@
+{
+  "name": "shank",
+  "description": "2D side-view lower-leg segment. Distal anchor ankle = (0, 0), proximal knee = (0, 1).",
+  "joint_order": [
+    "ankle",
+    "knee"
+  ],
+  "joints": {
+    "ankle": [
+      0.0,
+      0.0
+    ],
+    "knee": [
+      0.0,
+      1.0
+    ]
+  },
+  "paths": [
+    {
+      "name": "outline",
+      "closed": true,
+      "vertices": [
+        [
+          -0.1,
+          0.02
+        ],
+        [
+          -0.17,
+          0.1
+        ],
+        [
+          -0.2,
+          0.35
+        ],
+        [
+          -0.17,
+          0.6
+        ],
+        [
+          -0.13,
+          0.86
+        ],
+        [
+          -0.19,
+          0.98
+        ],
+        [
+          -0.13,
+          1.08
+        ],
+        [
+          0.08,
+          1.1
+        ],
+        [
+          0.17,
+          1.02
+        ],
+        [
+          0.16,
+          0.9
+        ],
+        [
+          0.1,
+          0.6
+        ],
+        [
+          0.07,
+          0.35
+        ],
+        [
+          0.06,
+          0.12
+        ],
+        [
+          0.1,
+          0.02
+        ],
+        [
+          0.04,
+          -0.04
+        ],
+        [
+          -0.06,
+          -0.04
+        ]
+      ]
+    },
+    {
+      "name": "tibia_hint",
+      "closed": false,
+      "vertices": [
+        [
+          -0.02,
+          0.1
+        ],
+        [
+          -0.03,
+          0.35
+        ],
+        [
+          -0.02,
+          0.62
+        ],
+        [
+          0.0,
+          0.88
+        ]
+      ]
+    }
+  ],
+  "style": {
+    "facecolor": "#f1c7a1",
+    "edgecolor": "#1f1f1f",
+    "linewidth": 2.0,
+    "joint_facecolor": "white",
+    "joint_edgecolor": "#1f1f1f",
+    "joint_radius": 0.035
+  }
+}

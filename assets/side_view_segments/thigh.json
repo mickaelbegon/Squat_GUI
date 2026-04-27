@@ -1,0 +1,124 @@
+{
+  "name": "thigh",
+  "description": "2D side-view thigh segment. Distal anchor knee = (0, 0), proximal hip = (0, 1).",
+  "joint_order": [
+    "knee",
+    "hip"
+  ],
+  "joints": {
+    "knee": [
+      0.0,
+      0.0
+    ],
+    "hip": [
+      0.0,
+      1.0
+    ]
+  },
+  "paths": [
+    {
+      "name": "outline",
+      "closed": true,
+      "vertices": [
+        [
+          -0.13,
+          -0.02
+        ],
+        [
+          -0.2,
+          0.05
+        ],
+        [
+          -0.22,
+          0.18
+        ],
+        [
+          -0.19,
+          0.36
+        ],
+        [
+          -0.16,
+          0.62
+        ],
+        [
+          -0.2,
+          0.82
+        ],
+        [
+          -0.15,
+          0.99
+        ],
+        [
+          -0.04,
+          1.1
+        ],
+        [
+          0.16,
+          1.08
+        ],
+        [
+          0.23,
+          0.98
+        ],
+        [
+          0.21,
+          0.78
+        ],
+        [
+          0.17,
+          0.55
+        ],
+        [
+          0.14,
+          0.34
+        ],
+        [
+          0.09,
+          0.16
+        ],
+        [
+          0.12,
+          0.04
+        ],
+        [
+          0.08,
+          -0.04
+        ],
+        [
+          -0.04,
+          -0.06
+        ]
+      ]
+    },
+    {
+      "name": "muscle_hint",
+      "closed": false,
+      "vertices": [
+        [
+          0.05,
+          0.08
+        ],
+        [
+          0.09,
+          0.32
+        ],
+        [
+          0.08,
+          0.6
+        ],
+        [
+          0.02,
+          0.88
+        ]
+      ]
+    }
+  ],
+  "style": {
+    "facecolor": "#f1c7a1",
+    "edgecolor": "#1f1f1f",
+    "linewidth": 2.0,
+    "joint_facecolor": "white",
+    "joint_edgecolor": "#1f1f1f",
+    "joint_radius": 0.035
+  }
+}

@@ -1,0 +1,186 @@
+{
+  "name": "trunk_bar",
+  "description": "2D side-view head-trunk-arms segment. Distal anchor hip = (0, 0), shoulder marker = (0, 1). Arms hold a bar on the shoulders.",
+  "joint_order": [
+    "hip",
+    "shoulder"
+  ],
+  "joints": {
+    "hip": [
+      0.0,
+      0.0
+    ],
+    "shoulder": [
+      0.0,
+      1.0
+    ],
+    "head_center": [
+      0.05,
+      1.36
+    ]
+  },
+  "paths": [
+    {
+      "name": "torso_outline",
+      "closed": true,
+      "vertices": [
+        [
+          -0.19,
+          0.0
+        ],
+        [
+          -0.25,
+          0.18
+        ],
+        [
+          -0.23,
+          0.42
+        ],
+        [
+          -0.18,
+          0.68
+        ],
+        [
+          -0.11,
+          0.92
+        ],
+        [
+          -0.02,
+          1.08
+        ],
+        [
+          0.14,
+          1.05
+        ],
+        [
+          0.23,
+          0.82
+        ],
+        [
+          0.27,
+          0.52
+        ],
+        [
+          0.23,
+          0.25
+        ],
+        [
+          0.15,
+          0.04
+        ],
+        [
+          0.02,
+          -0.05
+        ]
+      ]
+    },
+    {
+      "name": "head_outline",
+      "closed": true,
+      "vertices": [
+        [
+          -0.1,
+          1.2
+        ],
+        [
+          -0.04,
+          1.12
+        ],
+        [
+          0.07,
+          1.1
+        ],
+        [
+          0.17,
+          1.17
+        ],
+        [
+          0.22,
+          1.3
+        ],
+        [
+          0.2,
+          1.44
+        ],
+        [
+          0.12,
+          1.55
+        ],
+        [
+          0.0,
+          1.58
+        ],
+        [
+          -0.11,
+          1.52
+        ],
+        [
+          -0.17,
+          1.39
+        ],
+        [
+          -0.16,
+          1.27
+        ]
+      ]
+    },
+    {
+      "name": "bar",
+      "closed": false,
+      "vertices": [
+        [
+          -0.42,
+          0.98
+        ],
+        [
+          0.42,
+          0.98
+        ]
+      ]
+    },
+    {
+      "name": "rear_arm",
+      "closed": false,
+      "vertices": [
+        [
+          -0.08,
+          0.98
+        ],
+        [
+          -0.22,
+          0.78
+        ],
+        [
+          -0.25,
+          0.58
+        ]
+      ]
+    },
+    {
+      "name": "front_arm",
+      "closed": false,
+      "vertices": [
+        [
+          0.1,
+          0.98
+        ],
+        [
+          0.23,
+          0.83
+        ],
+        [
+          0.32,
+          0.98
+        ]
+      ]
+    }
+  ],
+  "style": {
+    "facecolor": "#f1c7a1",
+    "edgecolor": "#1f1f1f",
+    "linewidth": 2.0,
+    "joint_facecolor": "white",
+    "joint_edgecolor": "#1f1f1f",
+    "joint_radius": 0.035
+  }
+}
