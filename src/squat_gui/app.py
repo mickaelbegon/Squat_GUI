@@ -15,6 +15,7 @@ from .anthropometry import Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends, write_biomod_file
 from .dynamics import DynamicsResult, angle_adapted_max, simulate, total_com_acceleration
 from .kinematics import MotionState, com_accelerations, pose_from_angles
+from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
 
 
@@ -257,16 +258,19 @@ class SquatGui(tk.Tk):
         joints = [pose.heel, pose.toe, pose.ankle, pose.knee, pose.hip, pose.shoulder]
         names = ["heel", "toe", "ankle", "knee", "hip", "shoulder"]
         points = {name: self.world_to_canvas(canvas, point, bounds) for name, point in zip(names, joints)}
-        segments = load_segments()
+        canvas._sprite_images = []
 
         def mapper(point: tuple[float, float]) -> tuple[float, float]:
             return self.world_to_canvas(canvas, point, bounds)
 
-        foot_scale = self.anthro().foot.length / 1.07
-        draw_segment(canvas, segments["foot"], pose.ankle, 0.0, foot_scale, mapper)
-        draw_segment(canvas, segments["shank"], pose.ankle, -state.q[0], self.anthro().shank.length, mapper)
-        draw_segment(canvas, segments["thigh"], pose.knee, -state.q[1], self.anthro().thigh.length, mapper)
-        draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], self.anthro().trunk.length, mapper)
+        raster_drawn = self.draw_raster_segments(canvas, state, mapper)
+        if not raster_drawn:
+            segments = load_segments()
+            foot_scale = self.anthro().foot.length / 1.07
+            draw_segment(canvas, segments["foot"], pose.ankle, 0.0, foot_scale, mapper)
+            draw_segment(canvas, segments["shank"], pose.ankle, -state.q[0], self.anthro().shank.length, mapper)
+            draw_segment(canvas, segments["thigh"], pose.knee, -state.q[1], self.anthro().thigh.length, mapper)
+            draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], self.anthro().trunk.length, mapper)
         canvas.create_line(*points["heel"], *points["toe"], width=3, fill="#333333")
 
         com = self.world_to_canvas(canvas, pose.com, bounds)
@@ -305,6 +309,21 @@ class SquatGui(tk.Tk):
             for name in ("knee", "hip", "shoulder"):
                 x, y = points[name]
                 canvas.create_oval(x - 9, y - 9, x + 9, y + 9, fill="#f7f7f2", outline="#1d3d35", width=2, tags=name)
+
+    def draw_raster_segments(self, canvas: tk.Canvas, state: MotionState, mapper) -> bool:
+        try:
+            pose = state.pose
+            return all(
+                (
+                    draw_sprite_segment(canvas, "foot", pose.ankle, pose.toe, mapper),
+                    draw_sprite_segment(canvas, "shank", pose.ankle, pose.knee, mapper),
+                    draw_sprite_segment(canvas, "thigh", pose.knee, pose.hip, mapper),
+                    draw_sprite_segment(canvas, "trunk", pose.hip, pose.shoulder, mapper),
+                )
+            )
+        except Exception:
+            canvas._sprite_images = []
+            return False
 
     def draw_pose_editor(self) -> None:
         canvas = self.pose_canvas

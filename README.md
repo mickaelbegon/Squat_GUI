@@ -35,3 +35,15 @@ PYTHONPATH=src python3 -m unittest discover -s tests
 ## Prochaine etape biomecanique
 
 Installer l'environnement biomecanique puis remplacer le solveur analytique par un appel `biorbd.InverseDynamics(...)` dans `src/squat_gui/backend.py`. Le modele `.bioMod` est genere par `write_biomod_file(...)` a partir des parametres anthropometriques courants.
+
+## Modifier les images de segments
+
+Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`.
+Ils sont ancres par deux points par image dans `src/squat_gui/raster_segments.py`:
+
+- `pied.png`: articulation de cheville et pointe du pied;
+- `jambe.png`: cheville et genou;
+- `cuisse.png`: genou et hanche;
+- `tronc.png`: hanche et epaule.
+
+Pour remplacer une image, garder un fond blanc ou transparent, garder le segment en vue de profil, puis ajuster les coordonnees `distal_anchor` et `proximal_anchor` si les cercles articulaires changent de position. Si Pillow n'est pas disponible, l'application revient automatiquement aux formes vectorielles JSON.
