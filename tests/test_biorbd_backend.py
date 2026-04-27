@@ -28,6 +28,11 @@ class BiorbdBackendTests(unittest.TestCase):
             self.assertEqual(len(states), 7)
             self.assertTrue(cache.cached_path_for(anthro).exists())
             self.assertTrue(all(result.backend == "biorbd" for result in results))
+            self.assertAlmostEqual(states[3].pose.com[0], results[3].com[0])
+            self.assertAlmostEqual(states[3].pose.com[1], results[3].com[1])
+            self.assertTrue(math.isfinite(results[3].com_velocity[1]))
+            self.assertTrue(math.isfinite(results[3].com_acceleration[1]))
+            self.assertTrue(math.isfinite(results[3].dynamic_moment_z))
 
 
 if __name__ == "__main__":

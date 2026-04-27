@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import exp
 from typing import Any
 
 from .anthropometry import Anthropometry
 from .kinematics import (
     MotionState,
+    Pose,
     Vector,
     angle_derivative_vector,
     com_accelerations,
@@ -31,6 +32,10 @@ class DynamicsResult:
     powers: dict[str, float]
     effort_ratios: dict[str, float]
     backend: str = "analytical"
+    com: Vector = (0.0, 0.0)
+    com_velocity: Vector = (0.0, 0.0)
+    com_acceleration: Vector = (0.0, 0.0)
+    dynamic_moment_z: float = 0.0
 
 
 def total_com_acceleration(anthro: Anthropometry, accs: dict[str, Vector]) -> Vector:
@@ -56,7 +61,7 @@ def total_com_acceleration(anthro: Anthropometry, accs: dict[str, Vector]) -> Ve
     return (ax, ay)
 
 
-def ground_reaction_and_cop(anthro: Anthropometry, state: MotionState) -> tuple[Vector, float]:
+def ground_reaction_and_cop(anthro: Anthropometry, state: MotionState) -> tuple[Vector, float, Vector, float]:
     accs = com_accelerations(anthro, state.q, state.qdot, state.qddot)
     com_acc = total_com_acceleration(anthro, accs)
     reaction = (anthro.total_mass * com_acc[0], anthro.total_mass * (com_acc[1] + GRAVITY))
@@ -78,7 +83,7 @@ def ground_reaction_and_cop(anthro: Anthropometry, state: MotionState) -> tuple[
         inertial_moment += cross_z(com, effective_force) + inertia * alpha
 
     cop_x = inertial_moment / reaction[1] if abs(reaction[1]) > 1e-9 else state.pose.ankle[0]
-    return reaction, cop_x
+    return reaction, cop_x, com_acc, inertial_moment
 
 
 def _segment_forces(
@@ -178,9 +183,14 @@ def inverse_dynamics(
     adapt_max_by_angle: bool,
     biorbd_model: Any | None = None,
 ) -> DynamicsResult:
-    reaction, cop_x = ground_reaction_and_cop(anthro, state)
+    reaction, cop_x, com_acceleration, dynamic_moment_z = ground_reaction_and_cop(anthro, state)
+    com_velocity = (0.0, 0.0)
     backend = "analytical"
     if biorbd_model is not None:
+        reaction, cop_x, com_velocity, com_acceleration, dynamic_moment_z = _biorbd_ground_reaction_and_cop(
+            biorbd_model,
+            state,
+        )
         torques, inertial, nle = _biorbd_joint_torques(biorbd_model, state)
         backend = "biorbd"
     else:
@@ -230,7 +240,19 @@ def inverse_dynamics(
             eccentric_factor * angle_adapted_max(max_torques[joint], joint_angles[joint], adapt_max_by_angle),
         )
         effort_ratios[joint] = abs(torque) / adjusted
-    return DynamicsResult(reaction, cop_x, torques, components, powers, effort_ratios, backend)
+    return DynamicsResult(
+        reaction,
+        cop_x,
+        torques,
+        components,
+        powers,
+        effort_ratios,
+        backend,
+        state.pose.com,
+        com_velocity,
+        com_acceleration,
+        dynamic_moment_z,
+    )
 
 
 def _biorbd_coordinates(state: MotionState) -> tuple[list[float], list[float], list[float]]:
@@ -242,6 +264,13 @@ def _biorbd_coordinates(state: MotionState) -> tuple[list[float], list[float], l
         [-qd0, -(qd1 - qd0), -(qd2 - qd1)],
         [-qdd0, -(qdd1 - qdd0), -(qdd2 - qdd1)],
     )
+
+
+def _numpy_biorbd_coordinates(state: MotionState):
+    import numpy as np
+
+    q, qdot, qddot = _biorbd_coordinates(state)
+    return np.asarray(q, dtype=float), np.asarray(qdot, dtype=float), np.asarray(qddot, dtype=float)
 
 
 def _array_from_biorbd(value: Any) -> list[float]:
@@ -258,12 +287,9 @@ def _joint_dict_from_biorbd_tau(tau: list[float]) -> dict[str, float]:
 
 
 def _biorbd_joint_torques(biorbd_model: Any, state: MotionState) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
-    q, qdot, qddot = _biorbd_coordinates(state)
     import numpy as np
 
-    q = np.asarray(q, dtype=float)
-    qdot = np.asarray(qdot, dtype=float)
-    qddot = np.asarray(qddot, dtype=float)
+    q, qdot, qddot = _numpy_biorbd_coordinates(state)
     zero = np.zeros(3)
     total = _array_from_biorbd(biorbd_model.InverseDynamics(q, qdot, qddot))
     nle = _array_from_biorbd(biorbd_model.NonLinearEffect(q, qdot))
@@ -274,6 +300,40 @@ def _biorbd_joint_torques(biorbd_model: Any, state: MotionState) -> tuple[dict[s
         _joint_dict_from_biorbd_tau(total),
         _joint_dict_from_biorbd_tau(inertial),
         _joint_dict_from_biorbd_tau(nle),
+    )
+
+
+def _biorbd_motion_state_with_com(biorbd_model: Any, state: MotionState) -> MotionState:
+    q, _, _ = _numpy_biorbd_coordinates(state)
+    com = biorbd_model.CoM(q).to_array()
+    pose = replace(state.pose, com=(float(com[0]), float(com[1])))
+    return replace(state, pose=pose)
+
+
+def _biorbd_angular_momentum_derivative_z(biorbd_model: Any, state: MotionState) -> float:
+    q, qdot, qddot = _numpy_biorbd_coordinates(state)
+    step = 1e-6
+    forward = biorbd_model.CalcAngularMomentum(q + step * qdot, qdot + step * qddot, True).to_array()
+    backward = biorbd_model.CalcAngularMomentum(q - step * qdot, qdot - step * qddot, True).to_array()
+    return float((forward[2] - backward[2]) / (2.0 * step))
+
+
+def _biorbd_ground_reaction_and_cop(biorbd_model: Any, state: MotionState) -> tuple[Vector, float, Vector, Vector, float]:
+    q, qdot, qddot = _numpy_biorbd_coordinates(state)
+    mass = float(biorbd_model.mass())
+    com = biorbd_model.CoM(q).to_array()
+    comdot = biorbd_model.CoMdot(q, qdot).to_array()
+    comddot = biorbd_model.CoMddot(q, qdot, qddot).to_array()
+    reaction = (mass * float(comddot[0]), mass * (float(comddot[1]) + GRAVITY))
+    hdot_com_z = _biorbd_angular_momentum_derivative_z(biorbd_model, state)
+    dynamic_moment_z = hdot_com_z + float(com[0]) * reaction[1] - float(com[1]) * reaction[0]
+    cop_x = dynamic_moment_z / reaction[1] if abs(reaction[1]) > 1e-9 else state.pose.ankle[0]
+    return (
+        reaction,
+        cop_x,
+        (float(comdot[0]), float(comdot[1])),
+        (float(comddot[0]), float(comddot[1])),
+        dynamic_moment_z,
     )
 
 
@@ -297,6 +357,8 @@ def simulate(
     for index in range(frame_count):
         time = duration * index / max(1, frame_count - 1)
         state = motion_state(anthro, final_q, duration, time)
+        if biorbd_model is not None:
+            state = _biorbd_motion_state_with_com(biorbd_model, state)
         states.append(state)
         dynamics.append(inverse_dynamics(anthro, state, max_torques, adapt_max_by_angle, biorbd_model))
     return states, dynamics

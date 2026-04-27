@@ -13,8 +13,8 @@ from tkinter import ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends, write_biomod_file
-from .dynamics import DynamicsResult, angle_adapted_max, simulate, total_com_acceleration
-from .kinematics import MotionState, com_accelerations, pose_from_angles
+from .dynamics import DynamicsResult, angle_adapted_max, simulate
+from .kinematics import MotionState, pose_from_angles
 from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
 
@@ -592,28 +592,10 @@ class SquatGui(tk.Tk):
         return bounds
 
     def com_velocity_series(self) -> list[float]:
-        if len(self.states) < 2:
-            return [0.0 for _ in self.states]
-        values: list[float] = []
-        for index, state in enumerate(self.states):
-            if index == 0:
-                dt = self.states[1].time - state.time
-                values.append((self.states[1].pose.com[1] - state.pose.com[1]) / dt)
-            elif index == len(self.states) - 1:
-                dt = state.time - self.states[index - 1].time
-                values.append((state.pose.com[1] - self.states[index - 1].pose.com[1]) / dt)
-            else:
-                dt = self.states[index + 1].time - self.states[index - 1].time
-                values.append((self.states[index + 1].pose.com[1] - self.states[index - 1].pose.com[1]) / dt)
-        return values
+        return [result.com_velocity[1] for result in self.results]
 
     def com_acceleration_series(self) -> list[float]:
-        anthro = self.anthro()
-        values = []
-        for state in self.states:
-            accs = com_accelerations(anthro, state.q, state.qdot, state.qddot)
-            values.append(total_com_acceleration(anthro, accs)[1])
-        return values
+        return [result.com_acceleration[1] for result in self.results]
 
     def nearest_handle(self, x: float, y: float) -> str | None:
         anthro = self.anthro()
