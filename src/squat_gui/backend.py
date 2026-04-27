@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from importlib.util import find_spec
+import os
 from pathlib import Path
 
 from .anthropometry import Anthropometry, SegmentSpec
@@ -127,6 +128,8 @@ def write_biomod_file(path: str | Path, anthro: Anthropometry) -> Path:
 
 
 def load_biorbd_model(path: str | Path):
+    os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
+
     import biorbd
 
     return biorbd.Model(str(path))

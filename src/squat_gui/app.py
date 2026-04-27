@@ -12,7 +12,7 @@ from math import atan2, degrees, radians
 from tkinter import ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
-from .backend import detect_optional_backends, write_biomod_file
+from .backend import BiorbdModelCache, detect_optional_backends, write_biomod_file
 from .dynamics import DynamicsResult, angle_adapted_max, simulate, total_com_acceleration
 from .kinematics import MotionState, com_accelerations, pose_from_angles
 from .segment_shapes import draw_segment, load_segments
@@ -45,6 +45,7 @@ class SquatGui(tk.Tk):
         self.states: list[MotionState] = []
         self.results: list[DynamicsResult] = []
         self.saved_condition_count = 0
+        self.model_cache = BiorbdModelCache()
 
         self.load_var = tk.DoubleVar(value=20.0)
         self.shank_var = tk.DoubleVar(value=0.0)
@@ -195,14 +196,20 @@ class SquatGui(tk.Tk):
         return {joint: max(1.0, var.get()) for joint, var in self.max_torque_vars.items()}
 
     def recompute(self) -> None:
+        anthro = self.anthro()
         self.states, self.results = simulate(
-            self.anthro(),
+            anthro,
             self.final_q,
             max(0.1, self.duration_var.get()),
             self.frame_count,
             self.max_torques(),
             self.angle_adapt_var.get(),
+            self.model_cache,
         )
+        if self.results and self.results[0].backend == "biorbd":
+            self.status_var.set(f"biorbd actif: {self.model_cache.cached_path_for(anthro)}")
+        elif self.results:
+            self.status_var.set("backend analytique actif: biorbd indisponible ou modele non charge")
         self.redraw()
 
     def redraw(self) -> None:
