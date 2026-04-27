@@ -44,6 +44,7 @@ class SquatGui(tk.Tk):
         self.drag_target: str | None = None
         self.states: list[MotionState] = []
         self.results: list[DynamicsResult] = []
+        self.saved_condition_count = 0
 
         self.load_var = tk.DoubleVar(value=20.0)
         self.shank_var = tk.DoubleVar(value=0.0)
@@ -83,10 +84,12 @@ class SquatGui(tk.Tk):
         root.pack(fill="both", expand=True)
         root.columnconfigure(0, weight=1)
         root.columnconfigure(1, weight=1)
-        root.rowconfigure(1, weight=1)
+        root.columnconfigure(2, weight=1)
+        root.rowconfigure(1, weight=2)
+        root.rowconfigure(2, weight=1)
 
         controls = ttk.Frame(root)
-        controls.grid(row=0, column=0, columnspan=2, sticky="ew", pady=(0, 8))
+        controls.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8))
         for index in range(10):
             controls.columnconfigure(index, weight=1)
 
@@ -110,23 +113,37 @@ class SquatGui(tk.Tk):
         for index, name in enumerate(self.show_vars):
             ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw).grid(row=1, column=index, padx=3)
 
-        left = ttk.Frame(root)
-        left.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
-        left.rowconfigure(0, weight=1)
-        left.rowconfigure(1, weight=1)
-        left.columnconfigure(0, weight=1)
+        table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
+        table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        table_box.rowconfigure(0, weight=1)
+        table_box.columnconfigure(0, weight=1)
+        columns = ("squat", "charge", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
+        self.conditions_table = ttk.Treeview(table_box, columns=columns, show="headings", height=10)
+        headings = {
+            "squat": "squat deg",
+            "charge": "kg",
+            "tibia": "tibia %",
+            "cuisse": "cuisse %",
+            "tronc": "tronc %",
+            "cheville": "pic chev Nm",
+            "genou": "pic gen Nm",
+            "hanche": "pic han Nm",
+        }
+        widths = {"squat": 78, "charge": 52, "tibia": 58, "cuisse": 62, "tronc": 58, "cheville": 78, "genou": 76, "hanche": 76}
+        for column in columns:
+            self.conditions_table.heading(column, text=headings[column])
+            self.conditions_table.column(column, width=widths[column], anchor="center", stretch=True)
+        self.conditions_table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        ttk.Button(table_box, text="Enregistrer", command=self.record_condition).grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
 
-        self.pose_canvas = tk.Canvas(left, bg="#fbfcf9", highlightthickness=2, highlightbackground="#7f8f83")
-        self.pose_canvas.grid(row=0, column=0, sticky="nsew", pady=(0, 8))
+        self.pose_canvas = tk.Canvas(root, bg="#fbfcf9", highlightthickness=2, highlightbackground="#7f8f83")
+        self.pose_canvas.grid(row=1, column=1, sticky="nsew", padx=(0, 8))
         self.pose_canvas.bind("<ButtonPress-1>", self.on_pose_press)
         self.pose_canvas.bind("<B1-Motion>", self.on_pose_drag)
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
 
-        self.plot_canvas = tk.Canvas(left, bg="#ffffff", highlightthickness=1, highlightbackground="#c9d1c7")
-        self.plot_canvas.grid(row=1, column=0, sticky="nsew")
-
         right = ttk.Frame(root)
-        right.grid(row=1, column=1, sticky="nsew")
+        right.grid(row=1, column=2, sticky="nsew")
         right.rowconfigure(0, weight=1)
         right.columnconfigure(0, weight=1)
         self.animation_canvas = tk.Canvas(right, bg="#fbfcf9", highlightthickness=1, highlightbackground="#c9d1c7")
@@ -138,9 +155,12 @@ class SquatGui(tk.Tk):
         self.play_button = ttk.Button(playback, text="▶", command=self.toggle_play, width=4)
         self.play_button.grid(row=0, column=0, padx=(0, 8))
         ttk.Scale(playback, variable=self.frame_var, from_=0, to=self.frame_count - 1, orient="horizontal", command=lambda _value: self.redraw()).grid(row=0, column=1, sticky="ew")
-        ttk.Button(playback, text="bioMod", command=self.export_biomod).grid(row=0, column=2, padx=(8, 0))
+        ttk.Button(playback, text="Exporter bioMod", command=self.export_biomod).grid(row=0, column=2, padx=(8, 0))
 
-        ttk.Label(root, textvariable=self.status_var).grid(row=2, column=0, columnspan=2, sticky="ew", pady=(8, 0))
+        self.plot_canvas = tk.Canvas(root, bg="#ffffff", highlightthickness=1, highlightbackground="#c9d1c7")
+        self.plot_canvas.grid(row=2, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+
+        ttk.Label(root, textvariable=self.status_var).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
 
     def _add_scale(self, parent: ttk.Frame, label: str, var: tk.DoubleVar, start: float, end: float, resolution: float, column: int) -> None:
         box = ttk.LabelFrame(parent, text=label)
@@ -273,7 +293,7 @@ class SquatGui(tk.Tk):
         anthro = self.anthro()
         pose = pose_from_angles(anthro, self.final_q)
         state = MotionState(self.duration_var.get(), self.final_q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), pose)
-        result = self.results[-1]
+        result = self.results[len(self.results) // 2]
         if pose.com[0] < pose.heel[0] or pose.com[0] > pose.toe[0]:
             canvas.configure(highlightbackground="#c9332c")
         else:
@@ -615,6 +635,34 @@ class SquatGui(tk.Tk):
     def export_biomod(self) -> None:
         path = write_biomod_file("generated/squat_2d.bioMod", self.anthro())
         self.status_var.set(f"modele ecrit: {path}")
+
+    def record_condition(self) -> None:
+        self.saved_condition_count += 1
+        peak_torques = {
+            joint: max(abs(result.torques[joint]) for result in self.results)
+            for joint in ("cheville", "genou", "hanche")
+        }
+        squat_angles = (
+            degrees(self.final_q[0]),
+            degrees(self.final_q[1] - self.final_q[0]),
+            degrees(self.final_q[2] - self.final_q[1]),
+        )
+        self.conditions_table.insert(
+            "",
+            "end",
+            iid=f"condition-{self.saved_condition_count}",
+            values=(
+                f"{squat_angles[0]:.0f}/{squat_angles[1]:.0f}/{squat_angles[2]:.0f}",
+                f"{self.load_var.get():.0f}",
+                f"{self.shank_var.get():+.1f}",
+                f"{self.thigh_var.get():+.1f}",
+                f"{self.trunk_var.get():+.1f}",
+                f"{peak_torques['cheville']:.1f}",
+                f"{peak_torques['genou']:.1f}",
+                f"{peak_torques['hanche']:.1f}",
+            ),
+        )
+        self.status_var.set(f"condition {self.saved_condition_count} enregistree")
 
 
 def main() -> None:
