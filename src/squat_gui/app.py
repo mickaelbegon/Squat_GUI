@@ -13,7 +13,7 @@ from tkinter import ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
 from .backend import detect_optional_backends, write_biomod_file
-from .dynamics import DynamicsResult, simulate, total_com_acceleration
+from .dynamics import DynamicsResult, angle_adapted_max, simulate, total_com_acceleration
 from .kinematics import MotionState, com_accelerations, pose_from_angles
 from .segment_shapes import draw_segment, load_segments
 
@@ -26,6 +26,9 @@ PLOT_CHOICES = [
     "couples detailles",
     "puissances articulaires",
 ]
+
+JOINT_COLORS = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM": "#2a8ca6"}
+FORCE_DRAW_SCALE = 3500.0 / 3.0
 
 
 class SquatGui(tk.Tk):
@@ -60,6 +63,7 @@ class SquatGui(tk.Tk):
             "genou": tk.DoubleVar(value=220.0),
             "hanche": tk.DoubleVar(value=260.0),
         }
+        self.show_torque_bounds_var = tk.BooleanVar(value=True)
         self.angle_adapt_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
 
@@ -97,7 +101,8 @@ class SquatGui(tk.Tk):
         for col, joint in enumerate(("cheville", "genou", "hanche")):
             ttk.Label(torque_box, text=joint).grid(row=0, column=col, padx=4)
             ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7).grid(row=1, column=col, padx=4)
-        ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.recompute).grid(row=2, column=0, columnspan=3)
+        ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.recompute).grid(row=2, column=0, columnspan=2)
+        ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=2, column=2)
 
         plot_box = ttk.LabelFrame(controls, text="Resultats")
         plot_box.grid(row=0, column=8, columnspan=2, sticky="nsew", padx=6)
@@ -232,7 +237,11 @@ class SquatGui(tk.Tk):
         canvas.create_oval(projection[0] - 5, projection[1] - 5, projection[0] + 5, projection[1] + 5, fill="#2c9ab7", outline="")
 
         cop = self.world_to_canvas(canvas, (result.cop_x, 0.0), bounds)
-        force_end = self.world_to_canvas(canvas, (result.cop_x + result.ground_reaction[0] / 3500.0, result.ground_reaction[1] / 3500.0), bounds)
+        force_end = self.world_to_canvas(
+            canvas,
+            (result.cop_x + result.ground_reaction[0] / FORCE_DRAW_SCALE, result.ground_reaction[1] / FORCE_DRAW_SCALE),
+            bounds,
+        )
         canvas.create_line(cop[0], cop[1], force_end[0], force_end[1], arrow=tk.LAST, width=3, fill="#c15a2b")
         for joint in (pose.knee, pose.hip):
             projected = self.project_on_force_line(joint, (result.cop_x, 0.0), result.ground_reaction)
@@ -307,13 +316,26 @@ class SquatGui(tk.Tk):
         if not series:
             return
         all_values = [value for values in series.values() for value in values]
+        if choice in ("couples articulaires", "couples detailles") and self.show_torque_bounds_var.get():
+            for values in self.torque_bound_series().values():
+                all_values.extend(values)
+                all_values.extend([-value for value in values])
         ymin = min(all_values)
         ymax = max(all_values)
         if abs(ymax - ymin) < 1e-9:
             ymin -= 1.0
             ymax += 1.0
         self.draw_y_ticks(canvas, x0, y0, y1, ymin, ymax)
-        colors = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM": "#2a8ca6"}
+        self.draw_x_ticks(canvas, x0, x1, y0)
+        unit = self.plot_unit(choice)
+        canvas.create_text(x1, height - 12, text="temps (s)", anchor="e", fill="#506158", font=("Helvetica", 9))
+        canvas.create_text(x0 + 4, y1 - 12, text=f"y: {unit}", anchor="w", fill="#506158", font=("Helvetica", 9))
+        if choice == "couples detailles":
+            self.draw_detailed_torque_plot(canvas, series, x0, x1, y0, y1, ymin, ymax)
+            self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax)
+            canvas.create_text(16, 12, text=f"{choice} ({unit})", anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
+            return
+        colors = JOINT_COLORS
         palette = ["#2e7d54", "#b46d22", "#6d5ea8", "#2a8ca6", "#9b3d3d", "#4c6f3d", "#8a5a22"]
         for series_index, (name, values) in enumerate(series.items()):
             color = colors.get(name, palette[series_index % len(palette)])
@@ -324,7 +346,8 @@ class SquatGui(tk.Tk):
                 points.extend([x, y])
             if len(points) >= 4:
                 canvas.create_line(*points, fill=color, width=2)
-        canvas.create_text(16, 12, text=choice, anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
+        self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax)
+        canvas.create_text(16, 12, text=f"{choice} ({unit})", anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
         legend_x = x0
         for series_index, name in enumerate(series):
             color = colors.get(name, palette[series_index % len(palette)])
@@ -340,6 +363,105 @@ class SquatGui(tk.Tk):
             canvas.create_line(x0 - 4, y, x0, y, fill="#69746e")
             canvas.create_line(x0, y, canvas.winfo_width() - 18, y, fill="#edf0ec")
             canvas.create_text(x0 - 8, y, text=f"{value:.2g}", anchor="e", fill="#506158", font=("Helvetica", 9))
+
+    def draw_x_ticks(self, canvas: tk.Canvas, x0: float, x1: float, y0: float) -> None:
+        duration = max(0.1, self.duration_var.get())
+        for index in range(5):
+            fraction = index / 4
+            x = x0 + (x1 - x0) * fraction
+            value = duration * fraction
+            canvas.create_line(x, y0, x, y0 + 4, fill="#69746e")
+            canvas.create_text(x, y0 + 16, text=f"{value:.2g}", anchor="n", fill="#506158", font=("Helvetica", 9))
+
+    def plot_unit(self, choice: str) -> str:
+        if choice == "positions articulaires":
+            return "deg / m"
+        if choice == "vitesses articulaires":
+            return "deg/s / m/s"
+        if choice == "accelerations articulaires":
+            return "deg/s2 / m/s2"
+        if choice in ("couples articulaires", "couples detailles"):
+            return "Nm"
+        return "W"
+
+    def draw_torque_bounds(self, canvas: tk.Canvas, x0: float, x1: float, y0: float, y1: float, ymin: float, ymax: float) -> None:
+        if self.plot_choice.get() not in ("couples articulaires", "couples detailles") or not self.show_torque_bounds_var.get():
+            return
+        for joint, values in self.torque_bound_series().items():
+            color = JOINT_COLORS[joint]
+            for sign in (1.0, -1.0):
+                points = []
+                for index, value in enumerate(values):
+                    x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+                    y = y0 - (y0 - y1) * (sign * value - ymin) / (ymax - ymin)
+                    points.extend([x, y])
+                if len(points) >= 4:
+                    canvas.create_line(*points, fill=color, width=1, dash=(6, 5))
+
+    def draw_detailed_torque_plot(
+        self,
+        canvas: tk.Canvas,
+        series: dict[str, list[float]],
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+    ) -> None:
+        legend_x = x0
+        for joint in ("cheville", "genou", "hanche"):
+            if joint not in self.show_vars or not self.show_vars[joint].get():
+                continue
+            color = JOINT_COLORS[joint]
+            sum_values = series.get(f"{joint} somme", [])
+            contact_values = series.get(f"{joint} contact", [])
+            self.draw_series_line(canvas, sum_values, x0, x1, y0, y1, ymin, ymax, color, width=2)
+            self.draw_triangle_markers(canvas, contact_values, x0, x1, y0, y1, ymin, ymax, color)
+            canvas.create_line(legend_x, canvas.winfo_height() - 14, legend_x + 18, canvas.winfo_height() - 14, fill=color, width=3)
+            canvas.create_text(legend_x + 24, canvas.winfo_height() - 14, text=joint, anchor="w", fill="#22312a")
+            legend_x += 95
+
+    def draw_series_line(
+        self,
+        canvas: tk.Canvas,
+        values: list[float],
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+        color: str,
+        width: int,
+    ) -> None:
+        points = []
+        for index, value in enumerate(values):
+            x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+            y = y0 - (y0 - y1) * (value - ymin) / (ymax - ymin)
+            points.extend([x, y])
+        if len(points) >= 4:
+            canvas.create_line(*points, fill=color, width=width)
+
+    def draw_triangle_markers(
+        self,
+        canvas: tk.Canvas,
+        values: list[float],
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+        color: str,
+    ) -> None:
+        step = max(1, len(values) // 18)
+        for index, value in enumerate(values):
+            if index % step != 0 and index != len(values) - 1:
+                continue
+            x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+            y = y0 - (y0 - y1) * (value - ymin) / (ymax - ymin)
+            canvas.create_polygon(x, y - 5, x - 5, y + 5, x + 5, y + 5, fill=color, outline=color)
 
     def plot_series(self, choice: str) -> dict[str, list[float]]:
         selected = [name for name, var in self.show_vars.items() if var.get()]
@@ -371,8 +493,7 @@ class SquatGui(tk.Tk):
             values = {}
             for joint in ("cheville", "genou", "hanche"):
                 if joint in selected:
-                    values[f"{joint} Mqddot"] = [result.torque_components[joint]["Mqddot"] for result in self.results]
-                    values[f"{joint} NLeffects"] = [result.torque_components[joint]["NLeffects"] for result in self.results]
+                    values[f"{joint} somme"] = [result.torques[joint] for result in self.results]
                     values[f"{joint} contact"] = [result.torque_components[joint]["contact"] for result in self.results]
             return values
         else:
@@ -381,6 +502,22 @@ class SquatGui(tk.Tk):
             if name in values:
                 data[name] = values[name]
         return data
+
+    def torque_bound_series(self) -> dict[str, list[float]]:
+        bounds: dict[str, list[float]] = {}
+        max_torques = self.max_torques()
+        for joint in ("cheville", "genou", "hanche"):
+            values = []
+            for state in self.states:
+                joint_angle = {
+                    "cheville": abs(state.q[0]),
+                    "genou": abs(state.q[1] - state.q[0]),
+                    "hanche": abs(state.q[2] - state.q[1]),
+                }[joint]
+                eccentric_factor = 1.35 if state.phase == "excentrique" else 1.0
+                values.append(eccentric_factor * angle_adapted_max(max_torques[joint], joint_angle, self.angle_adapt_var.get()))
+            bounds[joint] = values
+        return bounds
 
     def com_velocity_series(self) -> list[float]:
         if len(self.states) < 2:
