@@ -485,6 +485,7 @@ class SquatGui(tk.Tk):
             ymax += 1.0
         self.draw_y_ticks(canvas, x0, y0, y1, ymin, ymax)
         self.draw_x_ticks(canvas, x0, x1, y0)
+        self.draw_time_markers(canvas, x0, x1, y0, y1)
         unit = self.plot_unit(choice)
         canvas.create_text(x1, height - 12, text="temps (s)", anchor="e", fill="#506158", font=("Helvetica", 9))
         canvas.create_text(x0 + 4, y1 - 12, text=f"y: {unit}", anchor="w", fill="#506158", font=("Helvetica", 9))
@@ -530,6 +531,16 @@ class SquatGui(tk.Tk):
             value = duration * fraction
             canvas.create_line(x, y0, x, y0 + 4, fill="#69746e")
             canvas.create_text(x, y0 + 16, text=self.format_axis_value(value), anchor="n", fill="#506158", font=("Helvetica", 9))
+
+    def draw_time_markers(self, canvas: tk.Canvas, x0: float, x1: float, y0: float, y1: float) -> None:
+        midpoint_x = x0 + 0.5 * (x1 - x0)
+        canvas.create_line(midpoint_x, y0, midpoint_x, y1, fill="#59645e", width=1, dash=(6, 5))
+        canvas.create_text(midpoint_x + 4, y1 + 4, text="milieu", anchor="nw", fill="#59645e", font=("Helvetica", 9))
+
+        frame = min(self.frame_count - 1, max(0, int(self.frame_var.get())))
+        fraction = frame / max(1, self.frame_count - 1)
+        animation_x = x0 + (x1 - x0) * fraction
+        canvas.create_line(animation_x, y0, animation_x, y1, fill="#c9332c", width=2)
 
     def format_axis_value(self, value: float) -> str:
         abs_value = abs(value)
