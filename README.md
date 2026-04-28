@@ -65,12 +65,12 @@ Le GUI detecte automatiquement `CalcZeroMomentPoint`. Si la fonction existe, le 
 Le checkbox `max-angle` applique une modulation normalisee du couple maximal disponible selon l'angle articulaire:
 
 ```text
-max_angle = max_saisi * (0.55 + 0.45 * exp(-((angle - 0.75) / 0.75)^2))
+max_angle = max_saisi * max(0.05, cos(C2 * (angle - C3)))
 ```
 
-Cette courbe est un gabarit gaussien simple, pas encore un modele identifie par articulation. Elle est inspiree de l'idee physiologique et experimentale que le couple volontaire maximal varie avec l'angle articulaire et la vitesse. La reference principale est Anderson, Madigan et Nussbaum, "Maximum voluntary joint torque as a function of joint angle and angular velocity: model development and application to the lower limb", Journal of Biomechanics, 2007, doi: `10.1016/j.jbiomech.2007.03.022`, <https://pubmed.ncbi.nlm.nih.gov/17485097/>.
+Cette courbe utilise les coefficients actifs moyens 18-25 ans homme de Anderson, Madigan et Nussbaum, "Maximum voluntary joint torque as a function of joint angle and angular velocity: model development and application to the lower limb", Journal of Biomechanics, 2007, doi: `10.1016/j.jbiomech.2007.03.022`, <https://pubmed.ncbi.nlm.nih.gov/17485097/>.
 
-L'article rapporte des modeles couples angle-vitesse pour la hanche, le genou et la cheville, separes par direction d'effort, sexe et age. La version actuelle du GUI n'implemente pas encore leurs coefficients; elle fournit seulement une modulation qualitative pour visualiser l'effet d'une capacite maximale dependante de l'angle. La prochaine amelioration propre serait de remplacer ce gabarit par les coefficients publies pour les efforts pertinents au squat: flexion plantaire, extension genou et extension hanche.
+Les directions retenues sont celles utiles au squat: flexion plantaire cheville, extension genou et extension hanche. Les valeurs `C1` de l'article sont normalisees par poids du corps fois taille; elles servent a initialiser les couples max pour un homme de 70 kg et 1.70 m. Les valeurs `C2` et `C3` modulent ensuite le pic saisi par l'utilisateur selon l'angle. La vitesse angulaire et les couples passifs du modele complet d'Anderson ne sont pas encore utilises dans le GUI; le facteur excentrique reste celui demande dans l'interface.
 
 ## Modifier les images de segments
 

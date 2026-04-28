@@ -2,7 +2,14 @@ import math
 import unittest
 
 from squat_gui.anthropometry import Anthropometry
-from squat_gui.dynamics import _biorbd_native_cop_x, inverse_dynamics, simulate
+from squat_gui.dynamics import (
+    _biorbd_native_cop_x,
+    anderson_angle_factor,
+    anderson_reference_max_torques,
+    angle_adapted_max,
+    inverse_dynamics,
+    simulate,
+)
 from squat_gui.kinematics import MotionState, pose_from_angles
 
 
@@ -63,6 +70,14 @@ class DynamicsTests(unittest.TestCase):
                 eccentric_result.effort_ratios[joint],
                 concentric_result.effort_ratios[joint] / 1.35,
             )
+
+    def test_angle_adaptation_uses_anderson_coefficients(self) -> None:
+        reference = anderson_reference_max_torques(70.0, 1.70)
+
+        self.assertAlmostEqual(reference["cheville"], 110.86417825)
+        self.assertAlmostEqual(anderson_angle_factor("genou", 1.133), 1.0)
+        self.assertLess(anderson_angle_factor("genou", 0.0), 1.0)
+        self.assertAlmostEqual(angle_adapted_max(200.0, 1.133, True, "genou"), 200.0)
 
     def test_native_biorbd_zmp_uses_ground_plane_normal(self) -> None:
         class ArrayResult:

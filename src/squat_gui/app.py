@@ -13,7 +13,7 @@ from tkinter import ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends, write_biomod_file
-from .dynamics import DynamicsResult, angle_adapted_max, simulate
+from .dynamics import DynamicsResult, anderson_reference_max_torques, angle_adapted_max, simulate
 from .kinematics import MotionState, pose_from_angles
 from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
@@ -67,10 +67,11 @@ class SquatGui(tk.Tk):
         }
         self.quantity_controls: list[tk.Widget] = []
         self.com_controls: list[tk.Widget] = []
+        reference_torques = anderson_reference_max_torques(70.0, 1.70)
         self.max_torque_vars = {
-            "cheville": tk.DoubleVar(value=180.0),
-            "genou": tk.DoubleVar(value=220.0),
-            "hanche": tk.DoubleVar(value=260.0),
+            "cheville": tk.DoubleVar(value=round(reference_torques["cheville"])),
+            "genou": tk.DoubleVar(value=round(reference_torques["genou"])),
+            "hanche": tk.DoubleVar(value=round(reference_torques["hanche"])),
         }
         self.show_torque_bounds_var = tk.BooleanVar(value=True)
         self.show_sprite_centers_var = tk.BooleanVar(value=False)
@@ -361,8 +362,39 @@ class SquatGui(tk.Tk):
         else:
             canvas.configure(highlightbackground="#587a5f")
         self.draw_skeleton(canvas, state, result, with_handles=True)
+        self.draw_squat_angle_labels(canvas, state)
         canvas.create_text(16, 16, text="Position de squat", anchor="nw", fill="#22312a", font=("Helvetica", 13, "bold"))
         canvas.create_text(16, 38, text="Glisser genou, hanche ou epaules", anchor="nw", fill="#506158")
+
+    def draw_squat_angle_labels(self, canvas: tk.Canvas, state: MotionState) -> None:
+        pose = state.pose
+        bounds = self.scene_bounds()
+        labels = (
+            ("cheville", degrees(state.q[0]), pose.ankle, (12, -24)),
+            ("genou", degrees(state.q[1] - state.q[0]), pose.knee, (12, -24)),
+            ("hanche", degrees(state.q[2] - state.q[1]), pose.hip, (12, 22)),
+        )
+        for name, value, point, offset in labels:
+            x, y = self.world_to_canvas(canvas, point, bounds)
+            item = canvas.create_text(
+                x + offset[0],
+                y + offset[1],
+                text=f"{name}: {value:.0f} deg",
+                anchor="w",
+                fill="#22312a",
+                font=("Helvetica", 9, "bold"),
+            )
+            bbox = canvas.bbox(item)
+            if bbox is not None:
+                background = canvas.create_rectangle(
+                    bbox[0] - 3,
+                    bbox[1] - 2,
+                    bbox[2] + 3,
+                    bbox[3] + 2,
+                    fill="#fbfcf9",
+                    outline="#c9d1c7",
+                )
+                canvas.tag_lower(background, item)
 
     def draw_animation(self, frame: int) -> None:
         canvas = self.animation_canvas
@@ -626,7 +658,7 @@ class SquatGui(tk.Tk):
                     "hanche": abs(state.q[2] - state.q[1]),
                 }[joint]
                 eccentric_factor = 1.35 if state.phase == "excentrique" else 1.0
-                values.append(eccentric_factor * angle_adapted_max(max_torques[joint], joint_angle, self.angle_adapt_var.get()))
+                values.append(eccentric_factor * angle_adapted_max(max_torques[joint], joint_angle, self.angle_adapt_var.get(), joint))
             bounds[joint] = values
         return bounds
 

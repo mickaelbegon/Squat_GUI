@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from math import exp
+from math import cos
 from typing import Any
 
 from .anthropometry import Anthropometry
@@ -21,6 +21,20 @@ from .kinematics import (
 
 
 GRAVITY = 9.80665
+
+
+@dataclass(frozen=True)
+class AndersonTorqueParameters:
+    c1: float
+    c2: float
+    c3: float
+
+
+ANDERSON_2007_YOUNG_MALE = {
+    "cheville": AndersonTorqueParameters(c1=0.095, c2=1.391, c3=0.408),  # ankle plantar flexion
+    "genou": AndersonTorqueParameters(c1=0.163, c2=1.258, c3=1.133),  # knee extension
+    "hanche": AndersonTorqueParameters(c1=0.161, c2=0.958, c3=0.932),  # hip extension
+}
 
 
 @dataclass(frozen=True)
@@ -170,10 +184,25 @@ def _contact_moments(state: MotionState, reaction: Vector, cop_x: float) -> dict
     }
 
 
-def angle_adapted_max(base_max: float, angle: float, enabled: bool) -> float:
+def anderson_reference_max_torques(body_mass: float, height: float) -> dict[str, float]:
+    body_weight_height = body_mass * GRAVITY * height
+    return {
+        joint: params.c1 * body_weight_height
+        for joint, params in ANDERSON_2007_YOUNG_MALE.items()
+    }
+
+
+def anderson_angle_factor(joint: str, angle: float) -> float:
+    params = ANDERSON_2007_YOUNG_MALE[joint]
+    return max(0.05, cos(params.c2 * (angle - params.c3)))
+
+
+def angle_adapted_max(base_max: float, angle: float, enabled: bool, joint: str | None = None) -> float:
     if not enabled:
         return base_max
-    return base_max * (0.55 + 0.45 * exp(-((angle - 0.75) / 0.75) ** 2))
+    if joint is None:
+        return base_max
+    return base_max * anderson_angle_factor(joint, angle)
 
 
 def inverse_dynamics(
@@ -237,7 +266,12 @@ def inverse_dynamics(
         eccentric_factor = 1.35 if state.phase == "excentrique" else 1.0
         adjusted = max(
             1.0,
-            eccentric_factor * angle_adapted_max(max_torques[joint], joint_angles[joint], adapt_max_by_angle),
+            eccentric_factor * angle_adapted_max(
+                max_torques[joint],
+                joint_angles[joint],
+                adapt_max_by_angle,
+                joint,
+            ),
         )
         effort_ratios[joint] = abs(torque) / adjusted
     return DynamicsResult(
