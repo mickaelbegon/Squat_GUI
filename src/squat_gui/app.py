@@ -109,7 +109,7 @@ class SquatGui(tk.Tk):
         self._add_scale(controls, "Tibia (%)", self.shank_var, -5, 5, 2.5, 1)
         self._add_scale(controls, "Cuisse (%)", self.thigh_var, -5, 5, 2.5, 2)
         self._add_scale(controls, "Tronc (%)", self.trunk_var, -5, 5, 2.5, 3)
-        self._add_scale(controls, "Duree (s)", self.duration_var, 0.4, 3.0, 0.1, 4)
+        self._add_scale(controls, "Duree phase (s)", self.duration_var, 0.4, 3.0, 0.1, 4)
 
         torque_box = ttk.LabelFrame(controls, text="Couples max")
         torque_box.grid(row=0, column=5, columnspan=3, sticky="nsew", padx=6)
@@ -225,6 +225,9 @@ class SquatGui(tk.Tk):
     def max_torques(self) -> dict[str, float]:
         return {joint: max(1.0, var.get()) for joint, var in self.max_torque_vars.items()}
 
+    def total_motion_duration(self) -> float:
+        return 2.0 * max(0.1, self.duration_var.get())
+
     def apply_torque_preset(self) -> None:
         preset = torque_presets(70.0, 1.70)[self.torque_preset_var.get()]
         for joint, torque in preset.torques.items():
@@ -236,7 +239,7 @@ class SquatGui(tk.Tk):
         self.states, self.results = simulate(
             anthro,
             self.final_q,
-            max(0.1, self.duration_var.get()),
+            self.total_motion_duration(),
             self.frame_count,
             self.max_torques(),
             self.angle_adapt_var.get(),
@@ -394,7 +397,7 @@ class SquatGui(tk.Tk):
         canvas.delete("all")
         anthro = self.anthro()
         pose = pose_from_angles(anthro, self.final_q)
-        state = MotionState(self.duration_var.get(), self.final_q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), pose)
+        state = MotionState(self.total_motion_duration() / 2.0, self.final_q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), pose)
         result = self.results[len(self.results) // 2]
         if pose.com[0] < pose.heel[0] or pose.com[0] > pose.toe[0]:
             canvas.configure(highlightbackground="#c9332c")
@@ -520,7 +523,7 @@ class SquatGui(tk.Tk):
             canvas.create_text(x0 - 8, y, text=self.format_axis_value(value), anchor="e", fill="#506158", font=("Helvetica", 9))
 
     def draw_x_ticks(self, canvas: tk.Canvas, x0: float, x1: float, y0: float) -> None:
-        duration = max(0.1, self.duration_var.get())
+        duration = self.total_motion_duration()
         for index in range(5):
             fraction = index / 4
             x = x0 + (x1 - x0) * fraction
