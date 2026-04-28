@@ -21,11 +21,11 @@ class SpriteSpec:
     proximal_anchor: tuple[float, float]
 
 
-SPRITES = {
-    "foot": SpriteSpec("pied.png", (84.9, 66.6), (281.0, 130.0)),
-    "shank": SpriteSpec("jambe.png", (88.4, 542.2), (88.6, 74.7)),
-    "thigh": SpriteSpec("cuisse.png", (123.5, 573.7), (136.8, 81.3)),
-    "trunk": SpriteSpec("tronc.png", (206.6, 791.3), (214.0, 315.2)),
+SPRITE_FILES = {
+    "foot": "pied.png",
+    "shank": "jambe.png",
+    "thigh": "cuisse.png",
+    "trunk": "tronc.png",
 }
 
 
@@ -37,6 +37,108 @@ def pillow_available() -> bool:
         return True
     except Exception:
         return False
+
+
+def _is_dark(pixel: tuple[int, int, int]) -> bool:
+    return pixel[0] < 65 and pixel[1] < 65 and pixel[2] < 65
+
+
+def _is_foreground(pixel: tuple[int, int, int]) -> bool:
+    return pixel[0] < 245 or pixel[1] < 245 or pixel[2] < 245
+
+
+def _component_centers(image) -> list[tuple[float, float]]:
+    width, height = image.size
+    pixels = image.load()
+    dark = bytearray(width * height)
+    for y in range(height):
+        row = y * width
+        for x in range(width):
+            dark[row + x] = 1 if _is_dark(pixels[x, y]) else 0
+
+    seen = bytearray(width * height)
+    centers: list[tuple[float, float]] = []
+    for start in range(width * height):
+        if not dark[start] or seen[start]:
+            continue
+        stack = [start]
+        seen[start] = 1
+        count = 0
+        sum_x = 0
+        sum_y = 0
+        min_x = width
+        max_x = -1
+        min_y = height
+        max_y = -1
+        while stack:
+            index = stack.pop()
+            y, x = divmod(index, width)
+            count += 1
+            sum_x += x
+            sum_y += y
+            min_x = min(min_x, x)
+            max_x = max(max_x, x)
+            min_y = min(min_y, y)
+            max_y = max(max_y, y)
+            for ny in range(max(0, y - 1), min(height, y + 2)):
+                row = ny * width
+                for nx in range(max(0, x - 1), min(width, x + 2)):
+                    neighbor = row + nx
+                    if dark[neighbor] and not seen[neighbor]:
+                        seen[neighbor] = 1
+                        stack.append(neighbor)
+
+        box_width = max_x - min_x + 1
+        box_height = max_y - min_y + 1
+        fill_ratio = count / (box_width * box_height)
+        round_dot = (
+            150 <= count <= 500
+            and 12 <= box_width <= 30
+            and 12 <= box_height <= 30
+            and abs(box_width - box_height) <= 5
+            and 0.45 <= fill_ratio <= 0.95
+        )
+        if round_dot:
+            centers.append((sum_x / count, sum_y / count))
+    return sorted(centers, key=lambda center: (center[1], center[0]))
+
+
+def _toe_anchor_from_silhouette(image) -> tuple[float, float]:
+    width, height = image.size
+    pixels = image.load()
+    rightmost = 0
+    y_values: list[int] = []
+    for y in range(height):
+        for x in range(width):
+            if _is_foreground(pixels[x, y]):
+                if x > rightmost:
+                    rightmost = x
+                    y_values = [y]
+                elif x >= rightmost - 2:
+                    y_values.append(y)
+    if not y_values:
+        raise ValueError("No foreground pixels found for foot sprite")
+    y_values.sort()
+    return (float(rightmost), float(y_values[len(y_values) // 2]))
+
+
+@lru_cache(maxsize=4)
+def sprite_spec(name: str) -> SpriteSpec:
+    from PIL import Image
+
+    filename = SPRITE_FILES[name]
+    image = Image.open(ASSET_DIR / filename).convert("RGB")
+    centers = _component_centers(image)
+    if name == "foot":
+        if len(centers) != 1:
+            raise ValueError(f"Expected one rotation target in {filename}, found {len(centers)}")
+        return SpriteSpec(filename, centers[0], _toe_anchor_from_silhouette(image))
+
+    if len(centers) < 2:
+        raise ValueError(f"Expected two rotation targets in {filename}, found {len(centers)}")
+    proximal = centers[0]
+    distal = centers[-1]
+    return SpriteSpec(filename, distal, proximal)
 
 
 @lru_cache(maxsize=4)
@@ -98,7 +200,7 @@ def draw_sprite_segment(
 ) -> bool:
     if not pillow_available():
         return False
-    spec = SPRITES[name]
+    spec = sprite_spec(name)
     distal_px = world_to_canvas(distal_world)
     proximal_px = world_to_canvas(proximal_world)
     target_vector = (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1])
