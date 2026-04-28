@@ -38,10 +38,11 @@ class SquatGui(tk.Tk):
         self.geometry("1320x820")
         self.configure(bg="#f2f4f1")
 
-        self.final_q = (radians(22.0), radians(-58.0), radians(-18.0))
+        self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
         self.frame_count = 81
         self.playing = False
         self.drag_target: str | None = None
+        self._redraw_pending = False
         self.states: list[MotionState] = []
         self.results: list[DynamicsResult] = []
         self.saved_condition_count = 0
@@ -168,6 +169,7 @@ class SquatGui(tk.Tk):
 
         self.pose_canvas = tk.Canvas(root, bg="#fbfcf9", highlightthickness=2, highlightbackground="#7f8f83")
         self.pose_canvas.grid(row=1, column=1, sticky="nsew", padx=(0, 8))
+        self.pose_canvas.bind("<Configure>", self.schedule_redraw)
         self.pose_canvas.bind("<ButtonPress-1>", self.on_pose_press)
         self.pose_canvas.bind("<B1-Motion>", self.on_pose_drag)
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
@@ -178,6 +180,7 @@ class SquatGui(tk.Tk):
         right.columnconfigure(0, weight=1)
         self.animation_canvas = tk.Canvas(right, bg="#fbfcf9", highlightthickness=1, highlightbackground="#c9d1c7")
         self.animation_canvas.grid(row=0, column=0, sticky="nsew")
+        self.animation_canvas.bind("<Configure>", self.schedule_redraw)
 
         playback = ttk.Frame(right)
         playback.grid(row=1, column=0, sticky="ew", pady=(8, 0))
@@ -189,6 +192,7 @@ class SquatGui(tk.Tk):
 
         self.plot_canvas = tk.Canvas(root, bg="#ffffff", highlightthickness=1, highlightbackground="#c9d1c7")
         self.plot_canvas.grid(row=2, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+        self.plot_canvas.bind("<Configure>", self.schedule_redraw)
 
         ttk.Label(root, textvariable=self.status_var).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
 
@@ -239,13 +243,34 @@ class SquatGui(tk.Tk):
             self.model_cache,
         )
         if self.results and self.results[0].backend == "biorbd":
-            self.status_var.set(f"biorbd actif: {self.model_cache.cached_path_for(anthro)}")
+            model = self.model_cache.model_for(anthro)
+            cop_source = "ZMP biorbd" if hasattr(model, "CalcZeroMomentPoint") else "CoP fallback"
+            self.status_var.set(f"biorbd actif ({cop_source}): {self.model_cache.cached_path_for(anthro)}")
         elif self.results:
             self.status_var.set("backend analytique actif: biorbd indisponible ou modele non charge")
         self.redraw()
 
+    def canvases_ready(self) -> bool:
+        return all(
+            canvas.winfo_width() > 80 and canvas.winfo_height() > 80
+            for canvas in (self.pose_canvas, self.animation_canvas, self.plot_canvas)
+        )
+
+    def schedule_redraw(self, _event: tk.Event | None = None) -> None:
+        if self._redraw_pending:
+            return
+        self._redraw_pending = True
+        self.after(40, self.flush_scheduled_redraw)
+
+    def flush_scheduled_redraw(self) -> None:
+        self._redraw_pending = False
+        self.redraw()
+
     def redraw(self) -> None:
         if not self.states:
+            return
+        if not self.canvases_ready():
+            self.schedule_redraw()
             return
         frame = min(self.frame_count - 1, max(0, int(self.frame_var.get())))
         self.draw_pose_editor()
