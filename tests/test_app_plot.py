@@ -52,6 +52,27 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(list(gui.plot_series("centre de masse")), ["CoM x"])
         self.assertEqual(gui.plot_unit("centre de masse"), "m/s")
 
+    def test_normalized_torque_series_uses_effort_ratios(self):
+        gui = self.gui_without_tk()
+
+        self.assertIn("couples normalises", PLOT_CHOICES)
+        series = gui.plot_series("couples normalises")
+
+        self.assertEqual(list(series), ["cheville", "genou", "hanche"])
+        self.assertEqual(gui.plot_unit("couples normalises"), "% max")
+        self.assertAlmostEqual(series["cheville"][0], 100.0 * gui.results[0].effort_ratios["cheville"])
+
+    def test_detailed_torque_series_include_all_components(self):
+        gui = self.gui_without_tk()
+
+        series = gui.plot_series("couples detailles")
+
+        self.assertIn("cheville somme", series)
+        self.assertIn("cheville Mqddot", series)
+        self.assertIn("cheville NLeffects", series)
+        self.assertIn("cheville contact", series)
+        self.assertEqual(len(series["cheville somme"]), len(gui.results))
+
     def test_biomechanical_alerts_report_cop_and_torque_problems(self):
         gui = self.gui_without_tk()
         state = gui.states[0]
