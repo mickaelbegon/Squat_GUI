@@ -14,22 +14,363 @@ Premiere interface graphique 2D pour explorer un squat avec:
 
 Le code contient aussi un backend optionnel pour brancher `biobuddy` et `biorbd`. Si ces paquets ne sont pas installes, l'application reste executable avec le solveur analytique pur Python.
 
-## Lancer
+## Installation de A a Z
 
-```bash
-PYTHONPATH=src python3 -m squat_gui
+Cette section est volontairement tres detaillee. L'objectif est qu'une personne qui n'a jamais installe Python puisse lancer le GUI.
+
+Il y a deux niveaux possibles:
+
+- installation simple: le GUI se lance, avec le solveur analytique Python et les images de segments;
+- installation complete biorbd: le GUI utilise `biorbd` pour la dynamique inverse, le CoM, et le ZMP si la version installee expose `CalcZeroMomentPoint`.
+
+### 0. Vocabulaire minimal
+
+- `Terminal` sur macOS et `Anaconda Prompt` sur Windows sont les fenetres ou on tape les commandes.
+- `conda` sert a creer un environnement Python propre, separe du reste de l'ordinateur.
+- `squat-gui` sera le nom de l'environnement conda.
+- Quand une commande commence par `conda activate squat-gui`, il faut voir quelque chose comme `(squat-gui)` au debut de la ligne suivante.
+- Ne pas taper les signes `$` ou `>` si vous les voyez dans un tutoriel; ici les blocs de code contiennent seulement les commandes a copier.
+
+### 1. Installer Conda
+
+Le plus simple est d'installer Miniconda. C'est la version legere de conda, recommandee pour ce type de projet. Documentation officielle: <https://www.anaconda.com/docs/getting-started/miniconda/install>.
+
+#### Windows
+
+1. Aller sur <https://www.anaconda.com/docs/getting-started/miniconda/install>.
+2. Telecharger l'installateur Miniconda Windows 64-bit.
+3. Double-cliquer sur le fichier `.exe`.
+4. Choisir `Install Just for Me` si l'installateur pose la question.
+5. Garder le dossier propose par defaut, par exemple `C:\Users\votre_nom\miniconda3`.
+6. Laisser coche `Register Miniconda3 as my default Python`.
+7. Finir l'installation.
+8. Ouvrir le menu Demarrer et chercher `Anaconda Prompt`.
+9. Dans `Anaconda Prompt`, verifier:
+
+```bat
+conda --version
 ```
 
-Avec l'environnement biomecanique local qui contient `biobuddy` et `biorbd`:
+Si une version s'affiche, conda est installe.
+
+#### macOS / OS X
+
+Sur macOS recent, ouvrir `Terminal` avec `Cmd + Espace`, taper `Terminal`, puis `Entree`.
+
+Pour Mac Apple Silicon (M1/M2/M3/M4), copier ces commandes une par une:
+
+```bash
+mkdir -p ~/miniconda3
+curl https://repo.anaconda.com/miniconda/Miniconda3-latest-MacOSX-arm64.sh -o ~/miniconda3/miniconda.sh
+bash ~/miniconda3/miniconda.sh -b -u -p ~/miniconda3
+rm ~/miniconda3/miniconda.sh
+~/miniconda3/bin/conda init zsh
+```
+
+Fermer puis rouvrir `Terminal`, puis verifier:
+
+```bash
+conda --version
+```
+
+Pour Mac Intel ancien, utiliser plutot Miniforge ou un installateur Intel disponible dans les archives Miniconda, car Anaconda a arrete les nouveaux builds Intel macOS apres 2025. La documentation conda mentionne Miniforge comme distribution conda compatible conda-forge: <https://docs.conda.io/en/main/>.
+
+### 2. Recuperer le dossier du projet
+
+Si le projet est fourni en dossier ou en `.zip`, placer le dossier `Squat_GUI` dans `Documents`.
+
+Si le projet est disponible via Git, installer Git puis cloner le depot. Exemple, a adapter avec la vraie URL du depot:
+
+Windows:
+
+```bat
+cd /d %USERPROFILE%\Documents
+git clone URL_DU_DEPOT Squat_GUI
+cd Squat_GUI
+```
+
+macOS:
+
+```bash
+cd ~/Documents
+git clone URL_DU_DEPOT Squat_GUI
+cd Squat_GUI
+```
+
+Si le dossier existe deja:
+
+Windows:
+
+```bat
+cd /d %USERPROFILE%\Documents\Squat_GUI
+```
+
+macOS:
+
+```bash
+cd ~/Documents/Squat_GUI
+```
+
+### 3. Creer l'environnement conda
+
+Dans `Anaconda Prompt` sur Windows, ou dans `Terminal` sur macOS:
+
+```bash
+conda create -n squat-gui python=3.11 -y
+conda activate squat-gui
+```
+
+Verifier que le debut de la ligne contient `(squat-gui)`.
+
+Installer les paquets de base:
+
+```bash
+conda install -c conda-forge numpy pillow tk git -y
+python -m pip install -e .
+```
+
+`pillow` sert a afficher les images de segments. Si Pillow manque, le GUI peut revenir aux formes vectorielles, mais l'animation est moins jolie.
+
+### 4. Lancer le GUI en mode simple
+
+Toujours depuis le dossier `Squat_GUI`, avec l'environnement active:
+
+```bash
+python -m squat_gui
+```
+
+Le GUI doit s'ouvrir. Si la barre du bas indique que `biorbd` manque, ce n'est pas bloquant: l'application utilise alors le backend analytique Python.
+
+Pour relancer plus tard:
+
+Windows:
+
+```bat
+cd /d %USERPROFILE%\Documents\Squat_GUI
+conda activate squat-gui
+python -m squat_gui
+```
+
+macOS:
+
+```bash
+cd ~/Documents/Squat_GUI
+conda activate squat-gui
+python -m squat_gui
+```
+
+### 5. Tester que l'installation simple est correcte
+
+```bash
+python -m unittest discover -s tests
+```
+
+On veut voir `OK` a la fin. Certains warnings SWIG peuvent apparaitre si `biorbd` est installe; ce n'est pas grave.
+
+### 6. Installer biorbd sans compiler
+
+Cette etape donne le backend `biorbd` standard depuis conda-forge. Documentation du paquet: <https://anaconda.org/conda-forge/biorbd>.
+
+```bash
+conda activate squat-gui
+conda install -c conda-forge biorbd -y
+```
+
+Relancer:
+
+```bash
+python -m squat_gui
+```
+
+Si tout va bien, la barre du bas indique `biorbd actif`. Si elle indique encore le backend analytique, verifier que vous avez bien lance le GUI dans l'environnement `(squat-gui)`.
+
+Important: selon la version installee, `biorbd` peut ne pas encore exposer `CalcZeroMomentPoint`. Dans ce cas, le GUI utilise quand meme `biorbd` pour la dynamique, mais garde un fallback analytique pour le centre de pression.
+
+### 7. Installation complete avec ZMP biorbd
+
+Pour que la barre du bas indique `biorbd actif (ZMP biorbd)`, il faut une version de `biorbd` qui expose `Model.CalcZeroMomentPoint(...)`. Une PR a ete preparee ici: <https://github.com/pyomeca/biorbd/pull/383>.
+
+Si cette PR a ete fusionnee et publiee sur conda-forge, refaire simplement:
+
+```bash
+conda install -c conda-forge biorbd -y
+```
+
+Puis verifier:
+
+```bash
+python -c "import biorbd; m=biorbd.Model(); print(hasattr(m, 'CalcZeroMomentPoint'))"
+```
+
+Si la commande affiche `True`, c'est bon.
+
+Si la commande affiche `False`, il faut compiler la branche de la PR.
+
+#### macOS: compiler biorbd avec la PR ZMP
+
+Installer d'abord les outils Apple:
+
+```bash
+xcode-select --install
+```
+
+Si macOS repond que les outils sont deja installes, c'est bon.
+
+Installer les outils de compilation dans l'environnement:
+
+```bash
+conda activate squat-gui
+conda install -c conda-forge cmake ninja "swig=4.3.1" eigen tinyxml2 rbdl ipopt numpy scipy -y
+```
+
+Recuperer biorbd:
+
+```bash
+mkdir -p ~/Documents/GIT
+cd ~/Documents/GIT
+git clone https://github.com/pyomeca/biorbd.git
+cd biorbd
+git fetch origin pull/383/head:codex/calc-zero-moment-point
+git checkout codex/calc-zero-moment-point
+```
+
+Configurer, compiler et installer dans l'environnement actif:
+
+```bash
+PATH="$CONDA_PREFIX/bin:$PATH" cmake -S . -B build-squat -G Ninja \
+  -DCMAKE_PREFIX_PATH="$CONDA_PREFIX" \
+  -DCMAKE_INSTALL_PREFIX="$CONDA_PREFIX" \
+  -DMATH_LIBRARY_BACKEND=Eigen3 \
+  -DBINDER_PYTHON3=ON \
+  -DBUILD_EXAMPLE=OFF \
+  -DBUILD_TESTS=OFF \
+  -DSWIG_EXECUTABLE="$CONDA_PREFIX/bin/swig" \
+  -DSWIG_DIR="$CONDA_PREFIX/share/swig/4.3.1" \
+  -DPython3_EXECUTABLE="$CONDA_PREFIX/bin/python" \
+  -DPython3_ROOT_DIR="$CONDA_PREFIX" \
+  -DPython3_NumPy_INCLUDE_DIRS="$(python -c 'import numpy; print(numpy.get_include())')" \
+  -DPython3_SITELIB_INSTALL="$CONDA_PREFIX/lib/python3.11/site-packages"
+
+cmake --build build-squat --target install
+```
+
+Verifier:
+
+```bash
+python -c "import biorbd; m=biorbd.Model(); print(biorbd.__version__); print(hasattr(m, 'CalcZeroMomentPoint'))"
+```
+
+On veut `True` sur la deuxieme ligne.
+
+#### Windows: compiler biorbd avec la PR ZMP
+
+Installer d'abord:
+
+1. Git for Windows: <https://git-scm.com/download/win>.
+2. Visual Studio Build Tools 2022: <https://visualstudio.microsoft.com/visual-cpp-build-tools/>.
+3. Dans l'installateur Visual Studio, cocher `Desktop development with C++`, puis installer.
+4. Redemarrer Windows si l'installateur le demande.
+
+Ouvrir `Anaconda Prompt`, puis:
+
+```bat
+conda activate squat-gui
+conda install -c conda-forge cmake ninja swig=4.3.1 eigen tinyxml2 rbdl ipopt numpy scipy -y
+```
+
+Recuperer biorbd:
+
+```bat
+cd /d %USERPROFILE%\Documents
+mkdir GIT
+cd GIT
+git clone https://github.com/pyomeca/biorbd.git
+cd biorbd
+git fetch origin pull/383/head:codex/calc-zero-moment-point
+git checkout codex/calc-zero-moment-point
+```
+
+Configurer, compiler et installer:
+
+```bat
+cmake -S . -B build-squat -G Ninja ^
+  -DCMAKE_PREFIX_PATH="%CONDA_PREFIX%" ^
+  -DCMAKE_INSTALL_PREFIX="%CONDA_PREFIX%" ^
+  -DMATH_LIBRARY_BACKEND=Eigen3 ^
+  -DBINDER_PYTHON3=ON ^
+  -DBUILD_EXAMPLE=OFF ^
+  -DBUILD_TESTS=OFF ^
+  -DSWIG_EXECUTABLE="%CONDA_PREFIX%\Library\bin\swig.exe" ^
+  -DPython3_EXECUTABLE="%CONDA_PREFIX%\python.exe" ^
+  -DPython3_ROOT_DIR="%CONDA_PREFIX%" ^
+  -DPython3_SITELIB_INSTALL="%CONDA_PREFIX%\Lib\site-packages"
+
+cmake --build build-squat --target install
+```
+
+Verifier:
+
+```bat
+python -c "import biorbd; m=biorbd.Model(); print(biorbd.__version__); print(hasattr(m, 'CalcZeroMomentPoint'))"
+```
+
+On veut `True` sur la deuxieme ligne.
+
+### 8. Lancer apres installation complete
+
+Retourner au projet:
+
+Windows:
+
+```bat
+cd /d %USERPROFILE%\Documents\Squat_GUI
+conda activate squat-gui
+python -m squat_gui
+```
+
+macOS:
+
+```bash
+cd ~/Documents/Squat_GUI
+conda activate squat-gui
+python -m squat_gui
+```
+
+La barre du bas doit indiquer:
+
+```text
+biorbd actif (ZMP biorbd): ...
+```
+
+### 9. Problemes frequents
+
+- `conda n'est pas reconnu`: fermer puis rouvrir `Anaconda Prompt` ou `Terminal`. Sur macOS, lancer `~/miniconda3/bin/conda init zsh`, fermer puis rouvrir.
+- `No module named squat_gui`: vous n'etes probablement pas dans le dossier `Squat_GUI`, ou `python -m pip install -e .` n'a pas ete lance.
+- `No module named PIL`: lancer `conda install -c conda-forge pillow -y`.
+- `No module named biorbd`: lancer `conda install -c conda-forge biorbd -y`, ou continuer avec le backend analytique.
+- `Could NOT find SWIG`: verifier `swig=4.3.1`, puis relancer la commande CMake avec `-DSWIG_EXECUTABLE=...`.
+- `hasattr(m, 'CalcZeroMomentPoint')` affiche `False`: la version installee de `biorbd` ne contient pas encore la PR ZMP; compiler la branche PR ou attendre la release conda-forge.
+- Le GUI s'ouvre mais les images sont moches ou absentes: installer Pillow, puis relancer.
+- Le GUI ne s'ouvre pas sur macOS a cause de Tk: verifier que vous utilisez le Python de l'environnement conda et que `tk` est installe avec `conda install -c conda-forge tk -y`.
+
+## Lancer rapidement sur cette machine
+
+Depuis ce dossier, si l'environnement local `vitpose-ekf` existe deja:
 
 ```bash
 PYTHONPATH=src /Users/mickaelbegon/miniconda3/envs/vitpose-ekf/bin/python -m squat_gui
 ```
 
+Sinon, apres `python -m pip install -e .` dans l'environnement conda actif:
+
+```bash
+python -m squat_gui
+```
+
 ## Tests
 
 ```bash
-PYTHONPATH=src python3 -m unittest discover -s tests
+python -m unittest discover -s tests
 ```
 
 ## Backend biorbd et centre de pression
