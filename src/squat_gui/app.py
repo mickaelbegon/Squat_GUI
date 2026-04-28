@@ -13,7 +13,7 @@ from tkinter import ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends, write_biomod_file
-from .dynamics import DynamicsResult, anderson_reference_max_torques, angle_adapted_max, simulate
+from .dynamics import DynamicsResult, angle_adapted_max, simulate, torque_presets
 from .kinematics import MotionState, pose_from_angles
 from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
@@ -67,7 +67,8 @@ class SquatGui(tk.Tk):
         }
         self.quantity_controls: list[tk.Widget] = []
         self.com_controls: list[tk.Widget] = []
-        reference_torques = anderson_reference_max_torques(70.0, 1.70)
+        self.torque_preset_var = tk.StringVar(value="Anderson actif x2")
+        reference_torques = torque_presets(70.0, 1.70)[self.torque_preset_var.get()].torques
         self.max_torque_vars = {
             "cheville": tk.DoubleVar(value=round(reference_torques["cheville"])),
             "genou": tk.DoubleVar(value=round(reference_torques["genou"])),
@@ -114,8 +115,15 @@ class SquatGui(tk.Tk):
         for col, joint in enumerate(("cheville", "genou", "hanche")):
             ttk.Label(torque_box, text=joint).grid(row=0, column=col, padx=4)
             ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7).grid(row=1, column=col, padx=4)
-        ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.recompute).grid(row=2, column=0, columnspan=2)
-        ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=2, column=2)
+        ttk.OptionMenu(
+            torque_box,
+            self.torque_preset_var,
+            self.torque_preset_var.get(),
+            *torque_presets(70.0, 1.70),
+            command=lambda _value: self.apply_torque_preset(),
+        ).grid(row=2, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
+        ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.recompute).grid(row=3, column=0, columnspan=2)
+        ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=3, column=2)
 
         plot_box = ttk.LabelFrame(controls, text="Resultats")
         plot_box.grid(row=0, column=8, columnspan=2, sticky="nsew", padx=6)
@@ -212,6 +220,12 @@ class SquatGui(tk.Tk):
 
     def max_torques(self) -> dict[str, float]:
         return {joint: max(1.0, var.get()) for joint, var in self.max_torque_vars.items()}
+
+    def apply_torque_preset(self) -> None:
+        preset = torque_presets(70.0, 1.70)[self.torque_preset_var.get()]
+        for joint, torque in preset.torques.items():
+            self.max_torque_vars[joint].set(round(torque))
+        self.recompute()
 
     def recompute(self) -> None:
         anthro = self.anthro()

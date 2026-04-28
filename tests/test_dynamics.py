@@ -4,11 +4,13 @@ import unittest
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.dynamics import (
     _biorbd_native_cop_x,
+    athlete_reference_max_torques,
     anderson_angle_factor,
     anderson_reference_max_torques,
     angle_adapted_max,
     inverse_dynamics,
     simulate,
+    torque_presets,
 )
 from squat_gui.kinematics import MotionState, pose_from_angles
 
@@ -74,10 +76,20 @@ class DynamicsTests(unittest.TestCase):
     def test_angle_adaptation_uses_anderson_coefficients(self) -> None:
         reference = anderson_reference_max_torques(70.0, 1.70)
 
-        self.assertAlmostEqual(reference["cheville"], 110.86417825)
+        self.assertAlmostEqual(reference["cheville"], 221.7283565)
+        self.assertAlmostEqual(anderson_reference_max_torques(70.0, 1.70, side_count=1)["cheville"], 110.86417825)
         self.assertAlmostEqual(anderson_angle_factor("genou", 1.133), 1.0)
         self.assertLess(anderson_angle_factor("genou", 0.0), 1.0)
         self.assertAlmostEqual(angle_adapted_max(200.0, 1.133, True, "genou"), 200.0)
+
+    def test_athlete_torque_preset_scales_combined_sides_to_body_mass(self) -> None:
+        athlete = athlete_reference_max_torques(70.0)
+        presets = torque_presets(70.0, 1.70)
+
+        self.assertAlmostEqual(athlete["cheville"], 229.12140575)
+        self.assertAlmostEqual(athlete["genou"], 497.0)
+        self.assertAlmostEqual(athlete["hanche"], 329.7)
+        self.assertEqual(presets["Sportifs"].torques, athlete)
 
     def test_native_biorbd_zmp_uses_ground_plane_normal(self) -> None:
         class ArrayResult:

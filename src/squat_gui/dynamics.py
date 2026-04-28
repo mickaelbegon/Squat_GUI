@@ -30,10 +30,24 @@ class AndersonTorqueParameters:
     c3: float
 
 
+@dataclass(frozen=True)
+class TorquePreset:
+    name: str
+    torques: dict[str, float]
+    source: str
+
+
 ANDERSON_2007_YOUNG_MALE = {
     "cheville": AndersonTorqueParameters(c1=0.095, c2=1.391, c3=0.408),  # ankle plantar flexion
     "genou": AndersonTorqueParameters(c1=0.163, c2=1.258, c3=1.133),  # knee extension
     "hanche": AndersonTorqueParameters(c1=0.161, c2=0.958, c3=0.932),  # hip extension
+}
+
+
+ATHLETE_REFERENCE_TORQUES_PER_KG = {
+    "cheville": (104.9 + 100.0) / 62.6,  # So et al. 1994, soccer players, PF at 60 deg/s
+    "genou": 3.55 + 3.55,  # Keytsman et al. 2024, elite soccer, quadriceps isometric at 90 deg
+    "hanche": 2.36 + 2.35,  # female footballers, hip extension at 30 deg after training
 }
 
 
@@ -184,11 +198,33 @@ def _contact_moments(state: MotionState, reaction: Vector, cop_x: float) -> dict
     }
 
 
-def anderson_reference_max_torques(body_mass: float, height: float) -> dict[str, float]:
+def anderson_reference_max_torques(body_mass: float, height: float, side_count: int = 2) -> dict[str, float]:
     body_weight_height = body_mass * GRAVITY * height
     return {
-        joint: params.c1 * body_weight_height
+        joint: side_count * params.c1 * body_weight_height
         for joint, params in ANDERSON_2007_YOUNG_MALE.items()
+    }
+
+
+def athlete_reference_max_torques(body_mass: float) -> dict[str, float]:
+    return {
+        joint: factor * body_mass
+        for joint, factor in ATHLETE_REFERENCE_TORQUES_PER_KG.items()
+    }
+
+
+def torque_presets(body_mass: float, height: float) -> dict[str, TorquePreset]:
+    return {
+        "Anderson actif x2": TorquePreset(
+            "Anderson actif x2",
+            anderson_reference_max_torques(body_mass, height),
+            "Anderson et al. 2007, homme actif 18-25 ans, valeurs par membre sommees gauche+droite",
+        ),
+        "Sportifs": TorquePreset(
+            "Sportifs",
+            athlete_reference_max_torques(body_mass),
+            "Cheville: So et al. 1994; genou: Keytsman et al. 2024; hanche: footballers PLOS One 2026",
+        ),
     }
 
 

@@ -72,6 +72,13 @@ Cette courbe utilise les coefficients actifs moyens 18-25 ans homme de Anderson,
 
 Les directions retenues sont celles utiles au squat: flexion plantaire cheville, extension genou et extension hanche. Les valeurs `C1` de l'article sont normalisees par poids du corps fois taille; elles servent a initialiser les couples max pour un homme de 70 kg et 1.70 m. Les valeurs `C2` et `C3` modulent ensuite le pic saisi par l'utilisateur selon l'angle. La vitesse angulaire et les couples passifs du modele complet d'Anderson ne sont pas encore utilises dans le GUI; le facteur excentrique reste celui demande dans l'interface.
 
+Le GUI propose deux jeux de couples max. Comme le modele 2D regroupe les cotes gauche et droit, les valeurs issues de tests unilateraux sont sommees sur les deux membres:
+
+- `Anderson actif x2`: coefficients Anderson 18-25 ans homme, multiplies par deux pour le modele combine. Pour 70 kg et 1.70 m: cheville 222 Nm, genou 380 Nm, hanche 376 Nm.
+- `Sportifs`: proposition heterogene mais documentee a partir de donnees sportives. Pour 70 kg: cheville 229 Nm, genou 497 Nm, hanche 330 Nm.
+
+La proposition `Sportifs` est volontairement un preset de travail, pas une norme unique. La cheville vient des plantarflexions de joueurs de soccer de So et al. 1994, `100.0 + 104.9 Nm` pour dominant + non-dominant, recalees de 62.6 kg a 70 kg, doi: `10.1136/bjsm.28.1.25`, <https://pmc.ncbi.nlm.nih.gov/articles/PMC1332153/>. Le genou vient des quadriceps de joueurs de soccer elite de Keytsman et al. 2024, environ `3.55 + 3.55 Nm/kg` sur dominant + non-dominant a 90 deg, doi: `10.1186/s13102-024-00961-y`, <https://link.springer.com/article/10.1186/s13102-024-00961-y>. La hanche vient de mesures d'extension de hanche chez des footballeuses, environ `2.36 + 2.35 Nm/kg` a 30 deg de flexion apres entrainement, doi: `10.1371/journal.pone.0342529`, <https://pmc.ncbi.nlm.nih.gov/articles/PMC12931786/>; cette valeur est moins directement comparable a un groupe masculin mais donne un ordre de grandeur sportif publie.
+
 ## Modifier les images de segments
 
 Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`.
