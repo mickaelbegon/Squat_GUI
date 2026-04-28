@@ -2,7 +2,7 @@ import math
 import unittest
 
 from squat_gui.anthropometry import Anthropometry
-from squat_gui.dynamics import inverse_dynamics, simulate
+from squat_gui.dynamics import _biorbd_native_cop_x, inverse_dynamics, simulate
 from squat_gui.kinematics import MotionState, pose_from_angles
 
 
@@ -63,6 +63,27 @@ class DynamicsTests(unittest.TestCase):
                 eccentric_result.effort_ratios[joint],
                 concentric_result.effort_ratios[joint] / 1.35,
             )
+
+    def test_native_biorbd_zmp_uses_ground_plane_normal(self) -> None:
+        class ArrayResult:
+            def to_array(self):
+                return [0.123, 0.0, 0.0]
+
+        class Model:
+            def __init__(self):
+                self.normal = None
+                self.point = None
+
+            def CalcZeroMomentPoint(self, _q, _qdot, _qddot, normal, point):
+                self.normal = normal
+                self.point = point
+                return ArrayResult()
+
+        model = Model()
+
+        self.assertAlmostEqual(_biorbd_native_cop_x(model, [0], [0], [0]), 0.123)
+        self.assertEqual(list(model.normal), [0.0, 1.0, 0.0])
+        self.assertEqual(list(model.point), [0.0, 0.0, 0.0])
 
 
 if __name__ == "__main__":

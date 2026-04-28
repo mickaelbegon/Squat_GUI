@@ -5,6 +5,10 @@ from squat_gui import raster_segments
 
 @unittest.skipUnless(raster_segments.pillow_available(), "Pillow is required for raster sprite anchors")
 class RasterSegmentAnchorTest(unittest.TestCase):
+    def test_rotation_uses_pillow_screen_coordinate_direction(self):
+        self.assertAlmostEqual(raster_segments.sprite_rotation_degrees((0.0, -1.0), (1.0, -1.0)), -45.0)
+        self.assertAlmostEqual(raster_segments.sprite_rotation_degrees((0.0, -1.0), (-1.0, -1.0)), 45.0)
+
     def test_targets_define_long_bone_anchors(self):
         for name in ("shank", "thigh", "trunk"):
             with self.subTest(name=name):

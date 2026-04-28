@@ -141,6 +141,12 @@ def sprite_spec(name: str) -> SpriteSpec:
     return SpriteSpec(filename, distal, proximal)
 
 
+def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> float:
+    source_angle = atan2(source_vector[1], source_vector[0])
+    target_angle = atan2(target_vector[1], target_vector[0])
+    return degrees(source_angle - target_angle)
+
+
 @lru_cache(maxsize=4)
 def _load_transparent_sprite(filename: str):
     from PIL import Image
@@ -158,9 +164,8 @@ def _load_transparent_sprite(filename: str):
     return image
 
 
-def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector):
+def transformed_sprite_image(spec: SpriteSpec, target_vector_px: Vector):
     from PIL import Image
-    from PIL.ImageTk import PhotoImage
 
     source = _load_transparent_sprite(spec.filename)
     anchor_vector = (
@@ -174,9 +179,7 @@ def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector):
     scaled = source.resize(scaled_size, Image.Resampling.LANCZOS)
     scaled_anchor = (spec.distal_anchor[0] * scale, spec.distal_anchor[1] * scale)
     scaled_anchor_vector = (anchor_vector[0] * scale, anchor_vector[1] * scale)
-    source_angle = atan2(scaled_anchor_vector[1], scaled_anchor_vector[0])
-    target_angle = atan2(target_vector_px[1], target_vector_px[0])
-    angle_deg = degrees(target_angle - source_angle)
+    angle_deg = sprite_rotation_degrees(scaled_anchor_vector, target_vector_px)
     margin = int(max(scaled.size) * 1.5)
     pivot = (margin, margin)
     canvas_size = (scaled.size[0] + 2 * margin, scaled.size[1] + 2 * margin)
@@ -185,10 +188,17 @@ def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector):
     rotated_layer = layer.rotate(angle_deg, resample=Image.Resampling.BICUBIC, center=pivot, expand=False)
     bbox = rotated_layer.getbbox()
     if bbox is None:
-        return PhotoImage(rotated_layer), pivot
+        return rotated_layer, pivot
     cropped = rotated_layer.crop(bbox)
     anchor = (pivot[0] - bbox[0], pivot[1] - bbox[1])
-    return PhotoImage(cropped), anchor
+    return cropped, anchor
+
+
+def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector):
+    from PIL.ImageTk import PhotoImage
+
+    image, anchor = transformed_sprite_image(spec, target_vector_px)
+    return PhotoImage(image), anchor
 
 
 def draw_sprite_segment(

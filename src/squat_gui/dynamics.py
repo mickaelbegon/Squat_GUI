@@ -318,6 +318,19 @@ def _biorbd_angular_momentum_derivative_z(biorbd_model: Any, state: MotionState)
     return float((forward[2] - backward[2]) / (2.0 * step))
 
 
+def _biorbd_native_cop_x(biorbd_model: Any, q: Any, qdot: Any, qddot: Any) -> float | None:
+    zmp_function = getattr(biorbd_model, "CalcZeroMomentPoint", None)
+    if zmp_function is None:
+        return None
+    import numpy as np
+
+    try:
+        zmp = zmp_function(q, qdot, qddot, np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 0.0])).to_array()
+    except Exception:
+        return None
+    return float(zmp[0])
+
+
 def _biorbd_ground_reaction_and_cop(biorbd_model: Any, state: MotionState) -> tuple[Vector, float, Vector, Vector, float]:
     q, qdot, qddot = _numpy_biorbd_coordinates(state)
     mass = float(biorbd_model.mass())
@@ -327,7 +340,11 @@ def _biorbd_ground_reaction_and_cop(biorbd_model: Any, state: MotionState) -> tu
     reaction = (mass * float(comddot[0]), mass * (float(comddot[1]) + GRAVITY))
     hdot_com_z = _biorbd_angular_momentum_derivative_z(biorbd_model, state)
     dynamic_moment_z = hdot_com_z + float(com[0]) * reaction[1] - float(com[1]) * reaction[0]
-    cop_x = dynamic_moment_z / reaction[1] if abs(reaction[1]) > 1e-9 else state.pose.ankle[0]
+    native_cop_x = _biorbd_native_cop_x(biorbd_model, q, qdot, qddot)
+    if native_cop_x is not None:
+        cop_x = native_cop_x
+    else:
+        cop_x = dynamic_moment_z / reaction[1] if abs(reaction[1]) > 1e-9 else state.pose.ankle[0]
     return (
         reaction,
         cop_x,
