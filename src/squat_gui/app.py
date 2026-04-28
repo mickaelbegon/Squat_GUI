@@ -23,12 +23,13 @@ PLOT_CHOICES = [
     "positions articulaires",
     "vitesses articulaires",
     "accelerations articulaires",
+    "centre de masse",
     "couples articulaires",
     "couples detailles",
     "puissances articulaires",
 ]
 
-JOINT_COLORS = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM": "#2a8ca6"}
+JOINT_COLORS = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM x": "#2a8ca6", "CoM y": "#8a5a22"}
 FORCE_DRAW_SCALE = 3500.0 / 3.0
 
 
@@ -59,9 +60,14 @@ class SquatGui(tk.Tk):
             "cheville": tk.BooleanVar(value=True),
             "genou": tk.BooleanVar(value=True),
             "hanche": tk.BooleanVar(value=True),
-            "CoM": tk.BooleanVar(value=True),
         }
         self.show_checkbuttons: dict[str, ttk.Checkbutton] = {}
+        self.com_quantity_var = tk.StringVar(value="position")
+        self.com_component_vars = {
+            "x": tk.BooleanVar(value=True),
+            "y": tk.BooleanVar(value=True),
+        }
+        self.com_controls: list[tk.Widget] = []
         self.max_torque_vars = {
             "cheville": tk.DoubleVar(value=180.0),
             "genou": tk.DoubleVar(value=220.0),
@@ -118,7 +124,16 @@ class SquatGui(tk.Tk):
             checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
             checkbutton.grid(row=1, column=index, padx=3)
             self.show_checkbuttons[name] = checkbutton
-        ttk.Checkbutton(plot_box, text="centres", variable=self.show_sprite_centers_var, command=self.redraw).grid(row=2, column=0, columnspan=4)
+        com_menu = ttk.OptionMenu(plot_box, self.com_quantity_var, self.com_quantity_var.get(), "position", "vitesse", "acceleration", command=lambda _value: self.redraw())
+        com_menu.grid(row=2, column=0, columnspan=2, sticky="ew", padx=3, pady=(4, 0))
+        self.com_controls.append(com_menu)
+        for index, name in enumerate(self.com_component_vars):
+            checkbutton = ttk.Checkbutton(plot_box, text=f"CoM {name}", variable=self.com_component_vars[name], command=self.redraw)
+            checkbutton.grid(row=2, column=index + 2, padx=3, pady=(4, 0))
+            self.com_controls.append(checkbutton)
+        for control in self.com_controls:
+            control.state(["disabled"])
+        ttk.Checkbutton(plot_box, text="centres", variable=self.show_sprite_centers_var, command=self.redraw).grid(row=3, column=0, columnspan=4)
 
         table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
         table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
@@ -224,12 +239,11 @@ class SquatGui(tk.Tk):
         self.draw_animation(frame)
 
     def on_plot_choice_changed(self) -> None:
-        torque_plot = self.plot_choice.get() in ("couples articulaires", "couples detailles")
-        if torque_plot:
-            self.show_vars["CoM"].set(False)
-            self.show_checkbuttons["CoM"].state(["disabled"])
-        else:
-            self.show_checkbuttons["CoM"].state(["!disabled"])
+        com_plot = self.plot_choice.get() == "centre de masse"
+        for checkbutton in self.show_checkbuttons.values():
+            checkbutton.state(["disabled"] if com_plot else ["!disabled"])
+        for control in self.com_controls:
+            control.state(["!disabled"] if com_plot else ["disabled"])
         self.redraw()
 
     def world_to_canvas(self, canvas: tk.Canvas, point: tuple[float, float], bounds: tuple[float, float, float, float]) -> tuple[float, float]:
@@ -452,11 +466,13 @@ class SquatGui(tk.Tk):
 
     def plot_unit(self, choice: str) -> str:
         if choice == "positions articulaires":
-            return "deg / m"
+            return "deg"
         if choice == "vitesses articulaires":
-            return "deg/s / m/s"
+            return "deg/s"
         if choice == "accelerations articulaires":
-            return "deg/s2 / m/s2"
+            return "deg/s2"
+        if choice == "centre de masse":
+            return {"position": "m", "vitesse": "m/s", "acceleration": "m/s2"}[self.com_quantity_var.get()]
         if choice in ("couples articulaires", "couples detailles"):
             return "Nm"
         return "W"
@@ -550,22 +566,21 @@ class SquatGui(tk.Tk):
                 "cheville": [degrees(state.q[0]) for state in self.states],
                 "genou": [degrees(state.q[1] - state.q[0]) for state in self.states],
                 "hanche": [degrees(state.q[2] - state.q[1]) for state in self.states],
-                "CoM": [state.pose.com[1] for state in self.states],
             }
         elif choice == "vitesses articulaires":
             values = {
                 "cheville": [degrees(state.qdot[0]) for state in self.states],
                 "genou": [degrees(state.qdot[1] - state.qdot[0]) for state in self.states],
                 "hanche": [degrees(state.qdot[2] - state.qdot[1]) for state in self.states],
-                "CoM": self.com_velocity_series(),
             }
         elif choice == "accelerations articulaires":
             values = {
                 "cheville": [degrees(state.qddot[0]) for state in self.states],
                 "genou": [degrees(state.qddot[1] - state.qddot[0]) for state in self.states],
                 "hanche": [degrees(state.qddot[2] - state.qddot[1]) for state in self.states],
-                "CoM": self.com_acceleration_series(),
             }
+        elif choice == "centre de masse":
+            return self.com_plot_series()
         elif choice == "couples articulaires":
             values = {joint: [result.torques[joint] for result in self.results] for joint in ("cheville", "genou", "hanche")}
         elif choice == "couples detailles":
@@ -580,6 +595,20 @@ class SquatGui(tk.Tk):
         for name in selected:
             if name in values:
                 data[name] = values[name]
+        return data
+
+    def com_plot_series(self) -> dict[str, list[float]]:
+        quantity = self.com_quantity_var.get()
+        source = {
+            "position": [result.com for result in self.results],
+            "vitesse": [result.com_velocity for result in self.results],
+            "acceleration": [result.com_acceleration for result in self.results],
+        }[quantity]
+        data: dict[str, list[float]] = {}
+        if self.com_component_vars["x"].get():
+            data["CoM x"] = [value[0] for value in source]
+        if self.com_component_vars["y"].get():
+            data["CoM y"] = [value[1] for value in source]
         return data
 
     def torque_bound_series(self) -> dict[str, list[float]]:
@@ -597,12 +626,6 @@ class SquatGui(tk.Tk):
                 values.append(eccentric_factor * angle_adapted_max(max_torques[joint], joint_angle, self.angle_adapt_var.get()))
             bounds[joint] = values
         return bounds
-
-    def com_velocity_series(self) -> list[float]:
-        return [result.com_velocity[1] for result in self.results]
-
-    def com_acceleration_series(self) -> list[float]:
-        return [result.com_acceleration[1] for result in self.results]
 
     def nearest_handle(self, x: float, y: float) -> str | None:
         anthro = self.anthro()
