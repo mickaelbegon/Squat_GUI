@@ -52,6 +52,32 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(list(gui.plot_series("centre de masse")), ["CoM x"])
         self.assertEqual(gui.plot_unit("centre de masse"), "m/s")
 
+    def test_biomechanical_alerts_report_cop_and_torque_problems(self):
+        gui = self.gui_without_tk()
+        state = gui.states[0]
+        result = gui.results[0]
+
+        safe = result.__class__(
+            **{
+                **result.__dict__,
+                "cop_x": (state.pose.heel[0] + state.pose.toe[0]) / 2,
+                "effort_ratios": {"cheville": 0.2, "genou": 0.3, "hanche": 0.4},
+            }
+        )
+        unsafe = result.__class__(
+            **{
+                **result.__dict__,
+                "cop_x": state.pose.toe[0] + 0.1,
+                "effort_ratios": {"cheville": 1.2, "genou": 0.3, "hanche": 1.1},
+            }
+        )
+
+        self.assertEqual(gui.biomechanical_alerts(state, safe, include_com=False), [])
+        self.assertEqual(
+            gui.biomechanical_alerts(state, unsafe, include_com=False),
+            ["CoP hors pied", "couple > max: cheville, hanche"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -29,6 +29,10 @@ PLOT_CHOICES = [
 
 JOINT_COLORS = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM x": "#2a8ca6", "CoM y": "#8a5a22"}
 FORCE_DRAW_SCALE = 3500.0 / 3.0
+CANVAS_BG = "#fbfcf9"
+ALERT_BG = "#ffe7e3"
+OK_BORDER = "#587a5f"
+ALERT_BORDER = "#c9332c"
 
 
 class SquatGui(tk.Tk):
@@ -167,7 +171,7 @@ class SquatGui(tk.Tk):
         self.conditions_table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
         ttk.Button(table_box, text="Enregistrer", command=self.record_condition).grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
 
-        self.pose_canvas = tk.Canvas(root, bg="#fbfcf9", highlightthickness=2, highlightbackground="#7f8f83")
+        self.pose_canvas = tk.Canvas(root, bg=CANVAS_BG, highlightthickness=2, highlightbackground="#7f8f83")
         self.pose_canvas.grid(row=1, column=1, sticky="nsew", padx=(0, 8))
         self.pose_canvas.bind("<Configure>", self.schedule_redraw)
         self.pose_canvas.bind("<ButtonPress-1>", self.on_pose_press)
@@ -178,7 +182,7 @@ class SquatGui(tk.Tk):
         right.grid(row=1, column=2, sticky="nsew")
         right.rowconfigure(0, weight=1)
         right.columnconfigure(0, weight=1)
-        self.animation_canvas = tk.Canvas(right, bg="#fbfcf9", highlightthickness=1, highlightbackground="#c9d1c7")
+        self.animation_canvas = tk.Canvas(right, bg=CANVAS_BG, highlightthickness=2, highlightbackground="#c9d1c7")
         self.animation_canvas.grid(row=0, column=0, sticky="nsew")
         self.animation_canvas.bind("<Configure>", self.schedule_redraw)
 
@@ -314,6 +318,60 @@ class SquatGui(tk.Tk):
         anthro = self.anthro()
         return (-0.25, anthro.foot.length + anthro.shank.length + 0.65, -0.08, 1.85)
 
+    def cop_in_foot(self, state: MotionState, result: DynamicsResult) -> bool:
+        return state.pose.heel[0] <= result.cop_x <= state.pose.toe[0]
+
+    def com_projection_in_foot(self, state: MotionState) -> bool:
+        return state.pose.heel[0] <= state.pose.com[0] <= state.pose.toe[0]
+
+    def over_limit_joints(self, result: DynamicsResult) -> list[str]:
+        return [
+            joint
+            for joint in ("cheville", "genou", "hanche")
+            if result.effort_ratios[joint] > 1.0
+        ]
+
+    def biomechanical_alerts(self, state: MotionState, result: DynamicsResult, include_com: bool) -> list[str]:
+        alerts = []
+        if not self.cop_in_foot(state, result):
+            alerts.append("CoP hors pied")
+        if include_com and not self.com_projection_in_foot(state):
+            alerts.append("CoM hors pied")
+        over_limit = self.over_limit_joints(result)
+        if over_limit:
+            alerts.append("couple > max: " + ", ".join(over_limit))
+        return alerts
+
+    def configure_alert_canvas(self, canvas: tk.Canvas, alerts: list[str]) -> None:
+        if alerts:
+            canvas.configure(bg=ALERT_BG, highlightbackground=ALERT_BORDER)
+        else:
+            canvas.configure(bg=CANVAS_BG, highlightbackground=OK_BORDER)
+
+    def draw_alert_banner(self, canvas: tk.Canvas, alerts: list[str], y: int) -> None:
+        if not alerts:
+            return
+        text = "Probleme biomecanique: " + " | ".join(alerts)
+        item = canvas.create_text(
+            16,
+            y,
+            text=text,
+            anchor="nw",
+            fill="#8a1f17",
+            font=("Helvetica", 10, "bold"),
+        )
+        bbox = canvas.bbox(item)
+        if bbox is not None:
+            background = canvas.create_rectangle(
+                bbox[0] - 5,
+                bbox[1] - 3,
+                bbox[2] + 5,
+                bbox[3] + 3,
+                fill="#ffd2cb",
+                outline=ALERT_BORDER,
+            )
+            canvas.tag_lower(background, item)
+
     def draw_skeleton(self, canvas: tk.Canvas, state: MotionState, result: DynamicsResult, with_handles: bool) -> None:
         bounds = self.scene_bounds()
         pose = state.pose
@@ -399,14 +457,13 @@ class SquatGui(tk.Tk):
         pose = pose_from_angles(anthro, self.final_q)
         state = MotionState(self.total_motion_duration() / 2.0, self.final_q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), pose)
         result = self.results[len(self.results) // 2]
-        if pose.com[0] < pose.heel[0] or pose.com[0] > pose.toe[0]:
-            canvas.configure(highlightbackground="#c9332c")
-        else:
-            canvas.configure(highlightbackground="#587a5f")
+        alerts = self.biomechanical_alerts(state, result, include_com=True)
+        self.configure_alert_canvas(canvas, alerts)
         self.draw_skeleton(canvas, state, result, with_handles=True)
         self.draw_squat_angle_labels(canvas, state)
         canvas.create_text(16, 16, text="Position de squat", anchor="nw", fill="#22312a", font=("Helvetica", 13, "bold"))
         canvas.create_text(16, 38, text="Glisser genou, hanche ou epaules", anchor="nw", fill="#506158")
+        self.draw_alert_banner(canvas, alerts, 62)
 
     def draw_squat_angle_labels(self, canvas: tk.Canvas, state: MotionState) -> None:
         pose = state.pose
@@ -433,7 +490,7 @@ class SquatGui(tk.Tk):
                     bbox[1] - 2,
                     bbox[2] + 3,
                     bbox[3] + 2,
-                    fill="#fbfcf9",
+                    fill=CANVAS_BG,
                     outline="#c9d1c7",
                 )
                 canvas.tag_lower(background, item)
@@ -441,21 +498,27 @@ class SquatGui(tk.Tk):
     def draw_animation(self, frame: int) -> None:
         canvas = self.animation_canvas
         canvas.delete("all")
-        self.draw_skeleton(canvas, self.states[frame], self.results[frame], with_handles=False)
+        state = self.states[frame]
+        result = self.results[frame]
+        alerts = self.biomechanical_alerts(state, result, include_com=False)
+        self.configure_alert_canvas(canvas, alerts)
+        self.draw_skeleton(canvas, state, result, with_handles=False)
         canvas.create_text(
             16,
             16,
-            text=f"Animation {self.states[frame].phase} t={self.states[frame].time:.2f}s",
+            text=f"Animation {state.phase} t={state.time:.2f}s",
             anchor="nw",
             fill="#22312a",
             font=("Helvetica", 13, "bold"),
         )
         y = 42
         for joint in ("cheville", "genou", "hanche"):
-            torque = self.results[frame].torques[joint]
-            ratio = self.results[frame].effort_ratios[joint]
-            canvas.create_text(16, y, text=f"{joint}: {torque: .1f} Nm ({100 * ratio: .0f}%)", anchor="nw", fill="#22312a")
+            torque = result.torques[joint]
+            ratio = result.effort_ratios[joint]
+            color = "#8a1f17" if ratio > 1.0 else "#22312a"
+            canvas.create_text(16, y, text=f"{joint}: {torque: .1f} Nm ({100 * ratio: .0f}%)", anchor="nw", fill=color)
             y += 20
+        self.draw_alert_banner(canvas, alerts, y + 4)
 
     def draw_plot(self) -> None:
         canvas = self.plot_canvas
