@@ -20,9 +20,7 @@ from .segment_shapes import draw_segment, load_segments
 
 
 PLOT_CHOICES = [
-    "positions articulaires",
-    "vitesses articulaires",
-    "accelerations articulaires",
+    "cinematique articulaire",
     "centre de masse",
     "couples articulaires",
     "couples detailles",
@@ -56,17 +54,18 @@ class SquatGui(tk.Tk):
         self.duration_var = tk.DoubleVar(value=1.2)
         self.frame_var = tk.IntVar(value=0)
         self.plot_choice = tk.StringVar(value=PLOT_CHOICES[0])
+        self.quantity_var = tk.StringVar(value="position")
         self.show_vars = {
             "cheville": tk.BooleanVar(value=True),
             "genou": tk.BooleanVar(value=True),
             "hanche": tk.BooleanVar(value=True),
         }
         self.show_checkbuttons: dict[str, ttk.Checkbutton] = {}
-        self.com_quantity_var = tk.StringVar(value="position")
         self.com_component_vars = {
             "x": tk.BooleanVar(value=True),
             "y": tk.BooleanVar(value=True),
         }
+        self.quantity_controls: list[tk.Widget] = []
         self.com_controls: list[tk.Widget] = []
         self.max_torque_vars = {
             "cheville": tk.DoubleVar(value=180.0),
@@ -124,9 +123,9 @@ class SquatGui(tk.Tk):
             checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
             checkbutton.grid(row=1, column=index, padx=3)
             self.show_checkbuttons[name] = checkbutton
-        com_menu = ttk.OptionMenu(plot_box, self.com_quantity_var, self.com_quantity_var.get(), "position", "vitesse", "acceleration", command=lambda _value: self.redraw())
-        com_menu.grid(row=2, column=0, columnspan=2, sticky="ew", padx=3, pady=(4, 0))
-        self.com_controls.append(com_menu)
+        quantity_menu = ttk.OptionMenu(plot_box, self.quantity_var, self.quantity_var.get(), "position", "vitesse", "acceleration", command=lambda _value: self.redraw())
+        quantity_menu.grid(row=2, column=0, columnspan=2, sticky="ew", padx=3, pady=(4, 0))
+        self.quantity_controls.append(quantity_menu)
         for index, name in enumerate(self.com_component_vars):
             checkbutton = ttk.Checkbutton(plot_box, text=f"CoM {name}", variable=self.com_component_vars[name], command=self.redraw)
             checkbutton.grid(row=2, column=index + 2, padx=3, pady=(4, 0))
@@ -239,9 +238,13 @@ class SquatGui(tk.Tk):
         self.draw_animation(frame)
 
     def on_plot_choice_changed(self) -> None:
-        com_plot = self.plot_choice.get() == "centre de masse"
+        choice = self.plot_choice.get()
+        quantity_plot = choice in ("cinematique articulaire", "centre de masse")
+        com_plot = choice == "centre de masse"
         for checkbutton in self.show_checkbuttons.values():
             checkbutton.state(["disabled"] if com_plot else ["!disabled"])
+        for control in self.quantity_controls:
+            control.state(["!disabled"] if quantity_plot else ["disabled"])
         for control in self.com_controls:
             control.state(["!disabled"] if com_plot else ["disabled"])
         self.redraw()
@@ -465,14 +468,10 @@ class SquatGui(tk.Tk):
         return f"{value:.3f}".rstrip("0").rstrip(".")
 
     def plot_unit(self, choice: str) -> str:
-        if choice == "positions articulaires":
-            return "deg"
-        if choice == "vitesses articulaires":
-            return "deg/s"
-        if choice == "accelerations articulaires":
-            return "deg/s2"
+        if choice == "cinematique articulaire":
+            return {"position": "deg", "vitesse": "deg/s", "acceleration": "deg/s2"}[self.quantity_var.get()]
         if choice == "centre de masse":
-            return {"position": "m", "vitesse": "m/s", "acceleration": "m/s2"}[self.com_quantity_var.get()]
+            return {"position": "m", "vitesse": "m/s", "acceleration": "m/s2"}[self.quantity_var.get()]
         if choice in ("couples articulaires", "couples detailles"):
             return "Nm"
         return "W"
@@ -561,24 +560,8 @@ class SquatGui(tk.Tk):
     def plot_series(self, choice: str) -> dict[str, list[float]]:
         selected = [name for name, var in self.show_vars.items() if var.get()]
         data: dict[str, list[float]] = {}
-        if choice == "positions articulaires":
-            values = {
-                "cheville": [degrees(state.q[0]) for state in self.states],
-                "genou": [degrees(state.q[1] - state.q[0]) for state in self.states],
-                "hanche": [degrees(state.q[2] - state.q[1]) for state in self.states],
-            }
-        elif choice == "vitesses articulaires":
-            values = {
-                "cheville": [degrees(state.qdot[0]) for state in self.states],
-                "genou": [degrees(state.qdot[1] - state.qdot[0]) for state in self.states],
-                "hanche": [degrees(state.qdot[2] - state.qdot[1]) for state in self.states],
-            }
-        elif choice == "accelerations articulaires":
-            values = {
-                "cheville": [degrees(state.qddot[0]) for state in self.states],
-                "genou": [degrees(state.qddot[1] - state.qddot[0]) for state in self.states],
-                "hanche": [degrees(state.qddot[2] - state.qddot[1]) for state in self.states],
-            }
+        if choice == "cinematique articulaire":
+            values = self.joint_kinematic_series()
         elif choice == "centre de masse":
             return self.com_plot_series()
         elif choice == "couples articulaires":
@@ -597,8 +580,28 @@ class SquatGui(tk.Tk):
                 data[name] = values[name]
         return data
 
+    def joint_kinematic_series(self) -> dict[str, list[float]]:
+        quantity = self.quantity_var.get()
+        if quantity == "position":
+            return {
+                "cheville": [degrees(state.q[0]) for state in self.states],
+                "genou": [degrees(state.q[1] - state.q[0]) for state in self.states],
+                "hanche": [degrees(state.q[2] - state.q[1]) for state in self.states],
+            }
+        if quantity == "vitesse":
+            return {
+                "cheville": [degrees(state.qdot[0]) for state in self.states],
+                "genou": [degrees(state.qdot[1] - state.qdot[0]) for state in self.states],
+                "hanche": [degrees(state.qdot[2] - state.qdot[1]) for state in self.states],
+            }
+        return {
+            "cheville": [degrees(state.qddot[0]) for state in self.states],
+            "genou": [degrees(state.qddot[1] - state.qddot[0]) for state in self.states],
+            "hanche": [degrees(state.qddot[2] - state.qddot[1]) for state in self.states],
+        }
+
     def com_plot_series(self) -> dict[str, list[float]]:
-        quantity = self.com_quantity_var.get()
+        quantity = self.quantity_var.get()
         source = {
             "position": [result.com for result in self.results],
             "vitesse": [result.com_velocity for result in self.results],
