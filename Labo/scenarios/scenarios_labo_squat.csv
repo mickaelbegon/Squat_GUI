@@ -1,0 +1,11 @@
+condition_id,load_kg,shank_percent,thigh_percent,trunk_percent,duration_phase_s,frames,backend,torque_preset,angle_adapt,q_shank_deg,q_thigh_deg,q_trunk_deg
+baseline,0,0,0,0,2.0,101,analytical,anderson,true,25,-65,20
+posture_knee_dominant,0,0,0,0,2.0,101,analytical,anderson,true,35,-70,10
+posture_hip_dominant,0,0,0,0,2.0,101,analytical,anderson,true,15,-65,35
+stability_forward,0,0,0,0,2.0,101,analytical,anderson,true,40,-70,5
+stability_backward,0,0,0,0,2.0,101,analytical,anderson,true,8,-62,45
+load_25kg,25,0,0,0,2.0,101,analytical,anderson,true,25,-65,20
+load_50kg,50,0,0,0,2.0,101,analytical,anderson,true,25,-65,20
+load_75kg,75,0,0,0,2.0,101,analytical,anderson,true,25,-65,20
+duration_slow_4s,0,0,0,0,4.0,101,analytical,anderson,true,25,-65,20
+duration_fast_1s,0,0,0,0,1.0,101,analytical,anderson,true,25,-65,20
