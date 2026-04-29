@@ -241,6 +241,35 @@ def angle_adapted_max(base_max: float, angle: float, enabled: bool, joint: str |
     return base_max * anderson_angle_factor(joint, angle)
 
 
+def joint_angles_for_limits(state: MotionState) -> dict[str, float]:
+    return {
+        "cheville": abs(state.q[0]),
+        "genou": abs(state.q[1] - state.q[0]),
+        "hanche": abs(state.q[2] - state.q[1]),
+    }
+
+
+def available_joint_torque_limits(
+    state: MotionState,
+    max_torques: dict[str, float],
+    adapt_max_by_angle: bool,
+) -> dict[str, float]:
+    joint_angles = joint_angles_for_limits(state)
+    eccentric_factor = 1.35 if state.phase == "excentrique" else 1.0
+    return {
+        joint: max(
+            1.0,
+            eccentric_factor * angle_adapted_max(
+                max_torques[joint],
+                joint_angles[joint],
+                adapt_max_by_angle,
+                joint,
+            ),
+        )
+        for joint in ("cheville", "genou", "hanche")
+    }
+
+
 def inverse_dynamics(
     anthro: Anthropometry,
     state: MotionState,
@@ -292,24 +321,10 @@ def inverse_dynamics(
         "hanche": state.qdot[2] - state.qdot[1],
     }
     powers = {joint: torques[joint] * joint_velocities[joint] for joint in torques}
-    joint_angles = {
-        "cheville": abs(state.q[0]),
-        "genou": abs(state.q[1] - state.q[0]),
-        "hanche": abs(state.q[2] - state.q[1]),
-    }
+    available_limits = available_joint_torque_limits(state, max_torques, adapt_max_by_angle)
     effort_ratios = {}
     for joint, torque in torques.items():
-        eccentric_factor = 1.35 if state.phase == "excentrique" else 1.0
-        adjusted = max(
-            1.0,
-            eccentric_factor * angle_adapted_max(
-                max_torques[joint],
-                joint_angles[joint],
-                adapt_max_by_angle,
-                joint,
-            ),
-        )
-        effort_ratios[joint] = abs(torque) / adjusted
+        effort_ratios[joint] = abs(torque) / available_limits[joint]
     return DynamicsResult(
         reaction,
         cop_x,

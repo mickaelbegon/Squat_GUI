@@ -13,7 +13,7 @@ from tkinter import ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends, write_biomod_file
-from .dynamics import DynamicsResult, angle_adapted_max, simulate, torque_presets
+from .dynamics import DynamicsResult, available_joint_torque_limits, simulate, torque_presets
 from .kinematics import MotionState, pose_from_angles
 from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
@@ -809,16 +809,10 @@ class SquatGui(tk.Tk):
         bounds: dict[str, list[float]] = {}
         max_torques = self.max_torques()
         for joint in ("cheville", "genou", "hanche"):
-            values = []
-            for state in self.states:
-                joint_angle = {
-                    "cheville": abs(state.q[0]),
-                    "genou": abs(state.q[1] - state.q[0]),
-                    "hanche": abs(state.q[2] - state.q[1]),
-                }[joint]
-                eccentric_factor = 1.35 if state.phase == "excentrique" else 1.0
-                values.append(eccentric_factor * angle_adapted_max(max_torques[joint], joint_angle, self.angle_adapt_var.get(), joint))
-            bounds[joint] = values
+            bounds[joint] = [
+                available_joint_torque_limits(state, max_torques, self.angle_adapt_var.get())[joint]
+                for state in self.states
+            ]
         return bounds
 
     def nearest_handle(self, x: float, y: float) -> str | None:

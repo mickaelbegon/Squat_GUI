@@ -367,6 +367,102 @@ Sinon, apres `python -m pip install -e .` dans l'environnement conda actif:
 python -m squat_gui
 ```
 
+## Ligne de commande pour generer des conditions
+
+La ligne de commande permet de creer rapidement des conditions de squat sans ouvrir le GUI et d'exporter les resultats pour analyse dans Python, R, Matlab, Excel ou un notebook.
+
+Deux entrees sont disponibles:
+
+```bash
+python -m squat_gui run ...
+python -m squat_gui batch conditions.csv ...
+```
+
+Si le paquet a ete installe avec `python -m pip install -e .`, on peut aussi utiliser:
+
+```bash
+squat-gui-cli run ...
+squat-gui-cli batch conditions.csv ...
+```
+
+### Exporter une condition unique
+
+Exemple analytique, sans forcer biorbd:
+
+```bash
+python -m squat_gui run \
+  --condition-id squat_40kg \
+  --load 40 \
+  --duration-phase 1.2 \
+  --joint-angles-deg 22 -80 78 \
+  --torque-preset sportifs \
+  --backend analytical \
+  --frames 101 \
+  --out exports/squat_40kg.csv \
+  --summary exports/squat_40kg_summary.json
+```
+
+Exemple avec biorbd obligatoire:
+
+```bash
+python -m squat_gui run \
+  --condition-id squat_biorbd \
+  --load 20 \
+  --backend biorbd \
+  --out exports/squat_biorbd.csv \
+  --summary exports/squat_biorbd_summary.json
+```
+
+Si `--backend biorbd` est demande et que biorbd n'est pas disponible, la commande s'arrete avec une erreur. Avec `--backend auto`, la CLI essaie biorbd et retombe sur l'analytique si biorbd n'est pas utilisable.
+
+Arguments utiles:
+
+- `--load`: charge sur les epaules en kg;
+- `--shank`, `--thigh`, `--trunk`: variations de longueur en pourcentage;
+- `--duration-phase`: duree de la phase excentrique, et aussi de la phase concentrique;
+- `--joint-angles-deg ANKLE KNEE HIP`: angles articulaires finaux en degres;
+- `--q-segment-deg SHANK THIGH TRUNK`: angles segmentaires finaux en degres, convention interne du modele;
+- `--torque-preset anderson` ou `--torque-preset sportifs`;
+- `--max-cheville`, `--max-genou`, `--max-hanche`: surcharge manuelle des couples max;
+- `--angle-adapt true/false`: active/desactive la relation couple-angle;
+- `--frames`: nombre de frames exportees.
+
+Le CSV exporte contient une ligne par frame avec:
+
+- temps, phase, backend;
+- parametres de condition;
+- angles, vitesses et accelerations articulaires;
+- CoM position/vitesse/acceleration;
+- CoP, reaction au sol et moment dynamique;
+- couples articulaires;
+- couple max disponible;
+- effort normalise en pourcentage;
+- puissance;
+- composantes `Mqddot`, `NLeffects` et `contact`.
+
+Le JSON de resume contient les pics par articulation, le nombre de frames ou le CoP sort du pied et le nombre de frames ou un couple depasse 100%.
+
+### Exporter un lot de conditions
+
+Creer un fichier `conditions.csv`, par exemple:
+
+```csv
+condition_id,load_kg,shank_percent,thigh_percent,trunk_percent,duration_phase_s,frames,backend,torque_preset,ankle_deg,knee_deg,hip_deg
+leger,0,0,0,0,1.0,81,analytical,anderson,22,-80,78
+lourd,60,0,0,0,1.2,101,auto,sportifs,24,-85,75
+tibia_long,40,5,0,0,1.2,101,auto,sportifs,22,-80,78
+```
+
+Puis lancer:
+
+```bash
+python -m squat_gui batch conditions.csv \
+  --out exports/batch_results.csv \
+  --summary exports/batch_summary.json
+```
+
+Le fichier `batch_results.csv` regroupe toutes les frames de toutes les conditions, avec une colonne `condition_id` pour filtrer les analyses.
+
 ## Tests
 
 ```bash
