@@ -62,8 +62,8 @@ class SquatGui(tk.Tk):
         self.shank_var = tk.DoubleVar(value=0.0)
         self.thigh_var = tk.DoubleVar(value=0.0)
         self.trunk_var = tk.DoubleVar(value=0.0)
-        self.duration_var = tk.DoubleVar(value=1.2)
-        self.frame_var = tk.IntVar(value=0)
+        self.duration_var = tk.DoubleVar(value=4.0)
+        self.frame_var = tk.IntVar(value=self.frame_count // 2)
         self.plot_choice = tk.StringVar(value=PLOT_CHOICES[0])
         self.quantity_var = tk.StringVar(value="position")
         self.show_vars = {
@@ -115,29 +115,24 @@ class SquatGui(tk.Tk):
         left = ttk.Frame(root)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         left.columnconfigure(0, weight=1)
-        left.rowconfigure(3, weight=1)
+        left.rowconfigure(2, weight=1)
 
         parameter_box = ttk.LabelFrame(left, text="Parametres")
-        parameter_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        parameter_box.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         parameter_box.columnconfigure(0, weight=1)
         self._add_scale(parameter_box, "Charge (kg)", self.load_var, 0, 100, 20, 0)
         self._add_scale(parameter_box, "Tibia (%)", self.shank_var, -5, 5, 2.5, 1)
         self._add_scale(parameter_box, "Cuisse (%)", self.thigh_var, -5, 5, 2.5, 2)
         self._add_scale(parameter_box, "Tronc (%)", self.trunk_var, -5, 5, 2.5, 3)
-        self._add_scale(parameter_box, "Duree phase (s)", self.duration_var, 0.4, 3.0, 0.1, 4)
-
-        file_box = ttk.Frame(left)
-        file_box.grid(row=1, column=0, sticky="ew", pady=(0, 6))
-        file_box.columnconfigure(0, weight=1)
-        file_box.columnconfigure(1, weight=1)
-        ttk.Button(file_box, text="Save JSON", command=self.save_json).grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        ttk.Button(file_box, text="Load JSON", command=self.load_json).grid(row=0, column=1, sticky="ew", padx=(3, 0))
+        self._add_scale(parameter_box, "Duree phase (s)", self.duration_var, 1.0, 5.0, 0.1, 4)
 
         torque_box = ttk.LabelFrame(left, text="Couples max")
-        torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 6))
+        torque_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        for col in range(3):
+            torque_box.columnconfigure(col, weight=1)
         for col, joint in enumerate(("cheville", "genou", "hanche")):
             ttk.Label(torque_box, text=joint).grid(row=0, column=col, padx=4)
-            ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7).grid(row=1, column=col, padx=4)
+            ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7).grid(row=1, column=col, sticky="ew", padx=4)
         ttk.OptionMenu(
             torque_box,
             self.torque_preset_var,
@@ -149,26 +144,34 @@ class SquatGui(tk.Tk):
         ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=3, column=2)
 
         plot_box = ttk.LabelFrame(left, text="Resultats")
-        plot_box.grid(row=3, column=0, sticky="ew", pady=(0, 6))
+        plot_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        for col in range(4):
+            plot_box.columnconfigure(col, weight=1)
         self.plot_menu = ttk.Combobox(plot_box, textvariable=self.plot_choice, values=DEFAULT_PLOT_CHOICES, state="readonly")
-        self.plot_menu.grid(row=0, column=0, columnspan=4, sticky="ew", padx=3)
+        self.plot_menu.grid(row=0, column=0, columnspan=4, sticky="ew", padx=4, pady=(2, 4))
         self.plot_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_plot_choice_changed())
         for index, name in enumerate(self.show_vars):
             checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
-            checkbutton.grid(row=1, column=index, padx=3)
+            checkbutton.grid(row=1, column=index, sticky="w", padx=4)
             self.show_checkbuttons[name] = checkbutton
         quantity_menu = ttk.OptionMenu(plot_box, self.quantity_var, self.quantity_var.get(), "position", "vitesse", "acceleration", command=lambda _value: self.redraw())
-        quantity_menu.grid(row=2, column=0, columnspan=2, sticky="ew", padx=3, pady=(4, 0))
+        quantity_menu.grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(6, 2))
         self.quantity_controls.append(quantity_menu)
         for index, name in enumerate(self.com_component_vars):
             checkbutton = ttk.Checkbutton(plot_box, text=f"CoM {name}", variable=self.com_component_vars[name], command=self.redraw)
-            checkbutton.grid(row=2, column=index + 2, padx=3, pady=(4, 0))
+            checkbutton.grid(row=2, column=index + 2, sticky="w", padx=4, pady=(6, 2))
             self.com_controls.append(checkbutton)
         for control in self.com_controls:
             control.state(["disabled"])
-        ttk.Checkbutton(plot_box, text="3 subplots", variable=self.subplot_mode_var, command=self.redraw).grid(row=3, column=0, columnspan=2, sticky="w", padx=3)
-        ttk.Checkbutton(plot_box, text="details", variable=self.enable_detailed_plot_var, command=self.update_plot_choices).grid(row=3, column=2, columnspan=2, sticky="w", padx=3)
-        ttk.Checkbutton(plot_box, text="centres", variable=self.show_sprite_centers_var, command=self.redraw).grid(row=4, column=0, columnspan=4)
+        ttk.Checkbutton(plot_box, text="3 subplots", variable=self.subplot_mode_var, command=self.redraw).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+        ttk.Checkbutton(plot_box, text="details", variable=self.enable_detailed_plot_var, command=self.update_plot_choices).grid(row=3, column=2, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+
+        file_box = ttk.Frame(left)
+        file_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        file_box.columnconfigure(0, weight=1)
+        file_box.columnconfigure(1, weight=1)
+        ttk.Button(file_box, text="Save JSON", command=self.save_json).grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        ttk.Button(file_box, text="Load JSON", command=self.load_json).grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
         table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
         table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
@@ -266,6 +269,19 @@ class SquatGui(tk.Tk):
 
     def total_motion_duration(self) -> float:
         return 2.0 * max(0.1, self.duration_var.get())
+
+    def centered_times(self, states: list[MotionState] | None = None) -> list[float]:
+        states = states or self.states
+        if not states:
+            return []
+        squat_time = states[len(states) // 2].time
+        return [state.time - squat_time for state in states]
+
+    def current_centered_time(self) -> float:
+        if not self.states:
+            return 0.0
+        frame = min(len(self.states) - 1, max(0, int(self.frame_var.get())))
+        return self.centered_times(self.states)[frame]
 
     def apply_torque_preset(self) -> None:
         preset = torque_presets(70.0, 1.70)[self.torque_preset_var.get()]
@@ -648,7 +664,7 @@ class SquatGui(tk.Tk):
         canvas.create_text(
             16,
             16,
-            text=f"Animation {state.phase} t={state.time:.2f}s",
+            text=f"Animation {state.phase} t={self.current_centered_time():.2f}s",
             anchor="nw",
             fill="#22312a",
             font=("Helvetica", 13, "bold"),
