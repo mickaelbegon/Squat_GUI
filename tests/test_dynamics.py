@@ -89,7 +89,7 @@ class DynamicsTests(unittest.TestCase):
                 components = result.torque_components[joint]
                 self.assertAlmostEqual(
                     result.torques[joint],
-                    components["Mqddot"] + components["NLeffects"],
+                    components["Mqddot"] + components["NLeffects"] - components["contact"],
                 )
 
     def test_angle_adaptation_uses_anderson_coefficients(self) -> None:

@@ -190,6 +190,7 @@ def _joint_from_absolute(absolute: tuple[float, float, float]) -> dict[str, floa
 
 
 def _contact_moments(state: MotionState, reaction: Vector, cop_x: float) -> dict[str, float]:
+    """Generalized external-contact term to subtract from Mqddot + NLeffects."""
     cop = (cop_x, 0.0)
     return {
         "cheville": -cross_z(sub(cop, state.pose.ankle), reaction),
@@ -270,6 +271,17 @@ def available_joint_torque_limits(
     }
 
 
+def _joint_torques_from_components(
+    inertial: dict[str, float],
+    nle: dict[str, float],
+    contact: dict[str, float],
+) -> dict[str, float]:
+    return {
+        joint: inertial[joint] + nle[joint] - contact[joint]
+        for joint in ("cheville", "genou", "hanche")
+    }
+
+
 def inverse_dynamics(
     anthro: Anthropometry,
     state: MotionState,
@@ -285,7 +297,7 @@ def inverse_dynamics(
             biorbd_model,
             state,
         )
-        torques, inertial, nle = _biorbd_joint_torques(biorbd_model, state)
+        _, inertial, nle = _biorbd_joint_torques(biorbd_model, state)
         backend = "biorbd"
     else:
         inertial_abs = _absolute_generalized_torque(
@@ -302,11 +314,10 @@ def inverse_dynamics(
             include_acceleration=False,
             include_gravity=True,
         )
-        total_abs = tuple(inertial_abs[i] + nle_abs[i] for i in range(3))
-        torques = _joint_from_absolute(total_abs)
         inertial = _joint_from_absolute(inertial_abs)
         nle = _joint_from_absolute(nle_abs)
     contact = _contact_moments(state, reaction, cop_x)
+    torques = _joint_torques_from_components(inertial, nle, contact)
     components = {
         joint: {
             "Mqddot": inertial[joint],
