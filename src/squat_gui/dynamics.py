@@ -192,9 +192,9 @@ def _joint_from_absolute(absolute: tuple[float, float, float]) -> dict[str, floa
 def _contact_moments(state: MotionState, reaction: Vector, cop_x: float) -> dict[str, float]:
     cop = (cop_x, 0.0)
     return {
-        "cheville": cross_z(sub(cop, state.pose.ankle), reaction),
-        "genou": cross_z(sub(cop, state.pose.knee), reaction),
-        "hanche": cross_z(sub(cop, state.pose.hip), reaction),
+        "cheville": -cross_z(sub(cop, state.pose.ankle), reaction),
+        "genou": -cross_z(sub(cop, state.pose.knee), reaction),
+        "hanche": -cross_z(sub(cop, state.pose.hip), reaction),
     }
 
 

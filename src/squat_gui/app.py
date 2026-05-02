@@ -7,26 +7,30 @@ import os
 os.environ.setdefault("LANG", "en_US.UTF-8")
 os.environ.setdefault("LC_ALL", "en_US.UTF-8")
 
+import json
 import tkinter as tk
 from math import atan2, degrees, radians
-from tkinter import ttk
+from pathlib import Path
+from tkinter import filedialog, ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
-from .backend import BiorbdModelCache, detect_optional_backends, write_biomod_file
+from .backend import BiorbdModelCache, detect_optional_backends
 from .dynamics import DynamicsResult, available_joint_torque_limits, simulate, torque_presets
 from .kinematics import MotionState, pose_from_angles
 from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
 
 
+DETAILED_PLOT_CHOICE = "couples detailles"
 PLOT_CHOICES = [
     "cinematique articulaire",
     "centre de masse",
     "couples articulaires",
     "couples normalises",
-    "couples detailles",
+    DETAILED_PLOT_CHOICE,
     "puissances articulaires",
 ]
+DEFAULT_PLOT_CHOICES = [choice for choice in PLOT_CHOICES if choice != DETAILED_PLOT_CHOICE]
 
 JOINT_COLORS = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM x": "#2a8ca6", "CoM y": "#8a5a22"}
 FORCE_DRAW_SCALE = 3500.0 / 3.0
@@ -51,6 +55,7 @@ class SquatGui(tk.Tk):
         self.states: list[MotionState] = []
         self.results: list[DynamicsResult] = []
         self.saved_condition_count = 0
+        self.saved_conditions: dict[str, dict[str, object]] = {}
         self.model_cache = BiorbdModelCache()
 
         self.load_var = tk.DoubleVar(value=20.0)
@@ -80,9 +85,11 @@ class SquatGui(tk.Tk):
             "genou": tk.DoubleVar(value=round(reference_torques["genou"])),
             "hanche": tk.DoubleVar(value=round(reference_torques["hanche"])),
         }
-        self.show_torque_bounds_var = tk.BooleanVar(value=True)
+        self.show_torque_bounds_var = tk.BooleanVar(value=False)
         self.show_sprite_centers_var = tk.BooleanVar(value=False)
         self.angle_adapt_var = tk.BooleanVar(value=True)
+        self.subplot_mode_var = tk.BooleanVar(value=True)
+        self.enable_detailed_plot_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
 
         self._build_layout()
@@ -99,25 +106,35 @@ class SquatGui(tk.Tk):
 
         root = ttk.Frame(self, padding=10)
         root.pack(fill="both", expand=True)
-        root.columnconfigure(0, weight=1)
+        root.columnconfigure(0, weight=0, minsize=315)
         root.columnconfigure(1, weight=1)
         root.columnconfigure(2, weight=1)
-        root.rowconfigure(1, weight=2)
-        root.rowconfigure(2, weight=1)
+        root.rowconfigure(0, weight=2)
+        root.rowconfigure(1, weight=1)
 
-        controls = ttk.Frame(root)
-        controls.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8))
-        for index in range(10):
-            controls.columnconfigure(index, weight=1)
+        left = ttk.Frame(root)
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.columnconfigure(0, weight=1)
+        left.rowconfigure(3, weight=1)
 
-        self._add_scale(controls, "Charge (kg)", self.load_var, 0, 100, 20, 0)
-        self._add_scale(controls, "Tibia (%)", self.shank_var, -5, 5, 2.5, 1)
-        self._add_scale(controls, "Cuisse (%)", self.thigh_var, -5, 5, 2.5, 2)
-        self._add_scale(controls, "Tronc (%)", self.trunk_var, -5, 5, 2.5, 3)
-        self._add_scale(controls, "Duree phase (s)", self.duration_var, 0.4, 3.0, 0.1, 4)
+        parameter_box = ttk.LabelFrame(left, text="Parametres")
+        parameter_box.grid(row=0, column=0, sticky="ew", pady=(0, 6))
+        parameter_box.columnconfigure(0, weight=1)
+        self._add_scale(parameter_box, "Charge (kg)", self.load_var, 0, 100, 20, 0)
+        self._add_scale(parameter_box, "Tibia (%)", self.shank_var, -5, 5, 2.5, 1)
+        self._add_scale(parameter_box, "Cuisse (%)", self.thigh_var, -5, 5, 2.5, 2)
+        self._add_scale(parameter_box, "Tronc (%)", self.trunk_var, -5, 5, 2.5, 3)
+        self._add_scale(parameter_box, "Duree phase (s)", self.duration_var, 0.4, 3.0, 0.1, 4)
 
-        torque_box = ttk.LabelFrame(controls, text="Couples max")
-        torque_box.grid(row=0, column=5, columnspan=3, sticky="nsew", padx=6)
+        file_box = ttk.Frame(left)
+        file_box.grid(row=1, column=0, sticky="ew", pady=(0, 6))
+        file_box.columnconfigure(0, weight=1)
+        file_box.columnconfigure(1, weight=1)
+        ttk.Button(file_box, text="Save JSON", command=self.save_json).grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        ttk.Button(file_box, text="Load JSON", command=self.load_json).grid(row=0, column=1, sticky="ew", padx=(3, 0))
+
+        torque_box = ttk.LabelFrame(left, text="Couples max")
+        torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 6))
         for col, joint in enumerate(("cheville", "genou", "hanche")):
             ttk.Label(torque_box, text=joint).grid(row=0, column=col, padx=4)
             ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7).grid(row=1, column=col, padx=4)
@@ -131,9 +148,11 @@ class SquatGui(tk.Tk):
         ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.recompute).grid(row=3, column=0, columnspan=2)
         ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=3, column=2)
 
-        plot_box = ttk.LabelFrame(controls, text="Resultats")
-        plot_box.grid(row=0, column=8, columnspan=2, sticky="nsew", padx=6)
-        ttk.OptionMenu(plot_box, self.plot_choice, self.plot_choice.get(), *PLOT_CHOICES, command=lambda _value: self.on_plot_choice_changed()).grid(row=0, column=0, columnspan=4, sticky="ew")
+        plot_box = ttk.LabelFrame(left, text="Resultats")
+        plot_box.grid(row=3, column=0, sticky="ew", pady=(0, 6))
+        self.plot_menu = ttk.Combobox(plot_box, textvariable=self.plot_choice, values=DEFAULT_PLOT_CHOICES, state="readonly")
+        self.plot_menu.grid(row=0, column=0, columnspan=4, sticky="ew", padx=3)
+        self.plot_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_plot_choice_changed())
         for index, name in enumerate(self.show_vars):
             checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
             checkbutton.grid(row=1, column=index, padx=3)
@@ -147,14 +166,16 @@ class SquatGui(tk.Tk):
             self.com_controls.append(checkbutton)
         for control in self.com_controls:
             control.state(["disabled"])
-        ttk.Checkbutton(plot_box, text="centres", variable=self.show_sprite_centers_var, command=self.redraw).grid(row=3, column=0, columnspan=4)
+        ttk.Checkbutton(plot_box, text="3 subplots", variable=self.subplot_mode_var, command=self.redraw).grid(row=3, column=0, columnspan=2, sticky="w", padx=3)
+        ttk.Checkbutton(plot_box, text="details", variable=self.enable_detailed_plot_var, command=self.update_plot_choices).grid(row=3, column=2, columnspan=2, sticky="w", padx=3)
+        ttk.Checkbutton(plot_box, text="centres", variable=self.show_sprite_centers_var, command=self.redraw).grid(row=4, column=0, columnspan=4)
 
         table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
-        table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
         table_box.rowconfigure(0, weight=1)
         table_box.columnconfigure(0, weight=1)
         columns = ("squat", "charge", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
-        self.conditions_table = ttk.Treeview(table_box, columns=columns, show="headings", height=10)
+        self.conditions_table = ttk.Treeview(table_box, columns=columns, show="headings", height=7, selectmode="extended")
         headings = {
             "squat": "squat deg",
             "charge": "kg",
@@ -170,17 +191,18 @@ class SquatGui(tk.Tk):
             self.conditions_table.heading(column, text=headings[column])
             self.conditions_table.column(column, width=widths[column], anchor="center", stretch=True)
         self.conditions_table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        self.conditions_table.bind("<<TreeviewSelect>>", lambda _event: self.redraw())
         ttk.Button(table_box, text="Enregistrer", command=self.record_condition).grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
 
         self.pose_canvas = tk.Canvas(root, bg=CANVAS_BG, highlightthickness=2, highlightbackground="#7f8f83")
-        self.pose_canvas.grid(row=1, column=1, sticky="nsew", padx=(0, 8))
+        self.pose_canvas.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
         self.pose_canvas.bind("<Configure>", self.schedule_redraw)
         self.pose_canvas.bind("<ButtonPress-1>", self.on_pose_press)
         self.pose_canvas.bind("<B1-Motion>", self.on_pose_drag)
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
 
         right = ttk.Frame(root)
-        right.grid(row=1, column=2, sticky="nsew")
+        right.grid(row=0, column=2, sticky="nsew")
         right.rowconfigure(0, weight=1)
         right.columnconfigure(0, weight=1)
         self.animation_canvas = tk.Canvas(right, bg=CANVAS_BG, highlightthickness=2, highlightbackground="#c9d1c7")
@@ -193,21 +215,21 @@ class SquatGui(tk.Tk):
         self.play_button = ttk.Button(playback, text="▶", command=self.toggle_play, width=4)
         self.play_button.grid(row=0, column=0, padx=(0, 8))
         ttk.Scale(playback, variable=self.frame_var, from_=0, to=self.frame_count - 1, orient="horizontal", command=lambda _value: self.redraw()).grid(row=0, column=1, sticky="ew")
-        ttk.Button(playback, text="Exporter bioMod", command=self.export_biomod).grid(row=0, column=2, padx=(8, 0))
 
         self.plot_canvas = tk.Canvas(root, bg="#ffffff", highlightthickness=1, highlightbackground="#c9d1c7")
-        self.plot_canvas.grid(row=2, column=0, columnspan=3, sticky="nsew", pady=(8, 0))
+        self.plot_canvas.grid(row=1, column=1, columnspan=2, sticky="nsew", pady=(8, 0))
         self.plot_canvas.bind("<Configure>", self.schedule_redraw)
 
-        ttk.Label(root, textvariable=self.status_var).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        ttk.Label(root, textvariable=self.status_var).grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
 
     def _add_scale(self, parent: ttk.Frame, label: str, var: tk.DoubleVar, start: float, end: float, resolution: float, column: int) -> None:
         box = ttk.LabelFrame(parent, text=label)
-        box.grid(row=0, column=column, sticky="nsew", padx=4)
+        box.grid(row=column, column=0, sticky="ew", padx=4, pady=2)
+        box.columnconfigure(0, weight=1)
         scale = ttk.Scale(box, variable=var, from_=start, to=end, orient="horizontal", command=lambda _value: self.recompute())
         scale.grid(row=0, column=0, sticky="ew", padx=4)
         value_label = ttk.Label(box, width=7)
-        value_label.grid(row=1, column=0)
+        value_label.grid(row=0, column=1, padx=(4, 2))
 
         def sync_label(*_args: object) -> None:
             snapped = round((var.get() - start) / resolution) * resolution + start
@@ -226,6 +248,18 @@ class SquatGui(tk.Tk):
             thigh_scale=scale_from_percent(self.thigh_var.get()),
             trunk_scale=scale_from_percent(self.trunk_var.get()),
         )
+
+    def available_plot_choices(self) -> list[str]:
+        if self.enable_detailed_plot_var.get():
+            return PLOT_CHOICES
+        return DEFAULT_PLOT_CHOICES
+
+    def update_plot_choices(self) -> None:
+        choices = self.available_plot_choices()
+        self.plot_menu.configure(values=choices)
+        if self.plot_choice.get() not in choices:
+            self.plot_choice.set("couples articulaires")
+        self.on_plot_choice_changed()
 
     def max_torques(self) -> dict[str, float]:
         return {joint: max(1.0, var.get()) for joint, var in self.max_torque_vars.items()}
@@ -257,6 +291,113 @@ class SquatGui(tk.Tk):
         elif self.results:
             self.status_var.set("backend analytique actif: biorbd indisponible ou modele non charge")
         self.redraw()
+
+    def current_settings(self) -> dict[str, object]:
+        return {
+            "load_kg": self.load_var.get(),
+            "shank_percent": self.shank_var.get(),
+            "thigh_percent": self.thigh_var.get(),
+            "trunk_percent": self.trunk_var.get(),
+            "duration_phase_s": self.duration_var.get(),
+            "frame": self.frame_var.get(),
+            "plot_choice": self.plot_choice.get(),
+            "quantity": self.quantity_var.get(),
+            "show_joints": {name: var.get() for name, var in self.show_vars.items()},
+            "show_com_components": {name: var.get() for name, var in self.com_component_vars.items()},
+            "max_torques": {joint: var.get() for joint, var in self.max_torque_vars.items()},
+            "torque_preset": self.torque_preset_var.get(),
+            "show_torque_bounds": self.show_torque_bounds_var.get(),
+            "angle_adapt": self.angle_adapt_var.get(),
+            "show_sprite_centers": self.show_sprite_centers_var.get(),
+            "subplot_mode": self.subplot_mode_var.get(),
+            "enable_detailed_plot": self.enable_detailed_plot_var.get(),
+            "final_q_deg": [degrees(value) for value in self.final_q],
+            "frame_count": self.frame_count,
+        }
+
+    def apply_settings(self, settings: dict[str, object]) -> None:
+        self.load_var.set(float(settings.get("load_kg", self.load_var.get())))
+        self.shank_var.set(float(settings.get("shank_percent", self.shank_var.get())))
+        self.thigh_var.set(float(settings.get("thigh_percent", self.thigh_var.get())))
+        self.trunk_var.set(float(settings.get("trunk_percent", self.trunk_var.get())))
+        self.duration_var.set(float(settings.get("duration_phase_s", self.duration_var.get())))
+        self.torque_preset_var.set(str(settings.get("torque_preset", self.torque_preset_var.get())))
+        for joint, value in dict(settings.get("max_torques", {})).items():
+            if joint in self.max_torque_vars:
+                self.max_torque_vars[joint].set(float(value))
+        for name, value in dict(settings.get("show_joints", {})).items():
+            if name in self.show_vars:
+                self.show_vars[name].set(bool(value))
+        for name, value in dict(settings.get("show_com_components", {})).items():
+            if name in self.com_component_vars:
+                self.com_component_vars[name].set(bool(value))
+        self.show_torque_bounds_var.set(bool(settings.get("show_torque_bounds", self.show_torque_bounds_var.get())))
+        self.angle_adapt_var.set(bool(settings.get("angle_adapt", self.angle_adapt_var.get())))
+        self.show_sprite_centers_var.set(bool(settings.get("show_sprite_centers", self.show_sprite_centers_var.get())))
+        self.subplot_mode_var.set(bool(settings.get("subplot_mode", self.subplot_mode_var.get())))
+        self.enable_detailed_plot_var.set(bool(settings.get("enable_detailed_plot", self.enable_detailed_plot_var.get())))
+        self.final_q = tuple(radians(value) for value in self.normalized_final_q_deg(settings.get("final_q_deg")))
+        self.quantity_var.set(str(settings.get("quantity", self.quantity_var.get())))
+        plot_choice = str(settings.get("plot_choice", self.plot_choice.get()))
+        self.update_plot_choices()
+        if plot_choice in self.available_plot_choices():
+            self.plot_choice.set(plot_choice)
+        self.frame_var.set(int(settings.get("frame", self.frame_var.get())))
+        self.on_plot_choice_changed()
+        self.recompute()
+
+    def save_json(self, path: str | Path | None = None) -> None:
+        if path is None:
+            selected = filedialog.asksaveasfilename(
+                title="Sauver la condition",
+                defaultextension=".json",
+                filetypes=(("JSON", "*.json"), ("Tous les fichiers", "*.*")),
+            )
+            if not selected:
+                return
+            path = selected
+        payload = {
+            "version": 1,
+            "settings": self.current_settings(),
+            "conditions": [
+                {
+                    "iid": iid,
+                    "label": condition["label"],
+                    "settings": condition["settings"],
+                    "final_q_deg": condition["final_q_deg"],
+                }
+                for iid, condition in self.saved_conditions.items()
+            ],
+        }
+        Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        self.status_var.set(f"configuration ecrite: {path}")
+
+    def load_json(self, path: str | Path | None = None) -> None:
+        if path is None:
+            selected = filedialog.askopenfilename(
+                title="Charger une condition",
+                filetypes=(("JSON", "*.json"), ("Tous les fichiers", "*.*")),
+            )
+            if not selected:
+                return
+            path = selected
+        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.clear_conditions()
+        self.apply_settings(payload.get("settings", {}))
+        for condition in payload.get("conditions", []):
+            self.add_saved_condition(
+                settings=dict(condition.get("settings", {})),
+                final_q_deg=[float(value) for value in condition.get("final_q_deg", [])],
+                label=str(condition.get("label", "")) or None,
+                iid=str(condition.get("iid", "")) or None,
+            )
+        self.status_var.set(f"configuration chargee: {path}")
+        self.redraw()
+
+    def normalized_final_q_deg(self, values: object | None) -> list[float]:
+        if isinstance(values, list) and len(values) == 3:
+            return [float(value) for value in values]
+        return [degrees(value) for value in self.final_q]
 
     def canvases_ready(self) -> bool:
         return all(
@@ -526,22 +667,146 @@ class SquatGui(tk.Tk):
         canvas.delete("all")
         width = max(1, canvas.winfo_width())
         height = max(1, canvas.winfo_height())
+        choice = self.plot_choice.get()
+        datasets = self.plot_datasets()
+        plotted = [
+            {
+                **dataset,
+                "series": self.plot_series_for(choice, dataset["states"], dataset["results"]),  # type: ignore[arg-type]
+            }
+            for dataset in datasets
+        ]
+        plotted = [dataset for dataset in plotted if dataset["series"]]
+        if not plotted:
+            return
+        if self.subplot_mode_var.get():
+            self.draw_subplot_plot(canvas, plotted, choice, width, height)
+        else:
+            self.draw_single_axis_plot(canvas, plotted, choice, width, height)
+
+    def plot_datasets(self) -> list[dict[str, object]]:
+        selected = [iid for iid in self.conditions_table.selection() if iid in self.saved_conditions]
+        if not selected:
+            return [{"label": "courant", "states": self.states, "results": self.results, "color": None}]
+        total = len(selected)
+        datasets: list[dict[str, object]] = []
+        for index, iid in enumerate(selected):
+            condition = self.saved_conditions[iid]
+            datasets.append(
+                {
+                    "label": condition["label"],
+                    "states": condition["states"],
+                    "results": condition["results"],
+                    "color": self.condition_color(index, total),
+                }
+            )
+        return datasets
+
+    def condition_color(self, index: int, total: int) -> str:
+        if total <= 1:
+            return "#2e7d54"
+        fraction = index / max(1, total - 1)
+        if fraction <= 0.5:
+            local = fraction / 0.5
+            start = (198, 51, 44)
+            end = (46, 125, 84)
+        else:
+            local = (fraction - 0.5) / 0.5
+            start = (46, 125, 84)
+            end = (42, 140, 166)
+        rgb = tuple(round(start[channel] + local * (end[channel] - start[channel])) for channel in range(3))
+        return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+
+    def selected_panel_names(self, plotted: list[dict[str, object]], choice: str) -> list[str]:
+        if choice == DETAILED_PLOT_CHOICE:
+            return [joint for joint in ("cheville", "genou", "hanche") if self.show_vars[joint].get()]
+        names: list[str] = []
+        for dataset in plotted:
+            for name in dataset["series"]:  # type: ignore[union-attr]
+                if name not in names:
+                    names.append(str(name))
+        return names
+
+    def draw_subplot_plot(self, canvas: tk.Canvas, plotted: list[dict[str, object]], choice: str, width: int, height: int) -> None:
+        panels = self.selected_panel_names(plotted, choice)
+        if not panels:
+            return
+        pad_left, pad_top, pad_right, pad_bottom = 54, 32, 18, 44
+        gap = 22
+        panel_width = (width - pad_left - pad_right - gap * (len(panels) - 1)) / len(panels)
+        unit = self.plot_unit(choice)
+        canvas.create_text(16, 12, text=f"{choice} ({unit})", anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
+        for panel_index, panel_name in enumerate(panels):
+            x0 = pad_left + panel_index * (panel_width + gap)
+            x1 = x0 + panel_width
+            y0 = height - pad_bottom
+            y1 = pad_top
+            values = self.panel_values(plotted, choice, panel_name)
+            if not values:
+                continue
+            ymin, ymax = self.value_bounds(values, choice, panel_name)
+            self.draw_panel_axes(canvas, x0, x1, y0, y1, ymin, ymax, unit, panel_name)
+            if choice == DETAILED_PLOT_CHOICE:
+                self.draw_detailed_panel(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax)
+            else:
+                self.draw_panel_series(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax)
+            self.draw_panel_limits(canvas, choice, panel_name, x0, x1, y0, y1, ymin, ymax)
+        self.draw_condition_legend(canvas, plotted, width, height)
+        if choice == DETAILED_PLOT_CHOICE:
+            self.draw_detailed_component_legend(canvas, width - 270, pad_top + 6)
+
+    def draw_single_axis_plot(self, canvas: tk.Canvas, plotted: list[dict[str, object]], choice: str, width: int, height: int) -> None:
         pad_left, pad_top, pad_right, pad_bottom = 54, 24, 18, 36
         x0, y0 = pad_left, height - pad_bottom
         x1, y1 = width - pad_right, pad_top
-        canvas.create_line(x0, y0, x1, y0, fill="#69746e")
-        canvas.create_line(x0, y0, x0, y1, fill="#69746e")
-        choice = self.plot_choice.get()
-        series = self.plot_series(choice)
-        if not series:
-            return
-        all_values = [value for values in series.values() for value in values]
-        if choice in ("couples articulaires", "couples detailles") and self.show_torque_bounds_var.get():
-            for joint, values in self.torque_bound_series().items():
-                if not self.show_vars[joint].get():
-                    continue
-                all_values.extend(values)
-                all_values.extend([-value for value in values])
+        all_values = [
+            value
+            for dataset in plotted
+            for values in dataset["series"].values()  # type: ignore[union-attr]
+            for value in values
+        ]
+        panels = self.selected_panel_names(plotted, choice)
+        for panel in panels:
+            all_values.extend(self.limit_values_for_plot(choice, panel))
+        if choice == "couples normalises":
+            all_values.append(100.0)
+        ymin, ymax = self.value_bounds(all_values, choice, None)
+        unit = self.plot_unit(choice)
+        self.draw_panel_axes(canvas, x0, x1, y0, y1, ymin, ymax, unit, choice)
+        if choice == DETAILED_PLOT_CHOICE:
+            for panel in panels:
+                self.draw_detailed_panel(canvas, plotted, panel, x0, x1, y0, y1, ymin, ymax)
+            self.draw_detailed_component_legend(canvas, x1 - 270, y1 + 4)
+        else:
+            palette = ["#2e7d54", "#b46d22", "#6d5ea8", "#2a8ca6", "#9b3d3d", "#4c6f3d", "#8a5a22"]
+            for dataset_index, dataset in enumerate(plotted):
+                multi_condition = len(plotted) > 1
+                for series_index, (name, values) in enumerate(dataset["series"].items()):  # type: ignore[union-attr]
+                    color = str(dataset["color"]) if multi_condition else JOINT_COLORS.get(name, palette[series_index % len(palette)])
+                    dash = None if not multi_condition else (None, (6, 4), (2, 3))[series_index % 3]
+                    self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2, dash=dash)
+        self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax)
+        self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
+        self.draw_condition_legend(canvas, plotted, width, height)
+
+    def panel_values(self, plotted: list[dict[str, object]], choice: str, panel_name: str) -> list[float]:
+        if choice == DETAILED_PLOT_CHOICE:
+            return [
+                value
+                for dataset in plotted
+                for component in ("somme", "Mqddot", "NLeffects", "contact")
+                for value in dataset["series"].get(f"{panel_name} {component}", [])  # type: ignore[union-attr]
+            ]
+        return [
+            value
+            for dataset in plotted
+            for value in dataset["series"].get(panel_name, [])  # type: ignore[union-attr]
+        ]
+
+    def value_bounds(self, values: list[float], choice: str, panel_name: str | None) -> tuple[float, float]:
+        all_values = list(values)
+        if panel_name is not None:
+            all_values.extend(self.limit_values_for_plot(choice, panel_name))
         if choice == "couples normalises":
             all_values.append(100.0)
         ymin = min(all_values)
@@ -549,45 +814,101 @@ class SquatGui(tk.Tk):
         if abs(ymax - ymin) < 1e-9:
             ymin -= 1.0
             ymax += 1.0
-        self.draw_y_ticks(canvas, x0, y0, y1, ymin, ymax)
+        margin = 0.05 * (ymax - ymin)
+        return ymin - margin, ymax + margin
+
+    def limit_values_for_plot(self, choice: str, panel_name: str) -> list[float]:
+        if choice not in ("couples articulaires", DETAILED_PLOT_CHOICE) or not self.show_torque_bounds_var.get():
+            return []
+        if panel_name not in self.show_vars or not self.show_vars[panel_name].get():
+            return []
+        values = self.torque_bound_series().get(panel_name, [])
+        return values + [-value for value in values]
+
+    def draw_panel_axes(
+        self,
+        canvas: tk.Canvas,
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+        unit: str,
+        title: str,
+    ) -> None:
+        canvas.create_line(x0, y0, x1, y0, fill="#69746e")
+        canvas.create_line(x0, y0, x0, y1, fill="#69746e")
+        self.draw_y_ticks(canvas, x0, y0, y1, ymin, ymax, x1)
         self.draw_x_ticks(canvas, x0, x1, y0)
         self.draw_time_markers(canvas, x0, x1, y0, y1)
-        unit = self.plot_unit(choice)
-        canvas.create_text(x1, height - 12, text="temps (s)", anchor="e", fill="#506158", font=("Helvetica", 9))
-        canvas.create_text(x0 + 4, y1 - 12, text=f"y: {unit}", anchor="w", fill="#506158", font=("Helvetica", 9))
-        if choice == "couples detailles":
-            self.draw_detailed_torque_plot(canvas, series, x0, x1, y0, y1, ymin, ymax)
-            self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax)
-            canvas.create_text(16, 12, text=f"{choice} ({unit})", anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
-            return
-        colors = JOINT_COLORS
-        palette = ["#2e7d54", "#b46d22", "#6d5ea8", "#2a8ca6", "#9b3d3d", "#4c6f3d", "#8a5a22"]
-        for series_index, (name, values) in enumerate(series.items()):
-            color = colors.get(name, palette[series_index % len(palette)])
-            points = []
-            for index, value in enumerate(values):
-                x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
-                y = y0 - (y0 - y1) * (value - ymin) / (ymax - ymin)
-                points.extend([x, y])
-            if len(points) >= 4:
-                canvas.create_line(*points, fill=color, width=2)
-        self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax)
-        self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
-        canvas.create_text(16, 12, text=f"{choice} ({unit})", anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
-        legend_x = x0
-        for series_index, name in enumerate(series):
-            color = colors.get(name, palette[series_index % len(palette)])
-            canvas.create_line(legend_x, height - 14, legend_x + 18, height - 14, fill=color, width=3)
-            canvas.create_text(legend_x + 24, height - 14, text=name, anchor="w", fill="#22312a")
-            legend_x += max(95, 9 * len(name))
+        canvas.create_text(x0 + 4, y1 - 14, text=f"{title} ({unit})", anchor="w", fill="#22312a", font=("Helvetica", 10, "bold"))
+        canvas.create_text(x1, canvas.winfo_height() - 12, text="temps (s)", anchor="e", fill="#506158", font=("Helvetica", 9))
 
-    def draw_y_ticks(self, canvas: tk.Canvas, x0: float, y0: float, y1: float, ymin: float, ymax: float) -> None:
+    def draw_panel_series(
+        self,
+        canvas: tk.Canvas,
+        plotted: list[dict[str, object]],
+        panel_name: str,
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+    ) -> None:
+        multi_condition = len(plotted) > 1
+        for dataset in plotted:
+            values = dataset["series"].get(panel_name, [])  # type: ignore[union-attr]
+            color = str(dataset["color"]) if multi_condition else JOINT_COLORS.get(panel_name, "#2e7d54")
+            self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2)
+
+    def draw_panel_limits(
+        self,
+        canvas: tk.Canvas,
+        choice: str,
+        panel_name: str,
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+    ) -> None:
+        if choice == "couples normalises":
+            self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
+        if choice in ("couples articulaires", DETAILED_PLOT_CHOICE):
+            self.draw_torque_bound_for_joint(canvas, panel_name, x0, x1, y0, y1, ymin, ymax)
+
+    def draw_condition_legend(self, canvas: tk.Canvas, plotted: list[dict[str, object]], width: int, height: int) -> None:
+        if len(plotted) <= 1:
+            return
+        legend_x = 62
+        y = height - 14
+        for dataset in plotted:
+            color = str(dataset["color"])
+            label = str(dataset["label"])
+            canvas.create_line(legend_x, y, legend_x + 18, y, fill=color, width=3)
+            canvas.create_text(legend_x + 24, y, text=label, anchor="w", fill="#22312a")
+            legend_x += max(86, 9 * len(label))
+
+    def draw_y_ticks(
+        self,
+        canvas: tk.Canvas,
+        x0: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+        grid_right: float | None = None,
+    ) -> None:
+        grid_right = grid_right if grid_right is not None else canvas.winfo_width() - 18
         for index in range(5):
             fraction = index / 4
             value = ymin + fraction * (ymax - ymin)
             y = y0 - (y0 - y1) * fraction
             canvas.create_line(x0 - 4, y, x0, y, fill="#69746e")
-            canvas.create_line(x0, y, canvas.winfo_width() - 18, y, fill="#edf0ec")
+            canvas.create_line(x0, y, grid_right, y, fill="#edf0ec")
             canvas.create_text(x0 - 8, y, text=self.format_axis_value(value), anchor="e", fill="#506158", font=("Helvetica", 9))
 
     def draw_x_ticks(self, canvas: tk.Canvas, x0: float, x1: float, y0: float) -> None:
@@ -634,17 +955,32 @@ class SquatGui(tk.Tk):
         if self.plot_choice.get() not in ("couples articulaires", "couples detailles") or not self.show_torque_bounds_var.get():
             return
         for joint, values in self.torque_bound_series().items():
-            if not self.show_vars[joint].get():
-                continue
-            color = JOINT_COLORS[joint]
-            for sign in (1.0, -1.0):
-                points = []
-                for index, value in enumerate(values):
-                    x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
-                    y = y0 - (y0 - y1) * (sign * value - ymin) / (ymax - ymin)
-                    points.extend([x, y])
-                if len(points) >= 4:
-                    canvas.create_line(*points, fill=color, width=1, dash=(6, 5))
+            self.draw_torque_bound_for_joint(canvas, joint, x0, x1, y0, y1, ymin, ymax, values)
+
+    def draw_torque_bound_for_joint(
+        self,
+        canvas: tk.Canvas,
+        joint: str,
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+        values: list[float] | None = None,
+    ) -> None:
+        if joint not in self.show_vars or not self.show_vars[joint].get() or not self.show_torque_bounds_var.get():
+            return
+        values = values or self.torque_bound_series().get(joint, [])
+        color = JOINT_COLORS[joint]
+        for sign in (1.0, -1.0):
+            points = []
+            for index, value in enumerate(values):
+                x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+                y = y0 - (y0 - y1) * (sign * value - ymin) / (ymax - ymin)
+                points.extend([x, y])
+            if len(points) >= 4:
+                canvas.create_line(*points, fill=color, width=1, dash=(6, 5))
 
     def draw_normalized_torque_limit(self, canvas: tk.Canvas, x0: float, x1: float, y0: float, y1: float, ymin: float, ymax: float) -> None:
         if self.plot_choice.get() != "couples normalises":
@@ -684,6 +1020,34 @@ class SquatGui(tk.Tk):
             canvas.create_text(legend_x + 24, canvas.winfo_height() - 14, text=joint, anchor="w", fill="#22312a")
             legend_x += 95
         self.draw_detailed_component_legend(canvas, x1 - 270, y1 + 4)
+
+    def draw_detailed_panel(
+        self,
+        canvas: tk.Canvas,
+        plotted: list[dict[str, object]],
+        joint: str,
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+    ) -> None:
+        multi_condition = len(plotted) > 1
+        component_styles = (
+            ("somme", 2, None, None),
+            ("Mqddot", 1, (7, 4), None),
+            ("NLeffects", 1, (2, 3), None),
+            ("contact", 1, (7, 3, 2, 3), "triangle"),
+        )
+        for dataset in plotted:
+            color = str(dataset["color"]) if multi_condition else JOINT_COLORS[joint]
+            series = dataset["series"]  # type: ignore[assignment]
+            for component, width, dash, marker in component_styles:
+                values = series.get(f"{joint} {component}", [])
+                self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=width, dash=dash)
+                if marker == "triangle":
+                    self.draw_triangle_markers(canvas, values, x0, x1, y0, y1, ymin, ymax, color)
 
     def draw_detailed_component_legend(self, canvas: tk.Canvas, x: float, y: float) -> None:
         styles = (
@@ -742,61 +1106,71 @@ class SquatGui(tk.Tk):
             canvas.create_polygon(x, y - 5, x - 5, y + 5, x + 5, y + 5, fill=color, outline=color)
 
     def plot_series(self, choice: str) -> dict[str, list[float]]:
+        return self.plot_series_for(choice, self.states, self.results)
+
+    def plot_series_for(
+        self,
+        choice: str,
+        states: list[MotionState],
+        results: list[DynamicsResult],
+    ) -> dict[str, list[float]]:
         selected = [name for name, var in self.show_vars.items() if var.get()]
         data: dict[str, list[float]] = {}
         if choice == "cinematique articulaire":
-            values = self.joint_kinematic_series()
+            values = self.joint_kinematic_series(states)
         elif choice == "centre de masse":
-            return self.com_plot_series()
+            return self.com_plot_series(results)
         elif choice == "couples articulaires":
-            values = {joint: [result.torques[joint] for result in self.results] for joint in ("cheville", "genou", "hanche")}
+            values = {joint: [result.torques[joint] for result in results] for joint in ("cheville", "genou", "hanche")}
         elif choice == "couples normalises":
             values = {
-                joint: [100.0 * result.effort_ratios[joint] for result in self.results]
+                joint: [100.0 * result.effort_ratios[joint] for result in results]
                 for joint in ("cheville", "genou", "hanche")
             }
         elif choice == "couples detailles":
             values = {}
             for joint in ("cheville", "genou", "hanche"):
                 if joint in selected:
-                    values[f"{joint} somme"] = [result.torques[joint] for result in self.results]
-                    values[f"{joint} Mqddot"] = [result.torque_components[joint]["Mqddot"] for result in self.results]
-                    values[f"{joint} NLeffects"] = [result.torque_components[joint]["NLeffects"] for result in self.results]
-                    values[f"{joint} contact"] = [result.torque_components[joint]["contact"] for result in self.results]
+                    values[f"{joint} somme"] = [result.torques[joint] for result in results]
+                    values[f"{joint} Mqddot"] = [result.torque_components[joint]["Mqddot"] for result in results]
+                    values[f"{joint} NLeffects"] = [result.torque_components[joint]["NLeffects"] for result in results]
+                    values[f"{joint} contact"] = [result.torque_components[joint]["contact"] for result in results]
             return values
         else:
-            values = {joint: [result.powers[joint] for result in self.results] for joint in ("cheville", "genou", "hanche")}
+            values = {joint: [result.powers[joint] for result in results] for joint in ("cheville", "genou", "hanche")}
         for name in selected:
             if name in values:
                 data[name] = values[name]
         return data
 
-    def joint_kinematic_series(self) -> dict[str, list[float]]:
+    def joint_kinematic_series(self, states: list[MotionState] | None = None) -> dict[str, list[float]]:
+        states = states or self.states
         quantity = self.quantity_var.get()
         if quantity == "position":
             return {
-                "cheville": [degrees(state.q[0]) for state in self.states],
-                "genou": [degrees(state.q[1] - state.q[0]) for state in self.states],
-                "hanche": [degrees(state.q[2] - state.q[1]) for state in self.states],
+                "cheville": [degrees(state.q[0]) for state in states],
+                "genou": [degrees(state.q[1] - state.q[0]) for state in states],
+                "hanche": [degrees(state.q[2] - state.q[1]) for state in states],
             }
         if quantity == "vitesse":
             return {
-                "cheville": [degrees(state.qdot[0]) for state in self.states],
-                "genou": [degrees(state.qdot[1] - state.qdot[0]) for state in self.states],
-                "hanche": [degrees(state.qdot[2] - state.qdot[1]) for state in self.states],
+                "cheville": [degrees(state.qdot[0]) for state in states],
+                "genou": [degrees(state.qdot[1] - state.qdot[0]) for state in states],
+                "hanche": [degrees(state.qdot[2] - state.qdot[1]) for state in states],
             }
         return {
-            "cheville": [degrees(state.qddot[0]) for state in self.states],
-            "genou": [degrees(state.qddot[1] - state.qddot[0]) for state in self.states],
-            "hanche": [degrees(state.qddot[2] - state.qddot[1]) for state in self.states],
+            "cheville": [degrees(state.qddot[0]) for state in states],
+            "genou": [degrees(state.qddot[1] - state.qddot[0]) for state in states],
+            "hanche": [degrees(state.qddot[2] - state.qddot[1]) for state in states],
         }
 
-    def com_plot_series(self) -> dict[str, list[float]]:
+    def com_plot_series(self, results: list[DynamicsResult] | None = None) -> dict[str, list[float]]:
+        results = results or self.results
         quantity = self.quantity_var.get()
         source = {
-            "position": [result.com for result in self.results],
-            "vitesse": [result.com_velocity for result in self.results],
-            "acceleration": [result.com_acceleration for result in self.results],
+            "position": [result.com for result in results],
+            "vitesse": [result.com_velocity for result in results],
+            "acceleration": [result.com_acceleration for result in results],
         }[quantity]
         data: dict[str, list[float]] = {}
         if self.com_component_vars["x"].get():
@@ -884,37 +1258,101 @@ class SquatGui(tk.Tk):
         self.redraw()
         self.after(30, self.step_animation)
 
-    def export_biomod(self) -> None:
-        path = write_biomod_file("generated/squat_2d.bioMod", self.anthro())
-        self.status_var.set(f"modele ecrit: {path}")
-
     def record_condition(self) -> None:
+        self.add_saved_condition(
+            self.current_settings(),
+            [degrees(value) for value in self.final_q],
+            states=list(self.states),
+            results=list(self.results),
+        )
+        self.status_var.set(f"condition {self.saved_condition_count} enregistree")
+
+    def clear_conditions(self) -> None:
+        self.saved_conditions.clear()
+        self.saved_condition_count = 0
+        for iid in self.conditions_table.get_children():
+            self.conditions_table.delete(iid)
+
+    def add_saved_condition(
+        self,
+        settings: dict[str, object],
+        final_q_deg: list[float],
+        label: str | None = None,
+        iid: str | None = None,
+        states: list[MotionState] | None = None,
+        results: list[DynamicsResult] | None = None,
+    ) -> str:
         self.saved_condition_count += 1
+        condition_iid = iid or f"condition-{self.saved_condition_count}"
+        if condition_iid in self.saved_conditions:
+            condition_iid = f"condition-{self.saved_condition_count}"
+        if not final_q_deg:
+            final_q_deg = [degrees(value) for value in self.final_q]
+        condition_label = label or f"C{self.saved_condition_count}"
+        if states is None or results is None:
+            states, results = self.simulate_from_condition(settings, final_q_deg)
         peak_torques = {
-            joint: max(abs(result.torques[joint]) for result in self.results)
+            joint: max(abs(result.torques[joint]) for result in results)
             for joint in ("cheville", "genou", "hanche")
         }
-        squat_angles = (
-            degrees(self.final_q[0]),
-            degrees(self.final_q[1] - self.final_q[0]),
-            degrees(self.final_q[2] - self.final_q[1]),
-        )
+        squat_angles = self.display_joint_angles(tuple(radians(value) for value in final_q_deg))
+        self.saved_conditions[condition_iid] = {
+            "label": condition_label,
+            "settings": settings,
+            "final_q_deg": final_q_deg,
+            "states": states,
+            "results": results,
+        }
         self.conditions_table.insert(
             "",
             "end",
-            iid=f"condition-{self.saved_condition_count}",
+            iid=condition_iid,
             values=(
                 f"{squat_angles[0]:.0f}/{squat_angles[1]:.0f}/{squat_angles[2]:.0f}",
-                f"{self.load_var.get():.0f}",
-                f"{self.shank_var.get():+.1f}",
-                f"{self.thigh_var.get():+.1f}",
-                f"{self.trunk_var.get():+.1f}",
+                f"{float(settings.get('load_kg', 0.0)):.0f}",
+                f"{float(settings.get('shank_percent', 0.0)):+.1f}",
+                f"{float(settings.get('thigh_percent', 0.0)):+.1f}",
+                f"{float(settings.get('trunk_percent', 0.0)):+.1f}",
                 f"{peak_torques['cheville']:.1f}",
                 f"{peak_torques['genou']:.1f}",
                 f"{peak_torques['hanche']:.1f}",
             ),
         )
-        self.status_var.set(f"condition {self.saved_condition_count} enregistree")
+        return condition_iid
+
+    def simulate_from_condition(
+        self,
+        settings: dict[str, object],
+        final_q_deg: list[float],
+    ) -> tuple[list[MotionState], list[DynamicsResult]]:
+        anthro = Anthropometry(
+            bar_mass=float(settings.get("load_kg", 20.0)),
+            shank_scale=scale_from_percent(float(settings.get("shank_percent", 0.0))),
+            thigh_scale=scale_from_percent(float(settings.get("thigh_percent", 0.0))),
+            trunk_scale=scale_from_percent(float(settings.get("trunk_percent", 0.0))),
+        )
+        final_q = tuple(radians(value) for value in self.normalized_final_q_deg(final_q_deg))
+        max_torques = {
+            joint: float(dict(settings.get("max_torques", {})).get(joint, self.max_torque_vars[joint].get()))
+            for joint in ("cheville", "genou", "hanche")
+        }
+        duration = 2.0 * max(0.1, float(settings.get("duration_phase_s", self.duration_var.get())))
+        return simulate(
+            anthro,
+            final_q,
+            duration,
+            self.frame_count,
+            max_torques,
+            bool(settings.get("angle_adapt", self.angle_adapt_var.get())),
+            self.model_cache,
+        )
+
+    def display_joint_angles(self, q: tuple[float, float, float]) -> tuple[float, float, float]:
+        return (
+            degrees(q[0]),
+            degrees(q[1] - q[0]),
+            degrees(q[2] - q[1]),
+        )
 
 
 def main() -> None:
