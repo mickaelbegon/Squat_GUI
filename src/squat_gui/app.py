@@ -807,6 +807,25 @@ class SquatGui(tk.Tk):
         rgb = tuple(round(start[channel] + local * (end[channel] - start[channel])) for channel in range(3))
         return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
 
+    def blend_color(self, color: str, target: str, fraction: float) -> str:
+        color = color.lstrip("#")
+        target = target.lstrip("#")
+        rgb = tuple(int(color[index : index + 2], 16) for index in (0, 2, 4))
+        target_rgb = tuple(int(target[index : index + 2], 16) for index in (0, 2, 4))
+        mixed = tuple(round(rgb[index] + fraction * (target_rgb[index] - rgb[index])) for index in range(3))
+        return f"#{mixed[0]:02x}{mixed[1]:02x}{mixed[2]:02x}"
+
+    def component_color(self, base_color: str, component: str) -> str:
+        if component == "somme":
+            return base_color
+        if component == "Mqddot":
+            return self.blend_color(base_color, "#ffffff", 0.28)
+        if component == "NLeffects":
+            return self.blend_color(base_color, "#111111", 0.18)
+        if component == "contact":
+            return self.blend_color(base_color, "#ffffff", 0.48)
+        return base_color
+
     def selected_panel_names(self, plotted: list[dict[str, object]], choice: str) -> list[str]:
         if choice == DETAILED_PLOT_CHOICE:
             return [joint for joint in ("cheville", "genou", "hanche") if self.show_vars[joint].get()]
@@ -1128,9 +1147,10 @@ class SquatGui(tk.Tk):
             color = JOINT_COLORS[joint]
             for component, width, dash, marker in component_styles:
                 values = series.get(f"{joint} {component}", [])
-                self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=width, dash=dash)
+                component_color = self.component_color(color, component)
+                self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, component_color, width=width, dash=dash)
                 if marker == "triangle":
-                    self.draw_triangle_markers(canvas, values, x0, x1, y0, y1, ymin, ymax, color)
+                    self.draw_triangle_markers(canvas, values, x0, x1, y0, y1, ymin, ymax, component_color)
             canvas.create_line(legend_x, canvas.winfo_height() - 14, legend_x + 18, canvas.winfo_height() - 14, fill=color, width=3)
             canvas.create_text(legend_x + 24, canvas.winfo_height() - 14, text=joint, anchor="w", fill="#22312a")
             legend_x += 95
@@ -1163,9 +1183,10 @@ class SquatGui(tk.Tk):
             times = dataset["times"]  # type: ignore[assignment]
             for component, width, dash, marker in component_styles:
                 values = series.get(f"{joint} {component}", [])
-                self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=width, dash=dash, times=times, tmin=tmin, tmax=tmax)
+                component_color = self.component_color(color, component)
+                self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, component_color, width=width, dash=dash, times=times, tmin=tmin, tmax=tmax)
                 if marker == "triangle":
-                    self.draw_triangle_markers(canvas, values, x0, x1, y0, y1, ymin, ymax, color, times=times, tmin=tmin, tmax=tmax)
+                    self.draw_triangle_markers(canvas, values, x0, x1, y0, y1, ymin, ymax, component_color, times=times, tmin=tmin, tmax=tmax)
 
     def draw_detailed_component_legend(self, canvas: tk.Canvas, x: float, y: float) -> None:
         styles = (
