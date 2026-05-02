@@ -11,7 +11,7 @@ import json
 import tkinter as tk
 from math import atan2, degrees, radians
 from pathlib import Path
-from tkinter import filedialog, ttk
+from tkinter import filedialog, messagebox, ttk
 
 from .anthropometry import Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends
@@ -52,6 +52,7 @@ class SquatGui(tk.Tk):
         self.playing = False
         self.drag_target: str | None = None
         self._redraw_pending = False
+        self._suspend_selection_clear = False
         self.states: list[MotionState] = []
         self.results: list[DynamicsResult] = []
         self.saved_condition_count = 0
@@ -89,7 +90,6 @@ class SquatGui(tk.Tk):
         self.show_sprite_centers_var = tk.BooleanVar(value=False)
         self.angle_adapt_var = tk.BooleanVar(value=True)
         self.subplot_mode_var = tk.BooleanVar(value=True)
-        self.enable_detailed_plot_var = tk.BooleanVar(value=False)
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
 
         self._build_layout()
@@ -109,8 +109,8 @@ class SquatGui(tk.Tk):
         root.columnconfigure(0, weight=0, minsize=315)
         root.columnconfigure(1, weight=1)
         root.columnconfigure(2, weight=1)
-        root.rowconfigure(0, weight=2)
-        root.rowconfigure(1, weight=1)
+        root.rowconfigure(0, weight=1)
+        root.rowconfigure(1, weight=2)
 
         left = ttk.Frame(root)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
@@ -132,7 +132,10 @@ class SquatGui(tk.Tk):
             torque_box.columnconfigure(col, weight=1)
         for col, joint in enumerate(("cheville", "genou", "hanche")):
             ttk.Label(torque_box, text=joint).grid(row=0, column=col, padx=4)
-            ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7).grid(row=1, column=col, sticky="ew", padx=4)
+            entry = ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7)
+            entry.grid(row=1, column=col, sticky="ew", padx=4)
+            entry.bind("<FocusOut>", lambda _event: self.on_parameter_changed())
+            entry.bind("<Return>", lambda _event: self.on_parameter_changed())
         ttk.OptionMenu(
             torque_box,
             self.torque_preset_var,
@@ -140,7 +143,7 @@ class SquatGui(tk.Tk):
             *torque_presets(70.0, 1.70),
             command=lambda _value: self.apply_torque_preset(),
         ).grid(row=2, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
-        ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.recompute).grid(row=3, column=0, columnspan=2)
+        ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.on_parameter_changed).grid(row=3, column=0, columnspan=2)
         ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=3, column=2)
 
         plot_box = ttk.LabelFrame(left, text="Resultats")
@@ -164,7 +167,6 @@ class SquatGui(tk.Tk):
         for control in self.com_controls:
             control.state(["disabled"])
         ttk.Checkbutton(plot_box, text="3 subplots", variable=self.subplot_mode_var, command=self.redraw).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
-        ttk.Checkbutton(plot_box, text="details", variable=self.enable_detailed_plot_var, command=self.update_plot_choices).grid(row=3, column=2, columnspan=2, sticky="w", padx=4, pady=(4, 2))
 
         file_box = ttk.Frame(left)
         file_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
@@ -207,8 +209,16 @@ class SquatGui(tk.Tk):
             self.conditions_table.heading(column, text=headings[column])
             self.conditions_table.column(column, width=widths[column], anchor="center", stretch=True)
         self.conditions_table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
-        self.conditions_table.bind("<<TreeviewSelect>>", lambda _event: self.redraw())
-        ttk.Button(table_box, text="Enregistrer", command=self.record_condition).grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
+        self.conditions_table.bind("<<TreeviewSelect>>", self.on_table_selection_changed)
+        self.conditions_table.bind("<Button-1>", self.on_table_click)
+        table_buttons = ttk.Frame(table_box)
+        table_buttons.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
+        table_buttons.columnconfigure(0, weight=1)
+        table_buttons.columnconfigure(1, weight=1)
+        ttk.Button(table_buttons, text="Enregistrer", command=self.record_condition).grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        self.delete_condition_button = ttk.Button(table_buttons, text="Supprimer", command=self.delete_selected_conditions)
+        self.delete_condition_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
+        self.delete_condition_button.state(["disabled"])
 
         self.pose_canvas = tk.Canvas(root, bg=CANVAS_BG, highlightthickness=2, highlightbackground="#7f8f83")
         self.pose_canvas.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
@@ -242,7 +252,7 @@ class SquatGui(tk.Tk):
         box = ttk.LabelFrame(parent, text=label)
         box.grid(row=column, column=0, sticky="ew", padx=4, pady=2)
         box.columnconfigure(0, weight=1)
-        scale = ttk.Scale(box, variable=var, from_=start, to=end, orient="horizontal", command=lambda _value: self.recompute())
+        scale = ttk.Scale(box, variable=var, from_=start, to=end, orient="horizontal", command=lambda _value: self.on_parameter_changed())
         scale.grid(row=0, column=0, sticky="ew", padx=4)
         value_label = ttk.Label(box, width=7)
         value_label.grid(row=0, column=1, padx=(4, 2))
@@ -266,7 +276,7 @@ class SquatGui(tk.Tk):
         )
 
     def available_plot_choices(self) -> list[str]:
-        if self.enable_detailed_plot_var.get():
+        if len(self.conditions_table.selection()) <= 1:
             return PLOT_CHOICES
         return DEFAULT_PLOT_CHOICES
 
@@ -300,7 +310,19 @@ class SquatGui(tk.Tk):
         preset = torque_presets(70.0, 1.70)[self.torque_preset_var.get()]
         for joint, torque in preset.torques.items():
             self.max_torque_vars[joint].set(round(torque))
+        self.on_parameter_changed()
+
+    def on_parameter_changed(self) -> None:
+        if not self._suspend_selection_clear:
+            self.clear_condition_selection()
         self.recompute()
+
+    def clear_condition_selection(self) -> None:
+        selected = self.conditions_table.selection()
+        if selected:
+            self.conditions_table.selection_remove(selected)
+            self.update_condition_buttons()
+            self.update_plot_choices()
 
     def recompute(self) -> None:
         anthro = self.anthro()
@@ -339,40 +361,42 @@ class SquatGui(tk.Tk):
             "angle_adapt": self.angle_adapt_var.get(),
             "show_sprite_centers": self.show_sprite_centers_var.get(),
             "subplot_mode": self.subplot_mode_var.get(),
-            "enable_detailed_plot": self.enable_detailed_plot_var.get(),
             "final_q_deg": [degrees(value) for value in self.final_q],
             "frame_count": self.frame_count,
         }
 
     def apply_settings(self, settings: dict[str, object]) -> None:
-        self.load_var.set(float(settings.get("load_kg", self.load_var.get())))
-        self.shank_var.set(float(settings.get("shank_percent", self.shank_var.get())))
-        self.thigh_var.set(float(settings.get("thigh_percent", self.thigh_var.get())))
-        self.trunk_var.set(float(settings.get("trunk_percent", self.trunk_var.get())))
-        self.duration_var.set(float(settings.get("duration_phase_s", self.duration_var.get())))
-        self.torque_preset_var.set(str(settings.get("torque_preset", self.torque_preset_var.get())))
-        for joint, value in dict(settings.get("max_torques", {})).items():
-            if joint in self.max_torque_vars:
-                self.max_torque_vars[joint].set(float(value))
-        for name, value in dict(settings.get("show_joints", {})).items():
-            if name in self.show_vars:
-                self.show_vars[name].set(bool(value))
-        for name, value in dict(settings.get("show_com_components", {})).items():
-            if name in self.com_component_vars:
-                self.com_component_vars[name].set(bool(value))
-        self.show_torque_bounds_var.set(bool(settings.get("show_torque_bounds", self.show_torque_bounds_var.get())))
-        self.angle_adapt_var.set(bool(settings.get("angle_adapt", self.angle_adapt_var.get())))
-        self.show_sprite_centers_var.set(bool(settings.get("show_sprite_centers", self.show_sprite_centers_var.get())))
-        self.subplot_mode_var.set(bool(settings.get("subplot_mode", self.subplot_mode_var.get())))
-        self.enable_detailed_plot_var.set(bool(settings.get("enable_detailed_plot", self.enable_detailed_plot_var.get())))
-        self.final_q = tuple(radians(value) for value in self.normalized_final_q_deg(settings.get("final_q_deg")))
-        self.quantity_var.set(str(settings.get("quantity", self.quantity_var.get())))
-        plot_choice = str(settings.get("plot_choice", self.plot_choice.get()))
-        self.update_plot_choices()
-        if plot_choice in self.available_plot_choices():
-            self.plot_choice.set(plot_choice)
-        self.frame_var.set(int(settings.get("frame", self.frame_var.get())))
-        self.on_plot_choice_changed()
+        self._suspend_selection_clear = True
+        try:
+            self.load_var.set(float(settings.get("load_kg", self.load_var.get())))
+            self.shank_var.set(float(settings.get("shank_percent", self.shank_var.get())))
+            self.thigh_var.set(float(settings.get("thigh_percent", self.thigh_var.get())))
+            self.trunk_var.set(float(settings.get("trunk_percent", self.trunk_var.get())))
+            self.duration_var.set(float(settings.get("duration_phase_s", self.duration_var.get())))
+            self.torque_preset_var.set(str(settings.get("torque_preset", self.torque_preset_var.get())))
+            for joint, value in dict(settings.get("max_torques", {})).items():
+                if joint in self.max_torque_vars:
+                    self.max_torque_vars[joint].set(float(value))
+            for name, value in dict(settings.get("show_joints", {})).items():
+                if name in self.show_vars:
+                    self.show_vars[name].set(bool(value))
+            for name, value in dict(settings.get("show_com_components", {})).items():
+                if name in self.com_component_vars:
+                    self.com_component_vars[name].set(bool(value))
+            self.show_torque_bounds_var.set(bool(settings.get("show_torque_bounds", self.show_torque_bounds_var.get())))
+            self.angle_adapt_var.set(bool(settings.get("angle_adapt", self.angle_adapt_var.get())))
+            self.show_sprite_centers_var.set(bool(settings.get("show_sprite_centers", self.show_sprite_centers_var.get())))
+            self.subplot_mode_var.set(bool(settings.get("subplot_mode", self.subplot_mode_var.get())))
+            self.final_q = tuple(radians(value) for value in self.normalized_final_q_deg(settings.get("final_q_deg")))
+            self.quantity_var.set(str(settings.get("quantity", self.quantity_var.get())))
+            plot_choice = str(settings.get("plot_choice", self.plot_choice.get()))
+            self.update_plot_choices()
+            if plot_choice in self.available_plot_choices():
+                self.plot_choice.set(plot_choice)
+            self.frame_var.set(int(settings.get("frame", self.frame_var.get())))
+            self.on_plot_choice_changed()
+        finally:
+            self._suspend_selection_clear = False
         self.recompute()
 
     def save_json(self, path: str | Path | None = None) -> None:
@@ -385,6 +409,16 @@ class SquatGui(tk.Tk):
             if not selected:
                 return
             path = selected
+        include_conditions = True
+        if self.saved_conditions:
+            answer = messagebox.askyesnocancel(
+                "Sauver les conditions",
+                "Inclure aussi les conditions enregistrees dans le tableau ?",
+                parent=self,
+            )
+            if answer is None:
+                return
+            include_conditions = bool(answer)
         payload = {
             "version": 1,
             "settings": self.current_settings(),
@@ -396,7 +430,9 @@ class SquatGui(tk.Tk):
                     "final_q_deg": condition["final_q_deg"],
                 }
                 for iid, condition in self.saved_conditions.items()
-            ],
+            ]
+            if include_conditions
+            else [],
         }
         Path(path).write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
         self.status_var.set(f"configuration ecrite: {path}")
@@ -454,6 +490,24 @@ class SquatGui(tk.Tk):
         self.draw_pose_editor()
         self.draw_plot()
         self.draw_animation(frame)
+
+    def on_table_selection_changed(self, _event: tk.Event | None = None) -> None:
+        self.update_condition_buttons()
+        self.update_plot_choices()
+        self.redraw()
+
+    def update_condition_buttons(self) -> None:
+        if self.conditions_table.selection():
+            self.delete_condition_button.state(["!disabled"])
+        else:
+            self.delete_condition_button.state(["disabled"])
+
+    def on_table_click(self, event: tk.Event) -> None:
+        if not self.conditions_table.identify_row(event.y):
+            selected = self.conditions_table.selection()
+            if selected:
+                self.conditions_table.selection_remove(selected)
+                self.on_table_selection_changed()
 
     def on_plot_choice_changed(self) -> None:
         choice = self.plot_choice.get()
@@ -1378,7 +1432,7 @@ class SquatGui(tk.Tk):
             max(radians(-95), min(radians(45), thigh)),
             max(radians(-120), min(radians(50), trunk)),
         )
-        self.recompute()
+        self.on_parameter_changed()
 
     def project_on_force_line(
         self,
@@ -1439,7 +1493,7 @@ class SquatGui(tk.Tk):
             condition_iid = f"condition-{self.saved_condition_count}"
         if not final_q_deg:
             final_q_deg = [degrees(value) for value in self.final_q]
-        condition_label = label or f"C{self.saved_condition_count}"
+        condition_label = label or str(self.saved_condition_count)
         if states is None or results is None:
             states, results = self.simulate_from_condition(settings, final_q_deg)
         peak_torques = {
@@ -1472,6 +1526,24 @@ class SquatGui(tk.Tk):
             ),
         )
         return condition_iid
+
+    def delete_selected_conditions(self) -> None:
+        selected = list(self.conditions_table.selection())
+        if not selected:
+            return
+        answer = messagebox.askyesno(
+            "Supprimer",
+            f"Supprimer {len(selected)} condition(s) selectionnee(s) ?",
+            parent=self,
+        )
+        if not answer:
+            return
+        for iid in selected:
+            self.saved_conditions.pop(iid, None)
+            if self.conditions_table.exists(iid):
+                self.conditions_table.delete(iid)
+        self.on_table_selection_changed()
+        self.status_var.set(f"{len(selected)} condition(s) supprimee(s)")
 
     def simulate_from_condition(
         self,
