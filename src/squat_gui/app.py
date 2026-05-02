@@ -301,10 +301,18 @@ class SquatGui(tk.Tk):
         return [state.time - squat_time for state in states]
 
     def current_centered_time(self) -> float:
-        if not self.states:
+        datasets = self.plot_datasets()
+        times = [
+            time
+            for dataset in datasets
+            for time in self.centered_times(dataset["states"])  # type: ignore[arg-type]
+        ]
+        if not times:
             return 0.0
-        frame = min(len(self.states) - 1, max(0, int(self.frame_var.get())))
-        return self.centered_times(self.states)[frame]
+        tmin, tmax = min(times), max(times)
+        frame = min(self.frame_count - 1, max(0, int(self.frame_var.get())))
+        fraction = frame / max(1, self.frame_count - 1)
+        return tmin + fraction * (tmax - tmin)
 
     def apply_torque_preset(self) -> None:
         preset = torque_presets(70.0, 1.70)[self.torque_preset_var.get()]
@@ -769,14 +777,24 @@ class SquatGui(tk.Tk):
             fill="#22312a",
             font=("Helvetica", 13, "bold"),
         )
-        y = 42
-        for joint in ("cheville", "genou", "hanche"):
-            torque = result.torques[joint]
-            ratio = result.effort_ratios[joint]
-            color = "#8a1f17" if ratio > 1.0 else "#22312a"
-            canvas.create_text(16, y, text=f"{joint}: {torque: .1f} Nm ({100 * ratio: .0f}%)", anchor="nw", fill=color)
-            y += 20
-        self.draw_alert_banner(canvas, alerts, y + 4)
+        self.draw_animation_values(canvas, sampled)
+        self.draw_alert_banner(canvas, alerts, 126)
+
+    def draw_animation_values(self, canvas: tk.Canvas, sampled: list[dict[str, object]]) -> None:
+        column_width = 155
+        for index, item in enumerate(sampled):
+            x = 16 + index * column_width
+            y = 42
+            color = str(item["color"] or "#22312a")
+            result = item["result"]  # type: ignore[assignment]
+            canvas.create_text(x, y, text=str(item["label"]), anchor="nw", fill=color, font=("Helvetica", 10, "bold"))
+            y += 18
+            for joint in ("cheville", "genou", "hanche"):
+                torque = result.torques[joint]
+                ratio = result.effort_ratios[joint]
+                text_color = "#8a1f17" if ratio > 1.0 else color
+                canvas.create_text(x, y, text=f"{joint}: {torque: .1f} Nm ({100 * ratio: .0f}%)", anchor="nw", fill=text_color, font=("Helvetica", 9))
+                y += 18
 
     def draw_plot(self) -> None:
         canvas = self.plot_canvas
@@ -825,6 +843,10 @@ class SquatGui(tk.Tk):
         times = self.centered_times(states)
         if not times:
             return {"state": self.states[0], "result": self.results[0]}
+        if centered_time <= times[0]:
+            return {"state": states[0], "result": results[0]}
+        if centered_time >= times[-1]:
+            return {"state": states[-1], "result": results[-1]}
         index = min(range(len(times)), key=lambda candidate: abs(times[candidate] - centered_time))
         return {"state": states[index], "result": results[index]}
 
