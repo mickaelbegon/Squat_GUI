@@ -150,7 +150,7 @@ class SquatGui(tk.Tk):
         plot_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         for col in range(4):
             plot_box.columnconfigure(col, weight=1)
-        self.plot_menu = ttk.Combobox(plot_box, textvariable=self.plot_choice, values=DEFAULT_PLOT_CHOICES, state="readonly")
+        self.plot_menu = ttk.Combobox(plot_box, textvariable=self.plot_choice, values=PLOT_CHOICES, state="readonly")
         self.plot_menu.grid(row=0, column=0, columnspan=4, sticky="ew", padx=4, pady=(2, 4))
         self.plot_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_plot_choice_changed())
         for index, name in enumerate(self.show_vars):
