@@ -177,11 +177,13 @@ class SquatGui(tk.Tk):
         table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
         table_box.rowconfigure(0, weight=1)
         table_box.columnconfigure(0, weight=1)
-        columns = ("squat", "charge", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
+        columns = ("numero", "squat", "charge", "duree", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
         self.conditions_table = ttk.Treeview(table_box, columns=columns, show="headings", height=7, selectmode="extended")
         headings = {
+            "numero": "#",
             "squat": "squat deg",
             "charge": "kg",
+            "duree": "phase s",
             "tibia": "tibia %",
             "cuisse": "cuisse %",
             "tronc": "tronc %",
@@ -189,7 +191,18 @@ class SquatGui(tk.Tk):
             "genou": "pic gen Nm",
             "hanche": "pic han Nm",
         }
-        widths = {"squat": 78, "charge": 52, "tibia": 58, "cuisse": 62, "tronc": 58, "cheville": 78, "genou": 76, "hanche": 76}
+        widths = {
+            "numero": 34,
+            "squat": 78,
+            "charge": 48,
+            "duree": 58,
+            "tibia": 56,
+            "cuisse": 60,
+            "tronc": 56,
+            "cheville": 76,
+            "genou": 74,
+            "hanche": 74,
+        }
         for column in columns:
             self.conditions_table.heading(column, text=headings[column])
             self.conditions_table.column(column, width=widths[column], anchor="center", stretch=True)
@@ -472,9 +485,9 @@ class SquatGui(tk.Tk):
         scale = min((width - 2 * pad) / (xmax - xmin), (height - 2 * pad) / (ymax - ymin))
         return (xmin + (x - pad) / scale, ymin + (height - pad - y) / scale)
 
-    def scene_bounds(self) -> tuple[float, float, float, float]:
+    def scene_bounds(self, extra_x: float = 0.0) -> tuple[float, float, float, float]:
         anthro = self.anthro()
-        return (-0.25, anthro.foot.length + anthro.shank.length + 0.65, -0.08, 1.85)
+        return (-0.25, anthro.foot.length + anthro.shank.length + 0.65 + extra_x, -0.08, 1.85)
 
     def cop_in_foot(self, state: MotionState, result: DynamicsResult) -> bool:
         return state.pose.heel[0] <= result.cop_x <= state.pose.toe[0]
@@ -530,16 +543,29 @@ class SquatGui(tk.Tk):
             )
             canvas.tag_lower(background, item)
 
-    def draw_skeleton(self, canvas: tk.Canvas, state: MotionState, result: DynamicsResult, with_handles: bool) -> None:
-        bounds = self.scene_bounds()
+    def draw_skeleton(
+        self,
+        canvas: tk.Canvas,
+        state: MotionState,
+        result: DynamicsResult,
+        with_handles: bool,
+        bounds: tuple[float, float, float, float] | None = None,
+        x_offset: float = 0.0,
+    ) -> None:
+        bounds = bounds or self.scene_bounds()
         pose = state.pose
         joints = [pose.heel, pose.toe, pose.ankle, pose.knee, pose.hip, pose.shoulder]
         names = ["heel", "toe", "ankle", "knee", "hip", "shoulder"]
-        points = {name: self.world_to_canvas(canvas, point, bounds) for name, point in zip(names, joints)}
-        canvas._sprite_images = []
+
+        def shifted(point: tuple[float, float]) -> tuple[float, float]:
+            return (point[0] + x_offset, point[1])
+
+        points = {name: self.world_to_canvas(canvas, shifted(point), bounds) for name, point in zip(names, joints)}
+        if not hasattr(canvas, "_sprite_images"):
+            canvas._sprite_images = []
 
         def mapper(point: tuple[float, float]) -> tuple[float, float]:
-            return self.world_to_canvas(canvas, point, bounds)
+            return self.world_to_canvas(canvas, shifted(point), bounds)
 
         raster_drawn = self.draw_raster_segments(canvas, state, mapper)
         if not raster_drawn:
@@ -551,23 +577,23 @@ class SquatGui(tk.Tk):
             draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], self.anthro().trunk.length, mapper)
         canvas.create_line(*points["heel"], *points["toe"], width=3, fill="#333333")
 
-        com = self.world_to_canvas(canvas, pose.com, bounds)
-        projection = self.world_to_canvas(canvas, (pose.com[0], 0.0), bounds)
+        com = self.world_to_canvas(canvas, shifted(pose.com), bounds)
+        projection = self.world_to_canvas(canvas, shifted((pose.com[0], 0.0)), bounds)
         canvas.create_line(com[0], com[1], projection[0], projection[1], fill="#3d7580", dash=(4, 4), width=1)
         canvas.create_oval(com[0] - 7, com[1] - 7, com[0] + 7, com[1] + 7, fill="#2c9ab7", outline="")
         canvas.create_oval(projection[0] - 5, projection[1] - 5, projection[0] + 5, projection[1] + 5, fill="#2c9ab7", outline="")
 
-        cop = self.world_to_canvas(canvas, (result.cop_x, 0.0), bounds)
+        cop = self.world_to_canvas(canvas, (result.cop_x + x_offset, 0.0), bounds)
         force_end = self.world_to_canvas(
             canvas,
-            (result.cop_x + result.ground_reaction[0] / FORCE_DRAW_SCALE, result.ground_reaction[1] / FORCE_DRAW_SCALE),
+            (result.cop_x + x_offset + result.ground_reaction[0] / FORCE_DRAW_SCALE, result.ground_reaction[1] / FORCE_DRAW_SCALE),
             bounds,
         )
         canvas.create_line(cop[0], cop[1], force_end[0], force_end[1], arrow=tk.LAST, width=3, fill="#c15a2b")
         for joint in (pose.knee, pose.hip):
             projected = self.project_on_force_line(joint, (result.cop_x, 0.0), result.ground_reaction)
-            joint_px = self.world_to_canvas(canvas, joint, bounds)
-            projected_px = self.world_to_canvas(canvas, projected, bounds)
+            joint_px = self.world_to_canvas(canvas, shifted(joint), bounds)
+            projected_px = self.world_to_canvas(canvas, shifted(projected), bounds)
             canvas.create_line(joint_px[0], joint_px[1], projected_px[0], projected_px[1], fill="#1f77b4", dash=(4, 4), width=2)
             canvas.create_oval(projected_px[0] - 3, projected_px[1] - 3, projected_px[0] + 3, projected_px[1] + 3, fill="#1f77b4", outline="")
 
@@ -577,7 +603,7 @@ class SquatGui(tk.Tk):
             green = int(170 * max(0.0, 1.0 - max(0.0, ratio - 0.5) * 2.0))
             color = f"#{red:02x}{green:02x}35"
             point = {"cheville": pose.ankle, "genou": pose.knee, "hanche": pose.hip}[name]
-            px = self.world_to_canvas(canvas, point, bounds)
+            px = self.world_to_canvas(canvas, shifted(point), bounds)
             canvas.create_oval(px[0] - 12, px[1] - 12, px[0] + 12, px[1] + 12, outline=color, width=4)
         for name in ("ankle", "knee", "hip", "shoulder"):
             x, y = points[name]
@@ -605,12 +631,12 @@ class SquatGui(tk.Tk):
                 )
             )
         except Exception:
-            canvas._sprite_images = []
             return False
 
     def draw_pose_editor(self) -> None:
         canvas = self.pose_canvas
         canvas.delete("all")
+        canvas._sprite_images = []
         anthro = self.anthro()
         pose = pose_from_angles(anthro, self.final_q)
         state = MotionState(self.total_motion_duration() / 2.0, self.final_q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), pose)
@@ -656,15 +682,35 @@ class SquatGui(tk.Tk):
     def draw_animation(self, frame: int) -> None:
         canvas = self.animation_canvas
         canvas.delete("all")
-        state = self.states[frame]
-        result = self.results[frame]
-        alerts = self.biomechanical_alerts(state, result, include_com=False)
+        canvas._sprite_images = []
+        datasets = self.plot_datasets()
+        current_time = self.current_centered_time()
+        sampled = [
+            {
+                **dataset,
+                **self.sample_dataset_at_time(dataset, current_time),
+            }
+            for dataset in datasets
+        ]
+        alerts = [
+            alert
+            for item in sampled
+            for alert in self.biomechanical_alerts(item["state"], item["result"], include_com=False)  # type: ignore[arg-type]
+        ]
         self.configure_alert_canvas(canvas, alerts)
-        self.draw_skeleton(canvas, state, result, with_handles=False)
+        bounds = self.scene_bounds(extra_x=max(0, len(sampled) - 1))
+        for index, item in enumerate(sampled):
+            self.draw_skeleton(canvas, item["state"], item["result"], with_handles=False, bounds=bounds, x_offset=float(index))  # type: ignore[arg-type]
+            if len(sampled) > 1:
+                label_point = self.world_to_canvas(canvas, (float(index), -0.045), bounds)
+                color = str(item["color"])
+                canvas.create_text(label_point[0], label_point[1], text=str(item["label"]), anchor="n", fill=color, font=("Helvetica", 10, "bold"))
+        state = sampled[0]["state"]  # type: ignore[assignment]
+        result = sampled[0]["result"]  # type: ignore[assignment]
         canvas.create_text(
             16,
             16,
-            text=f"Animation {state.phase} t={self.current_centered_time():.2f}s",
+            text=f"Animation {state.phase} t={current_time:.2f}s",
             anchor="nw",
             fill="#22312a",
             font=("Helvetica", 13, "bold"),
@@ -689,6 +735,7 @@ class SquatGui(tk.Tk):
             {
                 **dataset,
                 "series": self.plot_series_for(choice, dataset["states"], dataset["results"]),  # type: ignore[arg-type]
+                "times": self.centered_times(dataset["states"]),  # type: ignore[arg-type]
             }
             for dataset in datasets
         ]
@@ -717,6 +764,33 @@ class SquatGui(tk.Tk):
                 }
             )
         return datasets
+
+    def sample_dataset_at_time(self, dataset: dict[str, object], centered_time: float) -> dict[str, object]:
+        states = dataset["states"]  # type: ignore[assignment]
+        results = dataset["results"]  # type: ignore[assignment]
+        times = self.centered_times(states)
+        if not times:
+            return {"state": self.states[0], "result": self.results[0]}
+        index = min(range(len(times)), key=lambda candidate: abs(times[candidate] - centered_time))
+        return {"state": states[index], "result": results[index]}
+
+    def plot_time_bounds(self, plotted: list[dict[str, object]]) -> tuple[float, float]:
+        times = [
+            time
+            for dataset in plotted
+            for time in dataset.get("times", [])  # type: ignore[union-attr]
+        ]
+        if not times:
+            duration = self.total_motion_duration()
+            return (-duration / 2.0, duration / 2.0)
+        xmin = min(times)
+        xmax = max(times)
+        if abs(xmax - xmin) < 1e-9:
+            return (xmin - 1.0, xmax + 1.0)
+        return xmin, xmax
+
+    def x_from_time(self, time: float, x0: float, x1: float, tmin: float, tmax: float) -> float:
+        return x0 + (x1 - x0) * (time - tmin) / (tmax - tmin)
 
     def condition_color(self, index: int, total: int) -> str:
         if total <= 1:
@@ -751,6 +825,7 @@ class SquatGui(tk.Tk):
         gap = 22
         panel_width = (width - pad_left - pad_right - gap * (len(panels) - 1)) / len(panels)
         unit = self.plot_unit(choice)
+        tmin, tmax = self.plot_time_bounds(plotted)
         canvas.create_text(16, 12, text=f"{choice} ({unit})", anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
         for panel_index, panel_name in enumerate(panels):
             x0 = pad_left + panel_index * (panel_width + gap)
@@ -761,12 +836,12 @@ class SquatGui(tk.Tk):
             if not values:
                 continue
             ymin, ymax = self.value_bounds(values, choice, panel_name)
-            self.draw_panel_axes(canvas, x0, x1, y0, y1, ymin, ymax, unit, panel_name)
+            self.draw_panel_axes(canvas, x0, x1, y0, y1, ymin, ymax, unit, panel_name, tmin, tmax)
             if choice == DETAILED_PLOT_CHOICE:
-                self.draw_detailed_panel(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax)
+                self.draw_detailed_panel(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
             else:
-                self.draw_panel_series(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax)
-            self.draw_panel_limits(canvas, choice, panel_name, x0, x1, y0, y1, ymin, ymax)
+                self.draw_panel_series(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
+            self.draw_panel_limits(canvas, choice, panel_name, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
         self.draw_condition_legend(canvas, plotted, width, height)
         if choice == DETAILED_PLOT_CHOICE:
             self.draw_detailed_component_legend(canvas, width - 270, pad_top + 6)
@@ -775,6 +850,7 @@ class SquatGui(tk.Tk):
         pad_left, pad_top, pad_right, pad_bottom = 54, 24, 18, 36
         x0, y0 = pad_left, height - pad_bottom
         x1, y1 = width - pad_right, pad_top
+        tmin, tmax = self.plot_time_bounds(plotted)
         all_values = [
             value
             for dataset in plotted
@@ -788,10 +864,10 @@ class SquatGui(tk.Tk):
             all_values.append(100.0)
         ymin, ymax = self.value_bounds(all_values, choice, None)
         unit = self.plot_unit(choice)
-        self.draw_panel_axes(canvas, x0, x1, y0, y1, ymin, ymax, unit, choice)
+        self.draw_panel_axes(canvas, x0, x1, y0, y1, ymin, ymax, unit, choice, tmin, tmax)
         if choice == DETAILED_PLOT_CHOICE:
             for panel in panels:
-                self.draw_detailed_panel(canvas, plotted, panel, x0, x1, y0, y1, ymin, ymax)
+                self.draw_detailed_panel(canvas, plotted, panel, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
             self.draw_detailed_component_legend(canvas, x1 - 270, y1 + 4)
         else:
             palette = ["#2e7d54", "#b46d22", "#6d5ea8", "#2a8ca6", "#9b3d3d", "#4c6f3d", "#8a5a22"]
@@ -800,8 +876,8 @@ class SquatGui(tk.Tk):
                 for series_index, (name, values) in enumerate(dataset["series"].items()):  # type: ignore[union-attr]
                     color = str(dataset["color"]) if multi_condition else JOINT_COLORS.get(name, palette[series_index % len(palette)])
                     dash = None if not multi_condition else (None, (6, 4), (2, 3))[series_index % 3]
-                    self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2, dash=dash)
-        self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax)
+                    self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2, dash=dash, times=dataset["times"], tmin=tmin, tmax=tmax)  # type: ignore[arg-type]
+        self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
         self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
         self.draw_condition_legend(canvas, plotted, width, height)
 
@@ -852,12 +928,14 @@ class SquatGui(tk.Tk):
         ymax: float,
         unit: str,
         title: str,
+        tmin: float,
+        tmax: float,
     ) -> None:
         canvas.create_line(x0, y0, x1, y0, fill="#69746e")
         canvas.create_line(x0, y0, x0, y1, fill="#69746e")
         self.draw_y_ticks(canvas, x0, y0, y1, ymin, ymax, x1)
-        self.draw_x_ticks(canvas, x0, x1, y0)
-        self.draw_time_markers(canvas, x0, x1, y0, y1)
+        self.draw_x_ticks(canvas, x0, x1, y0, tmin, tmax)
+        self.draw_time_markers(canvas, x0, x1, y0, y1, tmin, tmax)
         canvas.create_text(x0 + 4, y1 - 14, text=f"{title} ({unit})", anchor="w", fill="#22312a", font=("Helvetica", 10, "bold"))
         canvas.create_text(x1, canvas.winfo_height() - 12, text="temps (s)", anchor="e", fill="#506158", font=("Helvetica", 9))
 
@@ -872,12 +950,14 @@ class SquatGui(tk.Tk):
         y1: float,
         ymin: float,
         ymax: float,
+        tmin: float,
+        tmax: float,
     ) -> None:
         multi_condition = len(plotted) > 1
         for dataset in plotted:
             values = dataset["series"].get(panel_name, [])  # type: ignore[union-attr]
             color = str(dataset["color"]) if multi_condition else JOINT_COLORS.get(panel_name, "#2e7d54")
-            self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2)
+            self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2, times=dataset["times"], tmin=tmin, tmax=tmax)  # type: ignore[arg-type]
 
     def draw_panel_limits(
         self,
@@ -890,11 +970,13 @@ class SquatGui(tk.Tk):
         y1: float,
         ymin: float,
         ymax: float,
+        tmin: float,
+        tmax: float,
     ) -> None:
         if choice == "couples normalises":
             self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
         if choice in ("couples articulaires", DETAILED_PLOT_CHOICE):
-            self.draw_torque_bound_for_joint(canvas, panel_name, x0, x1, y0, y1, ymin, ymax)
+            self.draw_torque_bound_for_joint(canvas, panel_name, x0, x1, y0, y1, ymin, ymax, tmin=tmin, tmax=tmax)
 
     def draw_condition_legend(self, canvas: tk.Canvas, plotted: list[dict[str, object]], width: int, height: int) -> None:
         if len(plotted) <= 1:
@@ -927,23 +1009,22 @@ class SquatGui(tk.Tk):
             canvas.create_line(x0, y, grid_right, y, fill="#edf0ec")
             canvas.create_text(x0 - 8, y, text=self.format_axis_value(value), anchor="e", fill="#506158", font=("Helvetica", 9))
 
-    def draw_x_ticks(self, canvas: tk.Canvas, x0: float, x1: float, y0: float) -> None:
-        duration = self.total_motion_duration()
+    def draw_x_ticks(self, canvas: tk.Canvas, x0: float, x1: float, y0: float, tmin: float, tmax: float) -> None:
         for index in range(5):
             fraction = index / 4
             x = x0 + (x1 - x0) * fraction
-            value = duration * fraction
+            value = tmin + (tmax - tmin) * fraction
             canvas.create_line(x, y0, x, y0 + 4, fill="#69746e")
             canvas.create_text(x, y0 + 16, text=self.format_axis_value(value), anchor="n", fill="#506158", font=("Helvetica", 9))
 
-    def draw_time_markers(self, canvas: tk.Canvas, x0: float, x1: float, y0: float, y1: float) -> None:
-        midpoint_x = x0 + 0.5 * (x1 - x0)
-        canvas.create_line(midpoint_x, y0, midpoint_x, y1, fill="#59645e", width=1, dash=(6, 5))
-        canvas.create_text(midpoint_x + 4, y1 + 4, text="milieu", anchor="nw", fill="#59645e", font=("Helvetica", 9))
+    def draw_time_markers(self, canvas: tk.Canvas, x0: float, x1: float, y0: float, y1: float, tmin: float, tmax: float) -> None:
+        if tmin <= 0.0 <= tmax:
+            squat_x = self.x_from_time(0.0, x0, x1, tmin, tmax)
+            canvas.create_line(squat_x, y0, squat_x, y1, fill="#59645e", width=1, dash=(6, 5))
+            canvas.create_text(squat_x + 4, y1 + 4, text="squat t=0", anchor="nw", fill="#59645e", font=("Helvetica", 9))
 
-        frame = min(self.frame_count - 1, max(0, int(self.frame_var.get())))
-        fraction = frame / max(1, self.frame_count - 1)
-        animation_x = x0 + (x1 - x0) * fraction
+        current_time = min(tmax, max(tmin, self.current_centered_time()))
+        animation_x = self.x_from_time(current_time, x0, x1, tmin, tmax)
         canvas.create_line(animation_x, y0, animation_x, y1, fill="#c9332c", width=2)
 
     def format_axis_value(self, value: float) -> str:
@@ -967,11 +1048,24 @@ class SquatGui(tk.Tk):
             return "% max"
         return "W"
 
-    def draw_torque_bounds(self, canvas: tk.Canvas, x0: float, x1: float, y0: float, y1: float, ymin: float, ymax: float) -> None:
+    def draw_torque_bounds(
+        self,
+        canvas: tk.Canvas,
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+        tmin: float | None = None,
+        tmax: float | None = None,
+    ) -> None:
         if self.plot_choice.get() not in ("couples articulaires", "couples detailles") or not self.show_torque_bounds_var.get():
             return
+        if tmin is None or tmax is None:
+            tmin, tmax = self.plot_time_bounds([{"times": self.centered_times()}])
         for joint, values in self.torque_bound_series().items():
-            self.draw_torque_bound_for_joint(canvas, joint, x0, x1, y0, y1, ymin, ymax, values)
+            self.draw_torque_bound_for_joint(canvas, joint, x0, x1, y0, y1, ymin, ymax, values, tmin=tmin, tmax=tmax)
 
     def draw_torque_bound_for_joint(
         self,
@@ -984,15 +1078,20 @@ class SquatGui(tk.Tk):
         ymin: float,
         ymax: float,
         values: list[float] | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
     ) -> None:
         if joint not in self.show_vars or not self.show_vars[joint].get() or not self.show_torque_bounds_var.get():
             return
         values = values or self.torque_bound_series().get(joint, [])
+        if tmin is None or tmax is None:
+            tmin, tmax = self.plot_time_bounds([{"times": self.centered_times()}])
+        times = self.centered_times()
         color = JOINT_COLORS[joint]
         for sign in (1.0, -1.0):
             points = []
             for index, value in enumerate(values):
-                x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+                x = self.x_from_time(times[index], x0, x1, tmin, tmax) if index < len(times) else x0
                 y = y0 - (y0 - y1) * (sign * value - ymin) / (ymax - ymin)
                 points.extend([x, y])
             if len(points) >= 4:
@@ -1048,6 +1147,8 @@ class SquatGui(tk.Tk):
         y1: float,
         ymin: float,
         ymax: float,
+        tmin: float,
+        tmax: float,
     ) -> None:
         multi_condition = len(plotted) > 1
         component_styles = (
@@ -1059,11 +1160,12 @@ class SquatGui(tk.Tk):
         for dataset in plotted:
             color = str(dataset["color"]) if multi_condition else JOINT_COLORS[joint]
             series = dataset["series"]  # type: ignore[assignment]
+            times = dataset["times"]  # type: ignore[assignment]
             for component, width, dash, marker in component_styles:
                 values = series.get(f"{joint} {component}", [])
-                self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=width, dash=dash)
+                self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=width, dash=dash, times=times, tmin=tmin, tmax=tmax)
                 if marker == "triangle":
-                    self.draw_triangle_markers(canvas, values, x0, x1, y0, y1, ymin, ymax, color)
+                    self.draw_triangle_markers(canvas, values, x0, x1, y0, y1, ymin, ymax, color, times=times, tmin=tmin, tmax=tmax)
 
     def draw_detailed_component_legend(self, canvas: tk.Canvas, x: float, y: float) -> None:
         styles = (
@@ -1092,10 +1194,16 @@ class SquatGui(tk.Tk):
         color: str,
         width: int,
         dash: tuple[int, ...] | None = None,
+        times: list[float] | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
     ) -> None:
         points = []
         for index, value in enumerate(values):
-            x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+            if times is not None and tmin is not None and tmax is not None and index < len(times):
+                x = self.x_from_time(times[index], x0, x1, tmin, tmax)
+            else:
+                x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
             y = y0 - (y0 - y1) * (value - ymin) / (ymax - ymin)
             points.extend([x, y])
         if len(points) >= 4:
@@ -1112,12 +1220,18 @@ class SquatGui(tk.Tk):
         ymin: float,
         ymax: float,
         color: str,
+        times: list[float] | None = None,
+        tmin: float | None = None,
+        tmax: float | None = None,
     ) -> None:
         step = max(1, len(values) // 18)
         for index, value in enumerate(values):
             if index % step != 0 and index != len(values) - 1:
                 continue
-            x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
+            if times is not None and tmin is not None and tmax is not None and index < len(times):
+                x = self.x_from_time(times[index], x0, x1, tmin, tmax)
+            else:
+                x = x0 + (x1 - x0) * index / max(1, len(values) - 1)
             y = y0 - (y0 - y1) * (value - ymin) / (ymax - ymin)
             canvas.create_polygon(x, y - 5, x - 5, y + 5, x + 5, y + 5, fill=color, outline=color)
 
@@ -1324,8 +1438,10 @@ class SquatGui(tk.Tk):
             "end",
             iid=condition_iid,
             values=(
+                condition_label,
                 f"{squat_angles[0]:.0f}/{squat_angles[1]:.0f}/{squat_angles[2]:.0f}",
                 f"{float(settings.get('load_kg', 0.0)):.0f}",
+                f"{float(settings.get('duration_phase_s', self.duration_var.get())):.1f}",
                 f"{float(settings.get('shank_percent', 0.0)):+.1f}",
                 f"{float(settings.get('thigh_percent', 0.0)):+.1f}",
                 f"{float(settings.get('trunk_percent', 0.0)):+.1f}",
