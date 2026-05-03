@@ -88,6 +88,7 @@ class SquatGui(tk.Tk):
         }
         self.show_torque_bounds_var = tk.BooleanVar(value=False)
         self.show_sprite_centers_var = tk.BooleanVar(value=False)
+        self.refined_sprites_var = tk.BooleanVar(value=False)
         self.angle_adapt_var = tk.BooleanVar(value=True)
         self.subplot_mode_var = tk.BooleanVar(value=True)
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
@@ -167,6 +168,12 @@ class SquatGui(tk.Tk):
         for control in self.com_controls:
             control.state(["disabled"])
         ttk.Checkbutton(plot_box, text="3 subplots", variable=self.subplot_mode_var, command=self.redraw).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+        ttk.Checkbutton(
+            plot_box,
+            text="refined",
+            variable=self.refined_sprites_var,
+            command=self.redraw,
+        ).grid(row=3, column=2, columnspan=2, sticky="w", padx=4, pady=(4, 2))
 
         file_box = ttk.Frame(left)
         file_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
@@ -368,6 +375,7 @@ class SquatGui(tk.Tk):
             "show_torque_bounds": self.show_torque_bounds_var.get(),
             "angle_adapt": self.angle_adapt_var.get(),
             "show_sprite_centers": self.show_sprite_centers_var.get(),
+            "refined_sprites": self.refined_sprites_var.get(),
             "subplot_mode": self.subplot_mode_var.get(),
             "final_q_deg": [degrees(value) for value in self.final_q],
             "frame_count": self.frame_count,
@@ -394,6 +402,7 @@ class SquatGui(tk.Tk):
             self.show_torque_bounds_var.set(bool(settings.get("show_torque_bounds", self.show_torque_bounds_var.get())))
             self.angle_adapt_var.set(bool(settings.get("angle_adapt", self.angle_adapt_var.get())))
             self.show_sprite_centers_var.set(bool(settings.get("show_sprite_centers", self.show_sprite_centers_var.get())))
+            self.refined_sprites_var.set(bool(settings.get("refined_sprites", self.refined_sprites_var.get())))
             self.subplot_mode_var.set(bool(settings.get("subplot_mode", self.subplot_mode_var.get())))
             self.final_q = tuple(radians(value) for value in self.normalized_final_q_deg(settings.get("final_q_deg")))
             self.quantity_var.set(str(settings.get("quantity", self.quantity_var.get())))
@@ -686,10 +695,38 @@ class SquatGui(tk.Tk):
             pose = state.pose
             return all(
                 (
-                    draw_sprite_segment(canvas, "foot", pose.ankle, pose.toe, mapper),
-                    draw_sprite_segment(canvas, "shank", pose.ankle, pose.knee, mapper),
-                    draw_sprite_segment(canvas, "thigh", pose.knee, pose.hip, mapper),
-                    draw_sprite_segment(canvas, "trunk", pose.hip, pose.shoulder, mapper),
+                    draw_sprite_segment(
+                        canvas,
+                        "foot",
+                        pose.ankle,
+                        pose.toe,
+                        mapper,
+                        self.refined_sprites_var.get(),
+                    ),
+                    draw_sprite_segment(
+                        canvas,
+                        "shank",
+                        pose.ankle,
+                        pose.knee,
+                        mapper,
+                        self.refined_sprites_var.get(),
+                    ),
+                    draw_sprite_segment(
+                        canvas,
+                        "thigh",
+                        pose.knee,
+                        pose.hip,
+                        mapper,
+                        self.refined_sprites_var.get(),
+                    ),
+                    draw_sprite_segment(
+                        canvas,
+                        "trunk",
+                        pose.hip,
+                        pose.shoulder,
+                        mapper,
+                        self.refined_sprites_var.get(),
+                    ),
                 )
             )
         except Exception:
@@ -892,12 +929,10 @@ class SquatGui(tk.Tk):
         return f"#{mixed[0]:02x}{mixed[1]:02x}{mixed[2]:02x}"
 
     def component_color(self, base_color: str, component: str) -> str:
-        if component == "somme":
+        if component == "inertiels/non-lineaires":
             return base_color
-        if component == "Mqddot":
+        if component == "total":
             return self.blend_color(base_color, "#ffffff", 0.28)
-        if component == "NLeffects":
-            return self.blend_color(base_color, "#111111", 0.18)
         if component == "contact":
             return self.blend_color(base_color, "#ffffff", 0.48)
         return base_color
@@ -981,7 +1016,7 @@ class SquatGui(tk.Tk):
             return [
                 value
                 for dataset in plotted
-                for component in ("somme", "Mqddot", "NLeffects", "contact")
+                for component in ("inertiels/non-lineaires", "total", "contact")
                 for value in dataset["series"].get(f"{panel_name} {component}", [])  # type: ignore[union-attr]
             ]
         return [
@@ -1212,9 +1247,8 @@ class SquatGui(tk.Tk):
     ) -> None:
         legend_x = x0
         component_styles = (
-            ("somme", 2, None, None),
-            ("Mqddot", 1, (7, 4), None),
-            ("NLeffects", 1, (2, 3), None),
+            ("inertiels/non-lineaires", 2, None, None),
+            ("total", 1, (7, 4), None),
             ("contact", 1, (7, 3, 2, 3), "triangle"),
         )
         for joint in ("cheville", "genou", "hanche"):
@@ -1248,9 +1282,8 @@ class SquatGui(tk.Tk):
     ) -> None:
         multi_condition = len(plotted) > 1
         component_styles = (
-            ("somme", 2, None, None),
-            ("Mqddot", 1, (7, 4), None),
-            ("NLeffects", 1, (2, 3), None),
+            ("inertiels/non-lineaires", 2, None, None),
+            ("total", 1, (7, 4), None),
             ("contact", 1, (7, 3, 2, 3), "triangle"),
         )
         for dataset in plotted:
@@ -1266,9 +1299,8 @@ class SquatGui(tk.Tk):
 
     def draw_detailed_component_legend(self, canvas: tk.Canvas, x: float, y: float) -> None:
         styles = (
-            ("somme", None, None),
-            ("Mqddot", (7, 4), None),
-            ("NLeffects", (2, 3), None),
+            ("inertiels/non-lineaires", None, None),
+            ("total", (7, 4), None),
             ("contact", (7, 3, 2, 3), "triangle"),
         )
         for index, (label, dash, marker) in enumerate(styles):
@@ -1358,9 +1390,10 @@ class SquatGui(tk.Tk):
             values = {}
             for joint in ("cheville", "genou", "hanche"):
                 if joint in selected:
-                    values[f"{joint} somme"] = [result.torques[joint] for result in results]
-                    values[f"{joint} Mqddot"] = [result.torque_components[joint]["Mqddot"] for result in results]
-                    values[f"{joint} NLeffects"] = [result.torque_components[joint]["NLeffects"] for result in results]
+                    values[f"{joint} inertiels/non-lineaires"] = [
+                        result.torque_components[joint]["inertiels_non_lineaires"] for result in results
+                    ]
+                    values[f"{joint} total"] = [result.torque_components[joint]["total"] for result in results]
                     values[f"{joint} contact"] = [result.torque_components[joint]["contact"] for result in results]
             return values
         else:

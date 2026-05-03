@@ -438,7 +438,7 @@ Le CSV exporte contient une ligne par frame avec:
 - couple max disponible;
 - effort normalise en pourcentage;
 - puissance;
-- composantes `Mqddot`, `NLeffects` et `contact`, avec la convention `couple = Mqddot + NLeffects - contact`.
+- composantes `total`, `contact` et `inertiels_non_lineaires`, avec la convention `inertiels_non_lineaires = total - contact`.
 
 Le JSON de resume contient les pics par articulation, le nombre de frames ou le CoP sort du pied et le nombre de frames ou un couple depasse 100%.
 
@@ -479,14 +479,14 @@ Le backend `biorbd` est deja utilise, quand il est disponible, pour:
 - calculer `CoM(...)`, `CoMdot(...)`, `CoMddot(...)`;
 - calculer `CalcAngularMomentum(...)` pour le moment dynamique.
 
-La decomposition des couples suit la convention dynamique:
+La decomposition simplifiee des couples suit la convention dynamique:
 
 ```text
-M(q) qddot + N(q, qdot) = tau + J(q)' f_ext
-tau = Mqddot + NLeffects - contact
+total = inverse_dynamics(q, qdot, qddot)
+inertiels_non_lineaires = total - contact
 ```
 
-Dans le GUI, `NLeffects` vient de `biorbd_model.NonLinearEffect(q, qdot)` quand `biorbd` est disponible. Le terme `Mqddot` est isole par `InverseDynamics(q, 0, qddot) - NonLinearEffect(q, 0)`. Le terme `contact` represente le terme externe a soustraire, estime a partir de la reaction au sol et du CoP. Pour l'instant, ce terme de contact reste calcule dans le code du GUI, car le `.bioMod` actuel garde le pied fixe au sol; une integration encore plus propre consisterait a passer un `ExternalForceSet` a `InverseDynamics(..., externalForces)` dans un modele avec base/contacts compatibles.
+Dans le GUI, `total` vient de `biorbd_model.InverseDynamics(q, qdot, qddot)` quand `biorbd` est disponible. Le terme `contact` represente l'effet de la reaction au sol estimee au CoP. La courbe `inertiels_non_lineaires` est simplement `total - contact`, ce qui evite d'afficher separement `Mqddot` et `NLeffects`. Pour l'instant, le terme de contact reste calcule dans le code du GUI, car le `.bioMod` actuel garde le pied fixe au sol; une integration encore plus propre consisterait a passer un `ExternalForceSet` a `InverseDynamics(..., externalForces)` dans un modele avec base/contacts compatibles.
 
 Pour utiliser directement le centre de pression/ZMP depuis `biorbd`, il faut une version de `biorbd` qui expose `Model.CalcZeroMomentPoint(...)`. Une PR locale a ete preparee pour cela:
 
@@ -527,7 +527,7 @@ La proposition `Sportifs` est volontairement un preset de travail, pas une norme
 
 ## Modifier les images de segments
 
-Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`.
+Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`. Le checkbox `refined` active le second jeu d'images dans `assets/raster_segments/refined/`.
 Ils sont ancres par les cibles dessinees dans les images:
 
 - `pied.png`: cible de cheville et pointe du pied detectee sur la silhouette;

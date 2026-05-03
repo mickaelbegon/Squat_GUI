@@ -39,6 +39,21 @@ def pillow_available() -> bool:
         return False
 
 
+def _rgb_on_white(image):
+    from PIL import Image
+
+    rgba = image.convert("RGBA")
+    background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+    background.alpha_composite(rgba)
+    return background.convert("RGB")
+
+
+def _asset_path(filename: str, refined: bool) -> Path:
+    if refined:
+        return ASSET_DIR / "refined" / filename
+    return ASSET_DIR / filename
+
+
 def _is_dark(pixel: tuple[int, int, int]) -> bool:
     return pixel[0] < 65 and pixel[1] < 65 and pixel[2] < 65
 
@@ -92,9 +107,9 @@ def _component_centers(image) -> list[tuple[float, float]]:
         box_height = max_y - min_y + 1
         fill_ratio = count / (box_width * box_height)
         round_dot = (
-            150 <= count <= 500
-            and 12 <= box_width <= 30
-            and 12 <= box_height <= 30
+            150 <= count <= 3000
+            and 12 <= box_width <= 50
+            and 12 <= box_height <= 50
             and abs(box_width - box_height) <= 5
             and 0.45 <= fill_ratio <= 0.95
         )
@@ -122,17 +137,36 @@ def _toe_anchor_from_silhouette(image) -> tuple[float, float]:
     return (float(rightmost), float(y_values[len(y_values) // 2]))
 
 
-@lru_cache(maxsize=4)
-def sprite_spec(name: str) -> SpriteSpec:
+def _trunk_anchor_from_silhouette(image, distal_anchor: tuple[float, float]) -> tuple[float, float]:
+    width, height = image.size
+    pixels = image.load()
+    ys: list[int] = []
+    for y in range(height):
+        for x in range(width):
+            if _is_foreground(pixels[x, y]):
+                ys.append(y)
+    if not ys:
+        raise ValueError("No foreground pixels found for trunk sprite")
+    top = min(ys)
+    shoulder_y = top + 0.30 * (distal_anchor[1] - top)
+    return (distal_anchor[0], shoulder_y)
+
+
+@lru_cache(maxsize=8)
+def sprite_spec(name: str, refined: bool = False) -> SpriteSpec:
     from PIL import Image
 
     filename = SPRITE_FILES[name]
-    image = Image.open(ASSET_DIR / filename).convert("RGB")
+    image = _rgb_on_white(Image.open(_asset_path(filename, refined)))
     centers = _component_centers(image)
     if name == "foot":
         if len(centers) != 1:
             raise ValueError(f"Expected one rotation target in {filename}, found {len(centers)}")
         return SpriteSpec(filename, centers[0], _toe_anchor_from_silhouette(image))
+
+    if name == "trunk" and len(centers) == 1:
+        distal = centers[0]
+        return SpriteSpec(filename, distal, _trunk_anchor_from_silhouette(image, distal))
 
     if len(centers) < 2:
         raise ValueError(f"Expected two rotation targets in {filename}, found {len(centers)}")
@@ -147,11 +181,11 @@ def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> flo
     return degrees(source_angle - target_angle)
 
 
-@lru_cache(maxsize=4)
-def _load_transparent_sprite(filename: str):
+@lru_cache(maxsize=8)
+def _load_transparent_sprite(filename: str, refined: bool):
     from PIL import Image
 
-    image = Image.open(ASSET_DIR / filename).convert("RGBA")
+    image = Image.open(_asset_path(filename, refined)).convert("RGBA")
     pixels = image.load()
     width, height = image.size
     for y in range(height):
@@ -164,10 +198,10 @@ def _load_transparent_sprite(filename: str):
     return image
 
 
-def transformed_sprite_image(spec: SpriteSpec, target_vector_px: Vector):
+def transformed_sprite_image(spec: SpriteSpec, target_vector_px: Vector, refined: bool = False):
     from PIL import Image
 
-    source = _load_transparent_sprite(spec.filename)
+    source = _load_transparent_sprite(spec.filename, refined)
     anchor_vector = (
         spec.proximal_anchor[0] - spec.distal_anchor[0],
         spec.proximal_anchor[1] - spec.distal_anchor[1],
@@ -194,10 +228,10 @@ def transformed_sprite_image(spec: SpriteSpec, target_vector_px: Vector):
     return cropped, anchor
 
 
-def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector):
+def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector, refined: bool = False):
     from PIL.ImageTk import PhotoImage
 
-    image, anchor = transformed_sprite_image(spec, target_vector_px)
+    image, anchor = transformed_sprite_image(spec, target_vector_px, refined)
     return PhotoImage(image), anchor
 
 
@@ -207,14 +241,15 @@ def draw_sprite_segment(
     distal_world: Vector,
     proximal_world: Vector,
     world_to_canvas: Callable[[Vector], Vector],
+    refined: bool = False,
 ) -> bool:
     if not pillow_available():
         return False
-    spec = sprite_spec(name)
+    spec = sprite_spec(name, refined)
     distal_px = world_to_canvas(distal_world)
     proximal_px = world_to_canvas(proximal_world)
     target_vector = (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1])
-    image, anchor = transformed_sprite(spec, target_vector)
+    image, anchor = transformed_sprite(spec, target_vector, refined)
     canvas.create_image(distal_px[0] - anchor[0], distal_px[1] - anchor[1], image=image, anchor="nw")
     if not hasattr(canvas, "_sprite_images"):
         canvas._sprite_images = []

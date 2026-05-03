@@ -73,7 +73,7 @@ class DynamicsTests(unittest.TestCase):
                 concentric_result.effort_ratios[joint] / 1.35,
             )
 
-    def test_torque_components_sum_to_inverse_dynamics_torque(self) -> None:
+    def test_torque_components_sum_to_net_joint_torque(self) -> None:
         anthro = Anthropometry(bar_mass=20.0)
         _, results = simulate(
             anthro,
@@ -89,8 +89,9 @@ class DynamicsTests(unittest.TestCase):
                 components = result.torque_components[joint]
                 self.assertAlmostEqual(
                     result.torques[joint],
-                    components["Mqddot"] + components["NLeffects"] - components["contact"],
+                    components["total"] - components["contact"],
                 )
+                self.assertAlmostEqual(result.torques[joint], components["inertiels_non_lineaires"])
 
     def test_angle_adaptation_uses_anderson_coefficients(self) -> None:
         reference = anderson_reference_max_torques(70.0, 1.70)

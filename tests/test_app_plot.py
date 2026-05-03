@@ -67,11 +67,10 @@ class PlotSeriesTests(unittest.TestCase):
 
         series = gui.plot_series("couples detailles")
 
-        self.assertIn("cheville somme", series)
-        self.assertIn("cheville Mqddot", series)
-        self.assertIn("cheville NLeffects", series)
+        self.assertIn("cheville inertiels/non-lineaires", series)
+        self.assertIn("cheville total", series)
         self.assertIn("cheville contact", series)
-        self.assertEqual(len(series["cheville somme"]), len(gui.results))
+        self.assertEqual(len(series["cheville inertiels/non-lineaires"]), len(gui.results))
 
     def test_biomechanical_alerts_report_cop_and_torque_problems(self):
         gui = self.gui_without_tk()

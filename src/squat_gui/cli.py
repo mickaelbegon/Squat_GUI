@@ -238,9 +238,11 @@ def simulate_condition(condition: Condition) -> tuple[list[dict[str, object]], d
             row[f"{joint}_max_available_Nm"] = limits[joint]
             row[f"{joint}_effort_percent"] = 100.0 * result.effort_ratios[joint]
             row[f"{joint}_power_W"] = result.powers[joint]
-            row[f"{joint}_Mqddot_Nm"] = result.torque_components[joint]["Mqddot"]
-            row[f"{joint}_NLeffects_Nm"] = result.torque_components[joint]["NLeffects"]
+            row[f"{joint}_inverse_dynamics_total_Nm"] = result.torque_components[joint]["total"]
             row[f"{joint}_contact_Nm"] = result.torque_components[joint]["contact"]
+            row[f"{joint}_inertial_nonlinear_Nm"] = result.torque_components[joint][
+                "inertiels_non_lineaires"
+            ]
         rows.append(row)
 
     summary = condition_summary(condition, rows, actual_backend)

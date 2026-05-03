@@ -40,7 +40,8 @@ class CliExportTests(unittest.TestCase):
             self.assertEqual(len(rows), 5)
             self.assertEqual(rows[0]["condition_id"], "demo")
             self.assertIn("cheville_effort_percent", rows[0])
-            self.assertIn("genou_Mqddot_Nm", rows[0])
+            self.assertIn("genou_inverse_dynamics_total_Nm", rows[0])
+            self.assertIn("genou_inertial_nonlinear_Nm", rows[0])
             self.assertEqual(payload["condition"]["condition_id"], "demo")
 
     def test_batch_exports_multiple_conditions(self) -> None:
