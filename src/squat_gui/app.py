@@ -31,7 +31,6 @@ PLOT_CHOICES = [
     DETAILED_PLOT_CHOICE,
     "puissances articulaires",
 ]
-DEFAULT_PLOT_CHOICES = [choice for choice in PLOT_CHOICES if choice != DETAILED_PLOT_CHOICE]
 
 JOINT_COLORS = {
     "cheville": "#2e7d54",
@@ -304,9 +303,7 @@ class SquatGui(tk.Tk):
         )
 
     def available_plot_choices(self) -> list[str]:
-        if len(self.conditions_table.selection()) <= 1:
-            return PLOT_CHOICES
-        return DEFAULT_PLOT_CHOICES
+        return PLOT_CHOICES
 
     def update_plot_choices(self) -> None:
         choices = self.available_plot_choices()

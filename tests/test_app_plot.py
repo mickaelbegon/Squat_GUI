@@ -14,6 +14,11 @@ class FakeVar:
         return self.value
 
 
+class FakeTable:
+    def selection(self):
+        return ("cond1", "cond2")
+
+
 class PlotSeriesTests(unittest.TestCase):
     def test_main_plot_menu_groups_joint_kinematics(self):
         self.assertIn("cinematique articulaire", PLOT_CHOICES)
@@ -21,6 +26,12 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertNotIn("vitesses articulaires", PLOT_CHOICES)
         self.assertNotIn("accelerations articulaires", PLOT_CHOICES)
         self.assertIn("couples detailles", PLOT_CHOICES)
+
+    def test_detailed_torques_remain_available_with_multiple_conditions(self):
+        gui = object.__new__(SquatGui)
+        gui.conditions_table = FakeTable()
+
+        self.assertIn("couples detailles", gui.available_plot_choices())
 
     def gui_without_tk(self):
         anthro = Anthropometry()
