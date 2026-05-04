@@ -97,6 +97,7 @@ class SquatGui(tk.Tk):
         self.refined_sprites_var = tk.BooleanVar(value=False)
         self.angle_adapt_var = tk.BooleanVar(value=True)
         self.subplot_mode_var = tk.BooleanVar(value=True)
+        self.normalize_time_var = tk.BooleanVar(value=False)
         self.plot_title_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
 
@@ -185,7 +186,13 @@ class SquatGui(tk.Tk):
             text="refined",
             variable=self.refined_sprites_var,
             command=self.redraw,
-        ).grid(row=3, column=2, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+        ).grid(row=3, column=2, sticky="w", padx=4, pady=(4, 2))
+        ttk.Checkbutton(
+            plot_box,
+            text="temps %",
+            variable=self.normalize_time_var,
+            command=self.redraw,
+        ).grid(row=3, column=3, sticky="w", padx=4, pady=(4, 2))
 
         file_box = ttk.Frame(left)
         file_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
@@ -325,12 +332,21 @@ class SquatGui(tk.Tk):
         squat_time = states[len(states) // 2].time
         return [state.time - squat_time for state in states]
 
+    def plot_times(self, states: list[MotionState] | None = None) -> list[float]:
+        times = self.centered_times(states)
+        if not self.normalize_time_var.get() or not times:
+            return times
+        scale = max(abs(time) for time in times)
+        if scale < 1e-9:
+            return [0.0 for _time in times]
+        return [100.0 * time / scale for time in times]
+
     def current_centered_time(self) -> float:
         datasets = self.plot_datasets()
         times = [
             time
             for dataset in datasets
-            for time in self.centered_times(dataset["states"])  # type: ignore[arg-type]
+            for time in self.plot_times(dataset["states"])  # type: ignore[arg-type]
         ]
         if not times:
             return 0.0
@@ -394,6 +410,7 @@ class SquatGui(tk.Tk):
             "angle_adapt": self.angle_adapt_var.get(),
             "show_sprite_centers": self.show_sprite_centers_var.get(),
             "refined_sprites": self.refined_sprites_var.get(),
+            "normalize_time": self.normalize_time_var.get(),
             "subplot_mode": self.subplot_mode_var.get(),
             "final_q_deg": [degrees(value) for value in self.final_q],
             "frame_count": self.frame_count,
@@ -423,6 +440,7 @@ class SquatGui(tk.Tk):
             self.angle_adapt_var.set(bool(settings.get("angle_adapt", self.angle_adapt_var.get())))
             self.show_sprite_centers_var.set(bool(settings.get("show_sprite_centers", self.show_sprite_centers_var.get())))
             self.refined_sprites_var.set(bool(settings.get("refined_sprites", self.refined_sprites_var.get())))
+            self.normalize_time_var.set(bool(settings.get("normalize_time", self.normalize_time_var.get())))
             self.subplot_mode_var.set(bool(settings.get("subplot_mode", self.subplot_mode_var.get())))
             self.final_q = tuple(radians(value) for value in self.normalized_final_q_deg(settings.get("final_q_deg")))
             self.quantity_var.set(str(settings.get("quantity", self.quantity_var.get())))
@@ -803,11 +821,11 @@ class SquatGui(tk.Tk):
         canvas.delete("all")
         canvas._sprite_images = []
         datasets = self.plot_datasets()
-        current_time = self.current_centered_time()
+        current_plot_time = self.current_centered_time()
         sampled = [
             {
                 **dataset,
-                **self.sample_dataset_at_time(dataset, current_time),
+                **self.sample_dataset_at_time(dataset, current_plot_time),
             }
             for dataset in datasets
         ]
@@ -829,7 +847,7 @@ class SquatGui(tk.Tk):
         canvas.create_text(
             16,
             16,
-            text=f"Animation {state.phase} t={current_time:.2f}s",
+            text=f"Animation {state.phase} {self.animation_time_label(current_plot_time)}",
             anchor="nw",
             fill="#22312a",
             font=("Helvetica", 13, "bold"),
@@ -865,7 +883,7 @@ class SquatGui(tk.Tk):
             {
                 **dataset,
                 "series": self.plot_series_for(choice, dataset["states"], dataset["results"]),  # type: ignore[arg-type]
-                "times": self.centered_times(dataset["states"]),  # type: ignore[arg-type]
+                "times": self.plot_times(dataset["states"]),  # type: ignore[arg-type]
             }
             for dataset in datasets
         ]
@@ -895,20 +913,27 @@ class SquatGui(tk.Tk):
             )
         return datasets
 
-    def sample_dataset_at_time(self, dataset: dict[str, object], centered_time: float) -> dict[str, object]:
+    def sample_dataset_at_time(self, dataset: dict[str, object], plot_time: float) -> dict[str, object]:
         states = dataset["states"]  # type: ignore[assignment]
         results = dataset["results"]  # type: ignore[assignment]
-        times = self.centered_times(states)
+        times = self.plot_times(states)
         if not times:
             return {"state": self.states[0], "result": self.results[0]}
-        if centered_time <= times[0]:
+        if plot_time <= times[0]:
             return {"state": states[0], "result": results[0]}
-        if centered_time >= times[-1]:
+        if plot_time >= times[-1]:
             return {"state": states[-1], "result": results[-1]}
-        index = min(range(len(times)), key=lambda candidate: abs(times[candidate] - centered_time))
+        index = min(range(len(times)), key=lambda candidate: abs(times[candidate] - plot_time))
         return {"state": states[index], "result": results[index]}
 
+    def animation_time_label(self, plot_time: float) -> str:
+        if self.normalize_time_var.get():
+            return f"t={plot_time:.0f}%"
+        return f"t={plot_time:.2f}s"
+
     def plot_time_bounds(self, plotted: list[dict[str, object]]) -> tuple[float, float]:
+        if self.normalize_time_var.get():
+            return (-100.0, 100.0)
         times = [
             time
             for dataset in plotted
@@ -991,7 +1016,7 @@ class SquatGui(tk.Tk):
                 self.draw_detailed_panel(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
             else:
                 self.draw_panel_series(canvas, plotted, panel_name, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
-            self.draw_panel_limits(canvas, choice, panel_name, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
+            self.draw_panel_limits(canvas, plotted, choice, panel_name, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
         self.draw_condition_legend(canvas, plotted, width, height)
         if choice == DETAILED_PLOT_CHOICE:
             self.draw_detailed_component_legend(canvas, width - 270, pad_top + 6)
@@ -1029,6 +1054,8 @@ class SquatGui(tk.Tk):
                     self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2, dash=dash, times=dataset["times"], tmin=tmin, tmax=tmax)  # type: ignore[arg-type]
         self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
         self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
+        if choice == "force reaction sol" and "vertical" in panels:
+            self.draw_body_weight_line(canvas, plotted, x0, x1, y0, y1, ymin, ymax)
         self.draw_condition_legend(canvas, plotted, width, height)
 
     def panel_values(self, plotted: list[dict[str, object]], choice: str, panel_name: str) -> list[float]:
@@ -1087,7 +1114,8 @@ class SquatGui(tk.Tk):
         self.draw_x_ticks(canvas, x0, x1, y0, tmin, tmax)
         self.draw_time_markers(canvas, x0, x1, y0, y1, tmin, tmax)
         canvas.create_text(x0 + 4, y1 - 14, text=f"{title} ({unit})", anchor="w", fill="#22312a", font=("Helvetica", 10, "bold"))
-        canvas.create_text(x1, canvas.winfo_height() - 12, text="temps (s)", anchor="e", fill="#506158", font=("Helvetica", 9))
+        xlabel = "temps (%)" if self.normalize_time_var.get() else "temps (s)"
+        canvas.create_text(x1, canvas.winfo_height() - 12, text=xlabel, anchor="e", fill="#506158", font=("Helvetica", 9))
 
     def draw_panel_series(
         self,
@@ -1112,6 +1140,7 @@ class SquatGui(tk.Tk):
     def draw_panel_limits(
         self,
         canvas: tk.Canvas,
+        plotted: list[dict[str, object]],
         choice: str,
         panel_name: str,
         x0: float,
@@ -1125,6 +1154,8 @@ class SquatGui(tk.Tk):
     ) -> None:
         if choice == "couples normalises":
             self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
+        if choice == "force reaction sol" and panel_name == "vertical":
+            self.draw_body_weight_line(canvas, plotted, x0, x1, y0, y1, ymin, ymax)
         if choice in ("couples articulaires", DETAILED_PLOT_CHOICE):
             self.draw_torque_bound_for_joint(canvas, panel_name, x0, x1, y0, y1, ymin, ymax, tmin=tmin, tmax=tmax)
 
@@ -1215,7 +1246,7 @@ class SquatGui(tk.Tk):
         if self.plot_choice.get() not in ("couples articulaires", "couples detailles") or not self.show_torque_bounds_var.get():
             return
         if tmin is None or tmax is None:
-            tmin, tmax = self.plot_time_bounds([{"times": self.centered_times()}])
+            tmin, tmax = self.plot_time_bounds([{"times": self.plot_times()}])
         for joint, values in self.torque_bound_series().items():
             self.draw_torque_bound_for_joint(canvas, joint, x0, x1, y0, y1, ymin, ymax, values, tmin=tmin, tmax=tmax)
 
@@ -1237,8 +1268,8 @@ class SquatGui(tk.Tk):
             return
         values = values or self.torque_bound_series().get(joint, [])
         if tmin is None or tmax is None:
-            tmin, tmax = self.plot_time_bounds([{"times": self.centered_times()}])
-        times = self.centered_times()
+            tmin, tmax = self.plot_time_bounds([{"times": self.plot_times()}])
+        times = self.plot_times()
         color = JOINT_COLORS[joint]
         for sign in (1.0, -1.0):
             points = []
@@ -1255,6 +1286,31 @@ class SquatGui(tk.Tk):
         y = y0 - (y0 - y1) * (100.0 - ymin) / (ymax - ymin)
         canvas.create_line(x0, y, x1, y, fill="#c9332c", width=1, dash=(6, 5))
         canvas.create_text(x1 - 4, y - 4, text="100%", anchor="se", fill="#8a1f17", font=("Helvetica", 9, "bold"))
+
+    def draw_body_weight_line(
+        self,
+        canvas: tk.Canvas,
+        plotted: list[dict[str, object]],
+        x0: float,
+        x1: float,
+        y0: float,
+        y1: float,
+        ymin: float,
+        ymax: float,
+    ) -> None:
+        weights = []
+        for dataset in plotted:
+            results = dataset["results"]  # type: ignore[assignment]
+            if results:
+                weight = float(results[0].ground_reaction[1])
+                if all(abs(weight - existing) > 1e-6 for existing in weights):
+                    weights.append(weight)
+        for weight in weights:
+            if not ymin <= weight <= ymax:
+                continue
+            y = y0 - (y0 - y1) * (weight - ymin) / (ymax - ymin)
+            canvas.create_line(x0, y, x1, y, fill="#59645e", width=1, dash=(6, 5))
+            canvas.create_text(x1 - 4, y - 4, text=f"poids {weight:.0f} N", anchor="se", fill="#59645e", font=("Helvetica", 9))
 
     def draw_detailed_torque_plot(
         self,

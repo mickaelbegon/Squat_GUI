@@ -50,6 +50,7 @@ class PlotSeriesTests(unittest.TestCase):
         }
         gui.quantity_var = FakeVar("vitesse")
         gui.com_component_vars = {"horizontal": FakeVar(True), "vertical": FakeVar(False)}
+        gui.normalize_time_var = FakeVar(False)
         return gui
 
     def test_kinematic_series_do_not_include_com(self):
@@ -72,6 +73,13 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(list(series), ["horizontal"])
         self.assertEqual(gui.plot_unit("force reaction sol"), "N")
         self.assertEqual(series["horizontal"][0], gui.results[0].ground_reaction[0])
+
+    def test_normalized_plot_times_are_percent_of_movement(self):
+        gui = self.gui_without_tk()
+        gui.normalize_time_var = FakeVar(True)
+
+        self.assertEqual(gui.plot_times(gui.states), [-100.0, 0.0, 100.0])
+        self.assertEqual(gui.plot_time_bounds([{"times": gui.plot_times(gui.states)}]), (-100.0, 100.0))
 
     def test_normalized_torque_series_uses_effort_ratios(self):
         gui = self.gui_without_tk()
