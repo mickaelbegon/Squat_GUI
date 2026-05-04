@@ -20,6 +20,7 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertNotIn("positions articulaires", PLOT_CHOICES)
         self.assertNotIn("vitesses articulaires", PLOT_CHOICES)
         self.assertNotIn("accelerations articulaires", PLOT_CHOICES)
+        self.assertIn("couples detailles", PLOT_CHOICES)
 
     def gui_without_tk(self):
         anthro = Anthropometry()
@@ -37,7 +38,7 @@ class PlotSeriesTests(unittest.TestCase):
             "hanche": FakeVar(True),
         }
         gui.quantity_var = FakeVar("vitesse")
-        gui.com_component_vars = {"x": FakeVar(True), "y": FakeVar(False)}
+        gui.com_component_vars = {"horizontal": FakeVar(True), "vertical": FakeVar(False)}
         return gui
 
     def test_kinematic_series_do_not_include_com(self):
@@ -49,8 +50,17 @@ class PlotSeriesTests(unittest.TestCase):
     def test_com_series_uses_quantity_and_components(self):
         gui = self.gui_without_tk()
 
-        self.assertEqual(list(gui.plot_series("centre de masse")), ["CoM x"])
+        self.assertEqual(list(gui.plot_series("centre de masse")), ["horizontal"])
         self.assertEqual(gui.plot_unit("centre de masse"), "m/s")
+
+    def test_ground_reaction_series_uses_horizontal_vertical_components(self):
+        gui = self.gui_without_tk()
+
+        series = gui.plot_series("force reaction sol")
+
+        self.assertEqual(list(series), ["horizontal"])
+        self.assertEqual(gui.plot_unit("force reaction sol"), "N")
+        self.assertEqual(series["horizontal"][0], gui.results[0].ground_reaction[0])
 
     def test_normalized_torque_series_uses_effort_ratios(self):
         gui = self.gui_without_tk()

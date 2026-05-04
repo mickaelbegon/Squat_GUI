@@ -486,7 +486,7 @@ total = inverse_dynamics(q, qdot, qddot)
 inertiels_non_lineaires = total - contact
 ```
 
-Dans le GUI, `total` vient de `biorbd_model.InverseDynamics(q, qdot, qddot)` quand `biorbd` est disponible. Le terme `contact` represente l'effet de la reaction au sol estimee au CoP. La courbe `inertiels_non_lineaires` est simplement `total - contact`, ce qui evite d'afficher separement `Mqddot` et `NLeffects`. Pour l'instant, le terme de contact reste calcule dans le code du GUI, car le `.bioMod` actuel garde le pied fixe au sol; une integration encore plus propre consisterait a passer un `ExternalForceSet` a `InverseDynamics(..., externalForces)` dans un modele avec base/contacts compatibles.
+Dans le GUI, `total` vient de `biorbd_model.InverseDynamics(q, qdot, qddot)` quand `biorbd` est disponible. C'est ce `total` qui est utilise pour les courbes de couples articulaires, les puissances, les ratios d'effort et le tableau des conditions. Le terme `contact` represente l'effet de la reaction au sol estimee au CoP. La courbe `inertiels_non_lineaires` est simplement `total - contact`, ce qui evite d'afficher separement `Mqddot` et `NLeffects`. Pour l'instant, le terme de contact reste calcule dans le code du GUI, car le `.bioMod` actuel garde le pied fixe au sol; une integration encore plus propre consisterait a passer un `ExternalForceSet` a `InverseDynamics(..., externalForces)` dans un modele avec base/contacts compatibles.
 
 Pour utiliser directement le centre de pression/ZMP depuis `biorbd`, il faut une version de `biorbd` qui expose `Model.CalcZeroMomentPoint(...)`. Une PR locale a ete preparee pour cela:
 

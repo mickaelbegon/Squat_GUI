@@ -25,6 +25,7 @@ DETAILED_PLOT_CHOICE = "couples detailles"
 PLOT_CHOICES = [
     "cinematique articulaire",
     "centre de masse",
+    "force reaction sol",
     "couples articulaires",
     "couples normalises",
     DETAILED_PLOT_CHOICE,
@@ -32,7 +33,13 @@ PLOT_CHOICES = [
 ]
 DEFAULT_PLOT_CHOICES = [choice for choice in PLOT_CHOICES if choice != DETAILED_PLOT_CHOICE]
 
-JOINT_COLORS = {"cheville": "#2e7d54", "genou": "#b46d22", "hanche": "#6d5ea8", "CoM x": "#2a8ca6", "CoM y": "#8a5a22"}
+JOINT_COLORS = {
+    "cheville": "#2e7d54",
+    "genou": "#b46d22",
+    "hanche": "#6d5ea8",
+    "horizontal": "#2a8ca6",
+    "vertical": "#8a5a22",
+}
 FORCE_DRAW_SCALE = 3500.0 / 3.0
 CANVAS_BG = "#fbfcf9"
 ALERT_BG = "#ffe7e3"
@@ -74,8 +81,8 @@ class SquatGui(tk.Tk):
         }
         self.show_checkbuttons: dict[str, ttk.Checkbutton] = {}
         self.com_component_vars = {
-            "x": tk.BooleanVar(value=True),
-            "y": tk.BooleanVar(value=True),
+            "horizontal": tk.BooleanVar(value=True),
+            "vertical": tk.BooleanVar(value=True),
         }
         self.quantity_controls: list[tk.Widget] = []
         self.com_controls: list[tk.Widget] = []
@@ -91,6 +98,7 @@ class SquatGui(tk.Tk):
         self.refined_sprites_var = tk.BooleanVar(value=False)
         self.angle_adapt_var = tk.BooleanVar(value=True)
         self.subplot_mode_var = tk.BooleanVar(value=True)
+        self.plot_title_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
 
         self._build_layout()
@@ -111,7 +119,7 @@ class SquatGui(tk.Tk):
         root.columnconfigure(1, weight=1)
         root.columnconfigure(2, weight=1)
         root.rowconfigure(0, weight=1)
-        root.rowconfigure(1, weight=2)
+        root.rowconfigure(2, weight=2)
 
         left = ttk.Frame(root)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
@@ -162,12 +170,17 @@ class SquatGui(tk.Tk):
         quantity_menu.grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(6, 2))
         self.quantity_controls.append(quantity_menu)
         for index, name in enumerate(self.com_component_vars):
-            checkbutton = ttk.Checkbutton(plot_box, text=f"CoM {name}", variable=self.com_component_vars[name], command=self.redraw)
+            checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.com_component_vars[name], command=self.redraw)
             checkbutton.grid(row=2, column=index + 2, sticky="w", padx=4, pady=(6, 2))
             self.com_controls.append(checkbutton)
         for control in self.com_controls:
             control.state(["disabled"])
-        ttk.Checkbutton(plot_box, text="3 subplots", variable=self.subplot_mode_var, command=self.redraw).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
+        ttk.Checkbutton(
+            plot_box,
+            text="3 subplots",
+            variable=self.subplot_mode_var,
+            command=self.update_plot_choices,
+        ).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
         ttk.Checkbutton(
             plot_box,
             text="refined",
@@ -183,7 +196,7 @@ class SquatGui(tk.Tk):
         ttk.Button(file_box, text="Load JSON", command=self.load_json).grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
         table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
-        table_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
+        table_box.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
         table_box.rowconfigure(0, weight=1)
         table_box.columnconfigure(0, weight=1)
         columns = ("numero", "squat", "charge", "duree", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
@@ -242,18 +255,26 @@ class SquatGui(tk.Tk):
         self.animation_canvas.grid(row=0, column=0, sticky="nsew")
         self.animation_canvas.bind("<Configure>", self.schedule_redraw)
 
-        playback = ttk.Frame(right)
-        playback.grid(row=1, column=0, sticky="ew", pady=(8, 0))
+        plot_header = ttk.Frame(root)
+        plot_header.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(8, 0))
+        ttk.Label(
+            plot_header,
+            textvariable=self.plot_title_var,
+            font=("Helvetica", 11, "bold"),
+        ).pack(anchor="w")
+
+        playback = ttk.Frame(root)
+        playback.grid(row=1, column=2, sticky="ew", pady=(8, 0))
         playback.columnconfigure(1, weight=1)
         self.play_button = ttk.Button(playback, text="▶", command=self.toggle_play, width=4)
         self.play_button.grid(row=0, column=0, padx=(0, 8))
         ttk.Scale(playback, variable=self.frame_var, from_=0, to=self.frame_count - 1, orient="horizontal", command=lambda _value: self.redraw()).grid(row=0, column=1, sticky="ew")
 
         self.plot_canvas = tk.Canvas(root, bg="#ffffff", highlightthickness=1, highlightbackground="#c9d1c7")
-        self.plot_canvas.grid(row=1, column=1, columnspan=2, sticky="nsew", pady=(8, 0))
+        self.plot_canvas.grid(row=2, column=1, columnspan=2, sticky="nsew", pady=(8, 0))
         self.plot_canvas.bind("<Configure>", self.schedule_redraw)
 
-        ttk.Label(root, textvariable=self.status_var).grid(row=2, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        ttk.Label(root, textvariable=self.status_var).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
 
     def _add_scale(self, parent: ttk.Frame, label: str, var: tk.DoubleVar, start: float, end: float, resolution: float, column: int) -> None:
         box = ttk.LabelFrame(parent, text=label)
@@ -396,7 +417,9 @@ class SquatGui(tk.Tk):
             for name, value in dict(settings.get("show_joints", {})).items():
                 if name in self.show_vars:
                     self.show_vars[name].set(bool(value))
+            component_aliases = {"x": "horizontal", "y": "vertical"}
             for name, value in dict(settings.get("show_com_components", {})).items():
+                name = component_aliases.get(str(name), str(name))
                 if name in self.com_component_vars:
                     self.com_component_vars[name].set(bool(value))
             self.show_torque_bounds_var.set(bool(settings.get("show_torque_bounds", self.show_torque_bounds_var.get())))
@@ -529,13 +552,13 @@ class SquatGui(tk.Tk):
     def on_plot_choice_changed(self) -> None:
         choice = self.plot_choice.get()
         quantity_plot = choice in ("cinematique articulaire", "centre de masse")
-        com_plot = choice == "centre de masse"
+        component_plot = choice in ("centre de masse", "force reaction sol")
         for checkbutton in self.show_checkbuttons.values():
-            checkbutton.state(["disabled"] if com_plot else ["!disabled"])
+            checkbutton.state(["disabled"] if component_plot else ["!disabled"])
         for control in self.quantity_controls:
             control.state(["!disabled"] if quantity_plot else ["disabled"])
         for control in self.com_controls:
-            control.state(["!disabled"] if com_plot else ["disabled"])
+            control.state(["!disabled"] if component_plot else ["disabled"])
         self.redraw()
 
     def world_to_canvas(self, canvas: tk.Canvas, point: tuple[float, float], bounds: tuple[float, float, float, float]) -> tuple[float, float]:
@@ -839,6 +862,7 @@ class SquatGui(tk.Tk):
         width = max(1, canvas.winfo_width())
         height = max(1, canvas.winfo_height())
         choice = self.plot_choice.get()
+        self.plot_title_var.set(f"{choice} ({self.plot_unit(choice)})")
         datasets = self.plot_datasets()
         plotted = [
             {
@@ -956,7 +980,6 @@ class SquatGui(tk.Tk):
         panel_width = (width - pad_left - pad_right - gap * (len(panels) - 1)) / len(panels)
         unit = self.plot_unit(choice)
         tmin, tmax = self.plot_time_bounds(plotted)
-        canvas.create_text(16, 12, text=f"{choice} ({unit})", anchor="nw", fill="#22312a", font=("Helvetica", 12, "bold"))
         for panel_index, panel_name in enumerate(panels):
             x0 = pad_left + panel_index * (panel_width + gap)
             x1 = x0 + panel_width
@@ -1172,6 +1195,8 @@ class SquatGui(tk.Tk):
             return {"position": "deg", "vitesse": "deg/s", "acceleration": "deg/s2"}[self.quantity_var.get()]
         if choice == "centre de masse":
             return {"position": "m", "vitesse": "m/s", "acceleration": "m/s2"}[self.quantity_var.get()]
+        if choice == "force reaction sol":
+            return "N"
         if choice in ("couples articulaires", "couples detailles"):
             return "Nm"
         if choice == "couples normalises":
@@ -1379,6 +1404,8 @@ class SquatGui(tk.Tk):
             values = self.joint_kinematic_series(states)
         elif choice == "centre de masse":
             return self.com_plot_series(results)
+        elif choice == "force reaction sol":
+            return self.ground_reaction_plot_series(results)
         elif choice == "couples articulaires":
             values = {joint: [result.torques[joint] for result in results] for joint in ("cheville", "genou", "hanche")}
         elif choice == "couples normalises":
@@ -1432,11 +1459,18 @@ class SquatGui(tk.Tk):
             "vitesse": [result.com_velocity for result in results],
             "acceleration": [result.com_acceleration for result in results],
         }[quantity]
+        return self.horizontal_vertical_series(source)
+
+    def ground_reaction_plot_series(self, results: list[DynamicsResult] | None = None) -> dict[str, list[float]]:
+        results = results or self.results
+        return self.horizontal_vertical_series([result.ground_reaction for result in results])
+
+    def horizontal_vertical_series(self, source: list[tuple[float, float]]) -> dict[str, list[float]]:
         data: dict[str, list[float]] = {}
-        if self.com_component_vars["x"].get():
-            data["CoM x"] = [value[0] for value in source]
-        if self.com_component_vars["y"].get():
-            data["CoM y"] = [value[1] for value in source]
+        if self.com_component_vars["horizontal"].get():
+            data["horizontal"] = [value[0] for value in source]
+        if self.com_component_vars["vertical"].get():
+            data["vertical"] = [value[1] for value in source]
         return data
 
     def torque_bound_series(self) -> dict[str, list[float]]:

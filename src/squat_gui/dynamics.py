@@ -271,7 +271,7 @@ def available_joint_torque_limits(
     }
 
 
-def _joint_torques_from_components(
+def _inertial_nonlinear_from_components(
     total: dict[str, float],
     contact: dict[str, float],
 ) -> dict[str, float]:
@@ -316,12 +316,13 @@ def inverse_dynamics(
         total_abs = tuple(inertial_abs[i] + nle_abs[i] for i in range(3))
         inverse_dynamics_total = _joint_from_absolute(total_abs)
     contact = _contact_moments(state, reaction, cop_x)
-    torques = _joint_torques_from_components(inverse_dynamics_total, contact)
+    inertial_nonlinear = _inertial_nonlinear_from_components(inverse_dynamics_total, contact)
+    torques = inverse_dynamics_total
     components = {
         joint: {
             "total": inverse_dynamics_total[joint],
             "contact": contact[joint],
-            "inertiels_non_lineaires": torques[joint],
+            "inertiels_non_lineaires": inertial_nonlinear[joint],
         }
         for joint in torques
     }
