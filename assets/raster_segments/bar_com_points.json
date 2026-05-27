@@ -1,0 +1,285 @@
+{
+  "version": 1,
+  "description": "Manual positions of the bar centre of mass on each trunk sprite.",
+  "created_utc": "2026-05-27T08:07:27+00:00",
+  "placed_count": 12,
+  "expected_count": 12,
+  "entries": [
+    {
+      "id": "low_quality/homme/front",
+      "quality": "low_quality",
+      "subject_profile": "homme",
+      "bar_position": "front",
+      "image": "assets/raster_segments/trunk_homme_front.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        583.253,
+        459.397
+      ],
+      "bar_com_normalized": [
+        0.537066,
+        0.317263
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": 0.196278,
+        "longitudinal": 0.148541
+      }
+    },
+    {
+      "id": "low_quality/homme/back",
+      "quality": "low_quality",
+      "subject_profile": "homme",
+      "bar_position": "back",
+      "image": "assets/raster_segments/trunk_homme_back.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        538.215,
+        427.869
+      ],
+      "bar_com_normalized": [
+        0.495594,
+        0.29549
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": -0.027131,
+        "longitudinal": 0.135557
+      }
+    },
+    {
+      "id": "low_quality/homme/over-head",
+      "quality": "low_quality",
+      "subject_profile": "homme",
+      "bar_position": "over-head",
+      "image": "assets/raster_segments/trunk_homme_over-head.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        601.269,
+        96.834
+      ],
+      "bar_com_normalized": [
+        0.553655,
+        0.066874
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": 0.016529,
+        "longitudinal": 0.926592
+      }
+    },
+    {
+      "id": "low_quality/femme_enceinte/front",
+      "quality": "low_quality",
+      "subject_profile": "femme enceinte",
+      "bar_position": "front",
+      "image": "assets/raster_segments/trunk_femme_enceinte_front.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        578.75,
+        466.152
+      ],
+      "bar_com_normalized": [
+        0.532919,
+        0.321928
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": 0.230187,
+        "longitudinal": 0.124544
+      }
+    },
+    {
+      "id": "low_quality/femme_enceinte/back",
+      "quality": "low_quality",
+      "subject_profile": "femme enceinte",
+      "bar_position": "back",
+      "image": "assets/raster_segments/trunk_femme_enceinte_back.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        454.893,
+        481.916
+      ],
+      "bar_com_normalized": [
+        0.41887,
+        0.332815
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": -0.034845,
+        "longitudinal": 0.137496
+      }
+    },
+    {
+      "id": "low_quality/femme_enceinte/over-head",
+      "quality": "low_quality",
+      "subject_profile": "femme enceinte",
+      "bar_position": "over-head",
+      "image": "assets/raster_segments/trunk_femme_enceinte_over-head.png",
+      "image_size_px": [
+        1122,
+        1402
+      ],
+      "bar_com_pixel": [
+        561.454,
+        133.005
+      ],
+      "bar_com_normalized": [
+        0.500405,
+        0.094868
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": -0.011271,
+        "longitudinal": 0.936685
+      }
+    },
+    {
+      "id": "refined/homme/front",
+      "quality": "refined",
+      "subject_profile": "homme",
+      "bar_position": "front",
+      "image": "assets/raster_segments/refined/trunk_homme_front.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        565.238,
+        448.137
+      ],
+      "bar_com_normalized": [
+        0.520477,
+        0.309487
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": 0.201445,
+        "longitudinal": 0.111125
+      }
+    },
+    {
+      "id": "refined/homme/back",
+      "quality": "refined",
+      "subject_profile": "homme",
+      "bar_position": "back",
+      "image": "assets/raster_segments/refined/trunk_homme_back.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        520.199,
+        448.137
+      ],
+      "bar_com_normalized": [
+        0.479005,
+        0.309487
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": -0.031663,
+        "longitudinal": 0.122822
+      }
+    },
+    {
+      "id": "refined/homme/over-head",
+      "quality": "refined",
+      "subject_profile": "homme",
+      "bar_position": "over-head",
+      "image": "assets/raster_segments/refined/trunk_homme_over-head.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        601.269,
+        87.826
+      ],
+      "bar_com_normalized": [
+        0.553655,
+        0.060653
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": 0.100593,
+        "longitudinal": 0.927743
+      }
+    },
+    {
+      "id": "refined/femme_enceinte/front",
+      "quality": "refined",
+      "subject_profile": "femme enceinte",
+      "bar_position": "front",
+      "image": "assets/raster_segments/refined/trunk_femme_enceinte_front.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        569.742,
+        423.365
+      ],
+      "bar_com_normalized": [
+        0.524624,
+        0.292379
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": 0.179374,
+        "longitudinal": 0.119328
+      }
+    },
+    {
+      "id": "refined/femme_enceinte/back",
+      "quality": "refined",
+      "subject_profile": "femme enceinte",
+      "bar_position": "back",
+      "image": "assets/raster_segments/refined/trunk_femme_enceinte_back.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        520.199,
+        430.121
+      ],
+      "bar_com_normalized": [
+        0.479005,
+        0.297045
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": -0.019651,
+        "longitudinal": 0.127799
+      }
+    },
+    {
+      "id": "refined/femme_enceinte/over-head",
+      "quality": "refined",
+      "subject_profile": "femme enceinte",
+      "bar_position": "over-head",
+      "image": "assets/raster_segments/refined/trunk_femme_enceinte_over-head.png",
+      "image_size_px": [
+        1086,
+        1448
+      ],
+      "bar_com_pixel": [
+        562.986,
+        135.117
+      ],
+      "bar_com_normalized": [
+        0.518403,
+        0.093313
+      ],
+      "relative_to_shoulder_in_trunk_lengths": {
+        "anterior": 0.01234,
+        "longitudinal": 0.888491
+      }
+    }
+  ]
+}

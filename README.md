@@ -599,6 +599,8 @@ pip install -e .
 squat-bar-com-editor
 ```
 
-Selectionner chaque image, cliquer au centre de la barre dessinee, puis utiliser `Sauver JSON`. Par defaut, le fichier propose est `assets/raster_segments/bar_com_points.json`. Il conserve le point en pixels, sa position normalisee, ainsi que son deplacement anterieur/longitudinal par rapport a l'epaule exprime en longueurs de tronc. Cette derniere valeur est prevue pour relier ensuite la calibration visuelle au segment barre du `.bioMod`, sans dependre de la taille en pixels des images.
+Selectionner chaque image, cliquer au centre de la barre dessinee, puis utiliser `Sauver JSON`. Par defaut, le fichier propose est `assets/raster_segments/bar_com_points.json`. Il conserve le point en pixels, sa position normalisee, ainsi que son deplacement anterieur/longitudinal par rapport a l'epaule exprime en longueurs de tronc.
+
+Le fichier est maintenant utilise par la cinematique et par la generation des modeles `.bioMod`. Les six annotations `refined` constituent la reference physique de la barre pour chaque combinaison sujet/prise : changer uniquement le mode d'image `low quality` ne change donc pas les couples, le CoM ou le CoP. Les six annotations basse qualite sont conservees pour controler la correspondance visuelle des images de secours.
 
 Pour remplacer une image, garder un fond blanc ou transparent, garder le segment en vue de profil, et dessiner les cibles comme un rond noir/blanc avec un point noir central. Le renderer detecte automatiquement ces points. Si Pillow n'est pas disponible, l'application revient automatiquement aux formes vectorielles JSON.

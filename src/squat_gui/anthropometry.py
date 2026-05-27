@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import radians
 
+from .bar_calibration import physical_bar_offsets
+
 
 SUBJECT_PROFILES = ("homme", "femme enceinte")
 BAR_POSITIONS = ("front", "back", "over-head")
@@ -104,11 +106,11 @@ class Anthropometry:
 
     @property
     def bar_anterior_offset(self) -> float:
-        return {"front": 0.14, "back": -0.07, "over-head": 0.0}[self.bar_position]
+        return physical_bar_offsets(self.trunk.length, self.subject_profile, self.bar_position)[0]
 
     @property
     def bar_longitudinal_offset(self) -> float:
-        return {"front": -0.02, "back": -0.02, "over-head": self.trunk.length}[self.bar_position]
+        return physical_bar_offsets(self.trunk.length, self.subject_profile, self.bar_position)[1]
 
 
 def scale_from_percent(percent: float) -> float:

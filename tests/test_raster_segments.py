@@ -2,6 +2,7 @@ import unittest
 
 from squat_gui import raster_segments
 from squat_gui.bar_com_editor import calibration_images, calibration_payload, point_relative_to_shoulder
+from squat_gui.bar_calibration import annotated_bar_offset_fractions, calibration_entries
 
 
 @unittest.skipUnless(raster_segments.pillow_available(), "Pillow is required for raster sprite anchors")
@@ -68,6 +69,20 @@ class RasterSegmentAnchorTest(unittest.TestCase):
         payload = calibration_payload({item.key: spec.proximal_anchor})
         self.assertEqual(payload["placed_count"], 1)
         self.assertEqual(payload["expected_count"], 12)
+
+    def test_manual_bar_com_calibration_contains_all_rendered_variants(self):
+        entries = calibration_entries()
+
+        self.assertEqual(len(entries), 12)
+        for item in calibration_images():
+            with self.subTest(item=item.key):
+                self.assertIn((item.quality, item.subject_profile, item.bar_position), entries)
+
+    def test_refined_manual_point_is_the_physical_reference(self):
+        anterior, longitudinal = annotated_bar_offset_fractions("homme", "front")
+
+        self.assertAlmostEqual(anterior, 0.201445)
+        self.assertAlmostEqual(longitudinal, 0.111125)
 
 
 if __name__ == "__main__":

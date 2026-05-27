@@ -2,6 +2,7 @@ import math
 import unittest
 
 from squat_gui.anthropometry import Anthropometry
+from squat_gui.bar_calibration import annotated_bar_offset_fractions
 from squat_gui.backend import biomod_cache_key, biomod_text
 from squat_gui.dynamics import (
     _biorbd_native_cop_x,
@@ -58,6 +59,18 @@ class DynamicsTests(unittest.TestCase):
             Anthropometry(subject_profile="femme enceinte").trunk.inertia,
             Anthropometry().trunk.inertia,
         )
+
+    def test_manual_refined_bar_points_define_model_bar_location(self) -> None:
+        for subject in ("homme", "femme enceinte"):
+            for hold in ("front", "back", "over-head"):
+                with self.subTest(subject=subject, hold=hold):
+                    anthro = Anthropometry(bar_mass=20.0, subject_profile=subject, bar_position=hold)
+                    anterior, longitudinal = annotated_bar_offset_fractions(subject, hold)
+                    self.assertAlmostEqual(anthro.bar_anterior_offset, anterior * anthro.trunk.length)
+                    self.assertAlmostEqual(anthro.bar_longitudinal_offset, longitudinal * anthro.trunk.length)
+                    text = biomod_text(anthro)
+                    self.assertIn(f"{anthro.bar_anterior_offset:.6f}", text)
+                    self.assertIn(f"{anthro.trunk.length + anthro.bar_longitudinal_offset:.6f}", text)
 
     def test_motion_has_eccentric_then_concentric_phases(self) -> None:
         anthro = Anthropometry()
