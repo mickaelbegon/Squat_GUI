@@ -168,6 +168,7 @@ class SquatGui(tk.Tk):
         style.configure("TLabel", background="#f2f4f1", foreground="#22312a")
         style.configure("TCheckbutton", background="#f2f4f1")
         style.configure("TButton", padding=6)
+        style.configure("GuideNav.TButton", padding=(3, 2), font=("Helvetica", 11, "bold"))
         self._configure_didactic_styles(style)
 
         root = ttk.Frame(self, padding=10)
@@ -184,12 +185,16 @@ class SquatGui(tk.Tk):
         guide_box = ttk.LabelFrame(left, text="Parcours didactique")
         guide_box.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         guide_box.columnconfigure(1, weight=1)
-        ttk.Checkbutton(
+        self.didactic_switch = tk.Canvas(
             guide_box,
-            text="activer",
-            variable=self.didactic_mode_var,
-            command=self.update_didactic_guide,
-        ).grid(row=0, column=0, sticky="w", padx=4, pady=3)
+            width=38,
+            height=20,
+            bg="#f2f4f1",
+            highlightthickness=0,
+            cursor="hand2",
+        )
+        self.didactic_switch.grid(row=0, column=0, sticky="w", padx=(6, 4), pady=4)
+        self.didactic_switch.bind("<Button-1>", lambda _event: self.toggle_didactic_mode())
         self.didactic_label = tk.Text(
             guide_box,
             height=1,
@@ -210,7 +215,22 @@ class SquatGui(tk.Tk):
         self.didactic_label.tag_configure("phase", foreground="#6d5ea8", font=("Helvetica", 9, "bold"))
         self.didactic_label.tag_configure("pose", foreground="#2e7d54", font=("Helvetica", 9, "bold"))
         self.didactic_label.tag_configure("alerte", foreground="#c9332c", font=("Helvetica", 9, "bold"))
-        ttk.Button(guide_box, text="Suivant", command=self.advance_didactic_guide).grid(row=0, column=2, padx=4, pady=3)
+        self.didactic_previous_button = ttk.Button(
+            guide_box,
+            text="\u25c0",
+            command=self.retreat_didactic_guide,
+            width=2,
+            style="GuideNav.TButton",
+        )
+        self.didactic_previous_button.grid(row=0, column=2, padx=(3, 1), pady=3)
+        self.didactic_next_button = ttk.Button(
+            guide_box,
+            text="\u25b6",
+            command=self.advance_didactic_guide,
+            width=2,
+            style="GuideNav.TButton",
+        )
+        self.didactic_next_button.grid(row=0, column=3, padx=(1, 4), pady=3)
 
         self.parameter_box = ttk.LabelFrame(left, text="Parametres")
         self.parameter_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
@@ -460,6 +480,7 @@ class SquatGui(tk.Tk):
         ):
             frame.configure(style="TLabelframe")
         self.add_condition_button.configure(style="TButton")
+        self.play_button.configure(style="TButton")
         self.conditions_table.configure(style="Treeview")
         self._didactic_canvas_colors.clear()
         self.plot_canvas.configure(highlightthickness=1, highlightbackground="#c9d1c7")
@@ -514,11 +535,49 @@ class SquatGui(tk.Tk):
             self.didactic_label.insert("end", text, () if tag is None else (tag,))
         self.didactic_label.configure(state="disabled")
         self.update_didactic_focus()
+        self.update_didactic_navigation()
+
+    def draw_didactic_switch(self) -> None:
+        enabled = self.didactic_mode_var.get()
+        background = "#2e7d54" if enabled else "#bcc4bd"
+        knob_x = 28 if enabled else 10
+        self.didactic_switch.delete("all")
+        self.didactic_switch.create_oval(2, 2, 20, 18, fill=background, outline=background)
+        self.didactic_switch.create_oval(18, 2, 36, 18, fill=background, outline=background)
+        self.didactic_switch.create_rectangle(10, 2, 28, 18, fill=background, outline=background)
+        self.didactic_switch.create_oval(
+            knob_x - 7,
+            4,
+            knob_x + 7,
+            16,
+            fill="#ffffff",
+            outline="#ffffff",
+        )
+
+    def update_didactic_navigation(self) -> None:
+        self.draw_didactic_switch()
+        active = self.didactic_mode_var.get()
+        self.didactic_previous_button.state(["!disabled"] if active and self.didactic_step > 0 else ["disabled"])
+        self.didactic_next_button.state(["!disabled"] if not active or self.didactic_step < 10 else ["disabled"])
+
+    def toggle_didactic_mode(self) -> None:
+        self.didactic_mode_var.set(not self.didactic_mode_var.get())
+        if self.didactic_mode_var.get():
+            self.didactic_step = 0
+        self.update_didactic_guide()
 
     def advance_didactic_guide(self) -> None:
         if not self.didactic_mode_var.get():
             self.didactic_mode_var.set(True)
-        self.didactic_step = min(10, self.didactic_step + 1)
+            self.didactic_step = 0
+        else:
+            self.didactic_step = min(10, self.didactic_step + 1)
+        self.update_didactic_guide()
+
+    def retreat_didactic_guide(self) -> None:
+        if not self.didactic_mode_var.get():
+            return
+        self.didactic_step = max(0, self.didactic_step - 1)
         self.update_didactic_guide()
 
     def anthro(self) -> Anthropometry:
