@@ -47,3 +47,13 @@ Utilisation dans le laboratoire : Revue générale sur la cinématique et la cin
 Kim, S., Miller, M., Tallarico, A., Helder, S., Liu, Y., & Lee, S. (2021). Relationships between physical characteristics and biomechanics of lower extremity during the squat. Journal of Exercise Science & Fitness, 20(1), 1–7.
 
 Utilisation dans le laboratoire : Relations entre caractéristiques physiques, flexibilité, force relative et biomécanique du squat.
+
+## Utilisation pour le volet équilibre postural
+
+Le bloc `balance_*` n'impose pas une solution de posture. Il demande d'observer d'abord une pose basse identique pour isoler l'effet de la prise de barre, de la longueur de cuisse et du profil de sujet sur le CoM et le CoP/ZMP, puis de proposer une adaptation. Les résultats doivent être interprétés en s'appuyant sur :
+
+- Chan & Sigward (2020) pour relier un déplacement antéro-postérieur du CoP à la redistribution des demandes articulaires;
+- Kim et al. (2021) pour discuter l'effet des caractéristiques physiques sur la stratégie de squat;
+- Schoenfeld (2010) et Straub & Powers (2024) pour replacer position de barre, inclinaison du tronc et moments articulaires dans une interprétation pratique.
+
+Le profil `femme enceinte` est un modèle didactique modifiant le centre de masse et les moments d'inertie du segment tronc-tête-bras; il ne doit pas être interprété comme une prédiction clinique individuelle.

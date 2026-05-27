@@ -2,7 +2,7 @@
 
 ## Contexte
 
-Ce laboratoire utilise le logiciel `Squat_GUI` et son interface CLI `squat-gui-cli run` pour relier des consignes pratiques de squat à des variables biomécaniques : cinématique, dynamique inverse, CoM, CoP/ZMP, forces de réaction au sol, couples, puissances et ratios d’effort.
+Ce laboratoire utilise le logiciel `Squat_GUI` et son interface CLI `python -m squat_gui` pour relier des consignes pratiques de squat à des variables biomécaniques : cinématique, dynamique inverse, CoM, CoP/ZMP, forces de réaction au sol, couples, puissances et ratios d’effort. Il introduit également la notion d’équilibre postural : une même pose basse peut ne plus être acceptable lorsque la morphologie ou la position de la barre change.
 
 Le laboratoire est construit pour être associé à des questions dans Studium/Moodle. Les questions numériques doivent être calculées à partir des sorties produites localement avec le GUI ou la ligne de commande.
 
@@ -13,10 +13,11 @@ Le laboratoire est construit pour être associé à des questions dans Studium/M
 1. expliquer comment la posture modifie la distribution des moments entre hanche, genou et cheville;
 2. interpréter le CoM, le CoP/ZMP et le polygone d’appui dans une tâche de squat;
 3. distinguer couple brut et ratio d’effort normalisé par capacité articulaire;
-4. analyser l’effet de la charge, de la vitesse et des longueurs segmentaires;
-5. décomposer un moment articulaire en contributions inertielle, effets non linéaires et contact;
-6. relier les résultats simulés à des résultats expérimentaux publiés;
-7. formuler une recommandation pratique nuancée plutôt qu’une règle universelle.
+4. analyser l’effet de la morphologie et de la position de barre sur l’équilibre, puis proposer une compensation posturale;
+5. analyser l’effet de la charge, de la vitesse et des longueurs segmentaires;
+6. décomposer un moment articulaire en couple total, effet du contact et efforts inertiels/non-linéaires;
+7. relier les résultats simulés à des résultats expérimentaux publiés;
+8. formuler une recommandation pratique nuancée plutôt qu’une règle universelle.
 
 ## Préparation
 
@@ -25,7 +26,7 @@ Avant la séance, lire les résumés de littérature dans `docs/references_litte
 Commande de base depuis la racine du projet :
 
 ```bash
-python -m squat_gui run --backend analytical --out exports/condition_demo.csv --summary exports/condition_demo_summary.json
+python -m squat_gui run --backend biorbd --out exports/condition_demo.csv --summary exports/condition_demo_summary.json
 ```
 
 Si les scripts de ce dossier sont utilisés :
@@ -58,7 +59,30 @@ Variables à extraire : pics de couples, ratios d’effort, ratio hanche/genou, 
 
 Lien littérature attendu : Fry et al. (2003), Straub & Powers (2024).
 
-### Bloc 3 — Stabilité
+### Bloc 3 — Équilibre postural : morphologie et prise de barre
+
+Le principe de ce bloc est de tenir la pose basse constante au début de la comparaison. La charge est exprimée en pourcentage du poids de corps et vaut 40 % BW dans les essais fournis.
+
+Comparer d’abord :
+
+- `balance_bar_back`, `balance_bar_front` et `balance_bar_overhead`;
+- `balance_long_thigh_back` et `balance_long_thigh_front`;
+- `balance_pregnant_back` et `balance_pregnant_front`.
+
+Questions d’analyse :
+
+- À pose identique, comment la prise de barre déplace-t-elle le CoM au point bas et le CoP/ZMP pendant le mouvement?
+- Une cuisse plus longue ou le profil `femme enceinte` rend-il la même stratégie posturale plus difficile à équilibrer?
+- Dans quels cas le CoP sort-il du pied, et pendant combien de frames?
+- La prise qui améliore l’équilibre réduit-elle nécessairement le ratio d’effort de toutes les articulations?
+
+Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le CoP dans le pied, puis enregistrer la condition adaptée. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
+
+Variables à extraire : `squat_com_x_m`, `squat_cop_x_m`, `cop_outside_foot_frames`, excursion du CoP, pics de couples et ratios d’effort.
+
+Lien littérature attendu : Chan & Sigward (2020), Kim et al. (2021), Schoenfeld (2010).
+
+### Bloc 4 — Limites d’appui
 
 Comparer `stability_forward` et `stability_backward`.
 
@@ -68,9 +92,9 @@ Variables à extraire : CoP, CoM, couleur d’alerte du GUI, moments normalisés
 
 Lien littérature attendu : Chan & Sigward (2020), Kitamura et al. (2019).
 
-### Bloc 4 — Charge externe
+### Bloc 5 — Charge externe
 
-Comparer baseline, 25 kg, 50 kg et 75 kg.
+Comparer `baseline`, `load_30bw`, `load_60bw` et `load_100bw`. La charge de barre est exprimée en pourcentage du poids de corps du sujet de référence de 70 kg.
 
 Hypothèse : la charge augmente les couples et les forces de réaction au sol, mais l’articulation limitante peut dépendre des capacités maximales.
 
@@ -78,23 +102,24 @@ Variables à extraire : pics de couples, GRF verticale, ratios d’effort, premi
 
 Lien littérature attendu : Pürzel et al. (2025), Schoenfeld (2010).
 
-### Bloc 5 — Vitesse
+### Bloc 6 — Durée du mouvement
 
-Comparer un squat lent et un squat rapide avec posture et charge constantes.
+Comparer `duration_slow` et `duration_fast` avec posture, charge et prise de barre constantes.
 
-Hypothèse : la vitesse augmente la contribution inertielle `Mqddot`, ce qui peut modifier l’interprétation du mouvement.
+Hypothèse : réduire la durée augmente les accélérations et peut modifier la part des efforts inertiels/non-linéaires dans le couple total.
 
-Variables à extraire : `Mqddot`, `contact`, `NLeffects`, couple total, puissance.
+Variables à extraire : couple total de dynamique inverse, effet du contact, efforts inertiels/non-linéaires (`total - contact`) et puissance.
 
 Lien littérature attendu : Hannan & King (2022).
 
-### Bloc 6 — Mini-projet
+### Bloc 7 — Mini-projet
 
 Chaque équipe choisit un objectif :
 
 - minimiser la demande relative au genou;
 - maximiser la sollicitation du genou sans dépasser les capacités;
 - garder le CoP au centre du pied;
+- adapter la posture pour préserver l’équilibre après un changement de morphologie ou de prise de barre;
 - augmenter la charge sans dépasser 80 % de capacité;
 - augmenter la vitesse tout en limitant la part inertielle.
 
@@ -112,9 +137,10 @@ Le rapport doit inclure une hypothèse, un plan de simulations, une figure princ
 
 | Critère | Points |
 |---|---:|
-| Simulations reproductibles et bien comparées | 25 |
-| Analyse des moments, CoP/ZMP et ratios d’effort | 25 |
-| Analyse dynamique `Mqddot`, contact et vitesse | 15 |
+| Simulations reproductibles et bien comparées | 20 |
+| Analyse des moments, CoP/ZMP et ratios d’effort | 20 |
+| Équilibre morphologie / prise de barre et adaptation proposée | 15 |
+| Analyse dynamique total, contact, inertiels/non-linéaires et durée | 10 |
 | Utilisation pertinente de la littérature | 20 |
 | Recommandation pratique nuancée | 10 |
 | Clarté des figures et tableaux | 5 |
