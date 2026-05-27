@@ -17,6 +17,7 @@ dev = [
 [project.scripts]
 squat-gui = "squat_gui.app:main"
 squat-gui-cli = "squat_gui.cli:main"
+squat-bar-com-editor = "squat_gui.bar_com_editor:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -580,7 +580,7 @@ La proposition `Sportifs` est volontairement un preset de travail, pas une norme
 
 ## Modifier les images de segments
 
-Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`. Les images `refined` sont maintenant actives par defaut; le checkbox `low quality` revient aux premiers sprites.
+Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`. Les images `refined` sont maintenant actives par defaut; le checkbox `low quality` utilise aussi une image propre a chaque sujet et prise de barre.
 Ils sont ancres par les cibles dessinees dans les images:
 
 - `pied.png`: cible de cheville et pointe du pied detectee sur la silhouette;
@@ -588,5 +588,17 @@ Ils sont ancres par les cibles dessinees dans les images:
 - `cuisse.png`: cibles genou et hanche;
 - `tronc.png`: cibles hanche et epaule pour le rendu simple;
 - `trunk_homme_{front,back,over-head}.png` et `trunk_femme_enceinte_{front,back,over-head}.png`: torses refined adaptes a la prise.
+
+### Calibrer le CoM de la barre dans les images
+
+Une petite interface permet de pointer manuellement le centre de la barre sur les six images `low quality` et les six images `refined`:
+
+```bash
+conda activate squat-gui
+pip install -e .
+squat-bar-com-editor
+```
+
+Selectionner chaque image, cliquer au centre de la barre dessinee, puis utiliser `Sauver JSON`. Par defaut, le fichier propose est `assets/raster_segments/bar_com_points.json`. Il conserve le point en pixels, sa position normalisee, ainsi que son deplacement anterieur/longitudinal par rapport a l'epaule exprime en longueurs de tronc. Cette derniere valeur est prevue pour relier ensuite la calibration visuelle au segment barre du `.bioMod`, sans dependre de la taille en pixels des images.
 
 Pour remplacer une image, garder un fond blanc ou transparent, garder le segment en vue de profil, et dessiner les cibles comme un rond noir/blanc avec un point noir central. Le renderer detecte automatiquement ces points. Si Pillow n'est pas disponible, l'application revient automatiquement aux formes vectorielles JSON.
