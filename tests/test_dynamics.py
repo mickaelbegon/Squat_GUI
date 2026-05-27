@@ -22,6 +22,17 @@ class DynamicsTests(unittest.TestCase):
         anthro = Anthropometry(bar_mass=40.0)
         self.assertAlmostEqual(anthro.total_mass, 110.0)
 
+    def test_winter_dempster_com_respects_model_origins_and_bilateral_mass(self) -> None:
+        male = Anthropometry()
+
+        self.assertAlmostEqual(male.foot.mass / male.body_mass, 0.029)
+        self.assertAlmostEqual(male.shank.mass / male.body_mass, 0.093)
+        self.assertAlmostEqual(male.thigh.mass / male.body_mass, 0.200)
+        self.assertAlmostEqual(male.foot.com_fraction, 0.50)
+        self.assertAlmostEqual(male.shank.com_fraction, 1.0 - 0.433)
+        self.assertAlmostEqual(male.thigh.com_fraction, 1.0 - 0.433)
+        self.assertGreater(male.shank.com_fraction, 0.5)
+
     def test_simulation_produces_finite_values(self) -> None:
         anthro = Anthropometry(bar_mass=20.0)
         states, results = simulate(

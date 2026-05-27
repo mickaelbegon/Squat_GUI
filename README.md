@@ -45,6 +45,18 @@ La barre est un segment ponctuel ajoute au modele `.bioMod`; sa masse est `70 * 
 
 La version `femme enceinte` est actuellement un scenario didactique initial, pas un modele clinique valide: elle conserve une masse corporelle totale de 70 kg pour permettre des comparaisons controlees, deplace le CoM du segment tronc de `+0.060 m` vers l'avant et multiplie son moment d'inertie par `1.18`. Ces deux coefficients sont centralises dans [anthropometry.py](src/squat_gui/anthropometry.py) et devront etre remplaces ou calibres a partir d'un jeu anthropometrique de grossesse choisi pour le cours.
 
+### Parametres anthropometriques des membres inferieurs
+
+Les masses, positions de CoM et rayons de giration du pied, de la jambe et de la cuisse reposent sur les parametres Dempster/Winter pour un modele combine gauche-droite: Winter, D. A. (2009), *Biomechanics and Motor Control of Human Movement*, 4th edition, Wiley. Les fractions de masse bilaterales du modele sont `2.9 %` pour les pieds, `9.3 %` pour les jambes et `20.0 %` pour les cuisses.
+
+La convention d'origine est importante dans ce GUI:
+
+- le pied est defini du talon vers les orteils; sa fraction de CoM est donc appliquee depuis le talon;
+- la jambe est definie de la cheville vers le genou, alors que la table donne le CoM depuis le genou: la fraction utilisee est `1 - 0.433 = 0.567`;
+- la cuisse est definie du genou vers la hanche, alors que la table donne le CoM depuis la hanche: la fraction utilisee est `1 - 0.433 = 0.567`.
+
+Le profil `femme enceinte` conserve les parametres de membres inferieurs de la reference de base puis ajoute la modification didactique de grossesse au segment superieur. Le segment `tronc-tete-bras` n'est pas un segment anatomique isole de la table: il regroupe le reste du corps et la posture des bras autour de la barre. Sa position de CoM et son ajustement d'inertie restent donc des hypotheses pedagogiques explicites.
+
 Le wedge fait tourner le pied de 20 deg en surelevant le talon dans la geometrie 2D et dans le `.bioMod` genere. La pose debout de reference applique simultanement `-20 deg` a la cheville, afin de conserver la jambe et le tronc verticaux hors de la position basse. Le contact reste represente sur le plan du sol horizontal; il s'agit donc d'une exploration du changement de configuration, et non d'un modele de contact complet du wedge.
 
 ## Installation de A a Z

@@ -52,11 +52,27 @@ class Anthropometry:
 
     @property
     def shank(self) -> SegmentSpec:
-        return SegmentSpec("jambe", 0.246 * self.height * self.shank_scale, 0.093 * self.body_mass, 0.433, 0.302)
+        # Winter/Dempster gives the longitudinal CoM from the knee, whereas
+        # this chain constructs the shank from the ankle towards the knee.
+        return SegmentSpec(
+            "jambe",
+            0.246 * self.height * self.shank_scale,
+            0.093 * self.body_mass,
+            1.0 - 0.433,
+            0.302,
+        )
 
     @property
     def thigh(self) -> SegmentSpec:
-        return SegmentSpec("cuisse", 0.245 * self.height * self.thigh_scale, 0.200 * self.body_mass, 0.433, 0.323)
+        # Winter/Dempster gives the longitudinal CoM from the hip, whereas
+        # this chain constructs the thigh from the knee towards the hip.
+        return SegmentSpec(
+            "cuisse",
+            0.245 * self.height * self.thigh_scale,
+            0.200 * self.body_mass,
+            1.0 - 0.433,
+            0.323,
+        )
 
     @property
     def trunk(self) -> SegmentSpec:

@@ -48,6 +48,12 @@ Kim, S., Miller, M., Tallarico, A., Helder, S., Liu, Y., & Lee, S. (2021). Relat
 
 Utilisation dans le laboratoire : Relations entre caractéristiques physiques, flexibilité, force relative et biomécanique du squat.
 
+## Winter, 2009
+
+Winter, D. A. (2009). Biomechanics and Motor Control of Human Movement (4th ed.). Wiley.
+
+Utilisation dans le laboratoire : les masses, centres de masse et rayons de giration du pied, de la jambe et de la cuisse reposent sur les paramètres Dempster/Winter combinés gauche-droite. Comme la jambe du modèle est orientée de la cheville vers le genou et la cuisse du genou vers la hanche, les positions publiées depuis l'articulation proximale sont inversées avant utilisation (`1 - 0.433 = 0.567`). Le segment supérieur `tronc-tête-bras` reste une agrégation didactique adaptée à la prise de barre et au scénario de grossesse.
+
 ## Utilisation pour le volet équilibre postural
 
 Le bloc `balance_*` n'impose pas une solution de posture. Il demande d'observer d'abord une pose basse identique pour isoler l'effet de la prise de barre, de la longueur de cuisse et du profil de sujet sur le CoM et le CoP/ZMP, puis de proposer une adaptation. Les résultats doivent être interprétés en s'appuyant sur :

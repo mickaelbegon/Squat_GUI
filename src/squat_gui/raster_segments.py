@@ -41,6 +41,7 @@ TRUNK_VARIANTS = {
 # Display-only adjustments. The articulated anchors and all model quantities
 # remain defined by the kinematic model, while silhouettes read more naturally.
 DISPLAY_WIDTH_SCALE = {
+    "shank": 1.20,
     "thigh": 1.30,
 }
 DISPLAY_EXTENSION_SCALE = {
