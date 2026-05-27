@@ -43,6 +43,8 @@ class CliExportTests(unittest.TestCase):
             self.assertIn("genou_inverse_dynamics_total_Nm", rows[0])
             self.assertIn("genou_inertial_nonlinear_Nm", rows[0])
             self.assertEqual(payload["condition"]["condition_id"], "demo")
+            self.assertEqual(rows[0]["bar_position"], "back")
+            self.assertEqual(rows[0]["load_percent_bw"], "0.0")
 
     def test_batch_exports_multiple_conditions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -63,6 +65,7 @@ class CliExportTests(unittest.TestCase):
                 rows = list(csv.DictReader(handle))
             self.assertEqual(len(rows), 6)
             self.assertEqual({row["condition_id"] for row in rows}, {"light", "loaded"})
+            self.assertAlmostEqual(float(rows[3]["load_percent_bw"]), 100.0 * 40.0 / 70.0)
 
 
 if __name__ == "__main__":

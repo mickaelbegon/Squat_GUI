@@ -17,6 +17,7 @@ from .dynamics import (
     simulate,
     torque_presets,
 )
+from .kinematics import PhaseDurations
 
 
 JOINTS = ("cheville", "genou", "hanche")
@@ -31,11 +32,16 @@ TORQUE_PRESET_ALIASES = {
 @dataclass(frozen=True)
 class Condition:
     condition_id: str
-    load_kg: float
+    load_percent_bw: float
+    subject_profile: str
+    bar_position: str
+    wedge_20_deg: bool
     shank_percent: float
     thigh_percent: float
     trunk_percent: float
-    duration_phase_s: float
+    duration_excentrique_s: float
+    duration_isometrique_s: float
+    duration_concentrique_s: float
     q_segment_deg: tuple[float, float, float]
     torque_preset: str
     max_torques: dict[str, float]
@@ -44,8 +50,16 @@ class Condition:
     backend: str
 
     @property
+    def load_kg(self) -> float:
+        return 70.0 * self.load_percent_bw / 100.0
+
+    @property
+    def phase_durations(self) -> PhaseDurations:
+        return PhaseDurations(self.duration_excentrique_s, self.duration_isometrique_s, self.duration_concentrique_s)
+
+    @property
     def total_duration_s(self) -> float:
-        return 2.0 * max(0.1, self.duration_phase_s)
+        return self.phase_durations.total
 
 
 def parse_bool(value: str | bool) -> bool:
@@ -92,11 +106,16 @@ def condition_from_args(args: argparse.Namespace) -> Condition:
 
     return Condition(
         condition_id=args.condition_id,
-        load_kg=args.load,
+        load_percent_bw=100.0 * args.load / 70.0 if args.load is not None else args.load_percent_bw,
+        subject_profile=args.subject_profile,
+        bar_position=args.bar_position,
+        wedge_20_deg=args.wedge,
         shank_percent=args.shank,
         thigh_percent=args.thigh,
         trunk_percent=args.trunk,
-        duration_phase_s=args.duration_phase,
+        duration_excentrique_s=args.duration_excentrique,
+        duration_isometrique_s=args.duration_isometrique,
+        duration_concentrique_s=args.duration_concentrique,
         q_segment_deg=q_segment_deg,
         torque_preset=preset_name,
         max_torques=max_torques,
@@ -143,13 +162,21 @@ def condition_from_row(row: dict[str, str], index: int, defaults: argparse.Names
     else:
         q_segment_deg = tuple(defaults.q_segment_deg)
 
+    legacy_load = row_float(row, "load_kg", 0.0)
+    load_percent_bw = row_float(row, "load_percent_bw", 100.0 * legacy_load / 70.0)
+    legacy_duration = row_float(row, "duration_phase_s", defaults.duration_excentrique)
     return Condition(
         condition_id=row_str(row, "condition_id", f"condition_{index:03d}"),
-        load_kg=row_float(row, "load_kg", defaults.load),
+        load_percent_bw=load_percent_bw,
+        subject_profile=row_str(row, "subject_profile", defaults.subject_profile),
+        bar_position=row_str(row, "bar_position", defaults.bar_position),
+        wedge_20_deg=parse_bool(row_str(row, "wedge_20_deg", str(defaults.wedge))),
         shank_percent=row_float(row, "shank_percent", defaults.shank),
         thigh_percent=row_float(row, "thigh_percent", defaults.thigh),
         trunk_percent=row_float(row, "trunk_percent", defaults.trunk),
-        duration_phase_s=row_float(row, "duration_phase_s", defaults.duration_phase),
+        duration_excentrique_s=row_float(row, "duration_excentrique_s", legacy_duration),
+        duration_isometrique_s=row_float(row, "duration_isometrique_s", defaults.duration_isometrique),
+        duration_concentrique_s=row_float(row, "duration_concentrique_s", legacy_duration),
         q_segment_deg=q_segment_deg,
         torque_preset=preset_name,
         max_torques=max_torques,
@@ -165,6 +192,9 @@ def anthropometry(condition: Condition) -> Anthropometry:
         shank_scale=scale_from_percent(condition.shank_percent),
         thigh_scale=scale_from_percent(condition.thigh_percent),
         trunk_scale=scale_from_percent(condition.trunk_percent),
+        subject_profile=condition.subject_profile,
+        bar_position=condition.bar_position,
+        wedge_angle_deg=20.0 if condition.wedge_20_deg else 0.0,
     )
 
 
@@ -175,7 +205,7 @@ def simulate_condition(condition: Condition) -> tuple[list[dict[str, object]], d
     states, results = simulate(
         anthro,
         final_q,
-        condition.total_duration_s,
+        condition.phase_durations,
         condition.frames,
         condition.max_torques,
         condition.angle_adapt,
@@ -209,11 +239,17 @@ def simulate_condition(condition: Condition) -> tuple[list[dict[str, object]], d
             "time_s": state.time,
             "phase": state.phase,
             "backend": result.backend,
+            "subject_profile": condition.subject_profile,
+            "bar_position": condition.bar_position,
+            "wedge_20_deg": condition.wedge_20_deg,
+            "load_percent_bw": condition.load_percent_bw,
             "load_kg": condition.load_kg,
             "shank_percent": condition.shank_percent,
             "thigh_percent": condition.thigh_percent,
             "trunk_percent": condition.trunk_percent,
-            "duration_phase_s": condition.duration_phase_s,
+            "duration_excentrique_s": condition.duration_excentrique_s,
+            "duration_isometrique_s": condition.duration_isometrique_s,
+            "duration_concentrique_s": condition.duration_concentrique_s,
             "total_duration_s": condition.total_duration_s,
             "q_shank_deg": degrees(state.q[0]),
             "q_thigh_deg": degrees(state.q[1]),
@@ -319,11 +355,17 @@ def run_batch(args: argparse.Namespace) -> int:
 
 def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--condition-id", default="condition_001")
-    parser.add_argument("--load", type=float, default=20.0, help="Charge sur les epaules en kg.")
+    parser.add_argument("--load-percent-bw", type=float, default=0.0, help="Charge de barre en pourcentage du poids de corps (sujet 70 kg).")
+    parser.add_argument("--load", type=float, help="Compatibilite: charge de barre en kg, prioritaire sur --load-percent-bw.")
+    parser.add_argument("--subject-profile", choices=("homme", "femme enceinte"), default="homme")
+    parser.add_argument("--bar-position", choices=("front", "back", "over-head"), default="back")
+    parser.add_argument("--wedge", action="store_true", help="Ajouter une talonnette de 20 deg.")
     parser.add_argument("--shank", type=float, default=0.0, help="Variation longueur tibia en pourcent.")
     parser.add_argument("--thigh", type=float, default=0.0, help="Variation longueur cuisse en pourcent.")
     parser.add_argument("--trunk", type=float, default=0.0, help="Variation longueur tronc en pourcent.")
-    parser.add_argument("--duration-phase", type=float, default=1.2, help="Duree de chaque phase, en secondes.")
+    parser.add_argument("--duration-excentrique", type=float, choices=(2.0, 2.5, 3.0, 3.5, 4.0), default=4.0)
+    parser.add_argument("--duration-isometrique", type=float, choices=(2.0, 2.5, 3.0, 3.5, 4.0), default=2.0)
+    parser.add_argument("--duration-concentrique", type=float, choices=(2.0, 2.5, 3.0, 3.5, 4.0), default=4.0)
     parser.add_argument("--frames", type=int, default=81)
     parser.add_argument("--q-segment-deg", type=float, nargs=3, default=DEFAULT_SEGMENT_ANGLES_DEG, metavar=("SHANK", "THIGH", "TRUNK"))
     parser.add_argument("--joint-angles-deg", type=float, nargs=3, metavar=("ANKLE", "KNEE", "HIP"), help="Angles articulaires finaux en degres. Prioritaire sur --q-segment-deg.")

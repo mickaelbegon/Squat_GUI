@@ -28,6 +28,15 @@ SPRITE_FILES = {
     "trunk": "tronc.png",
 }
 
+TRUNK_VARIANTS = {
+    ("homme", "front"): "trunk_homme_front.png",
+    ("homme", "back"): "trunk_homme_back.png",
+    ("homme", "over-head"): "trunk_homme_over-head.png",
+    ("femme enceinte", "front"): "trunk_femme_enceinte_front.png",
+    ("femme enceinte", "back"): "trunk_femme_enceinte_back.png",
+    ("femme enceinte", "over-head"): "trunk_femme_enceinte_over-head.png",
+}
+
 
 def pillow_available() -> bool:
     try:
@@ -152,11 +161,11 @@ def _trunk_anchor_from_silhouette(image, distal_anchor: tuple[float, float]) -> 
     return (distal_anchor[0], shoulder_y)
 
 
-@lru_cache(maxsize=8)
-def sprite_spec(name: str, refined: bool = False) -> SpriteSpec:
+@lru_cache(maxsize=32)
+def sprite_spec(name: str, refined: bool = False, trunk_variant: tuple[str, str] | None = None) -> SpriteSpec:
     from PIL import Image
 
-    filename = SPRITE_FILES[name]
+    filename = TRUNK_VARIANTS[trunk_variant] if name == "trunk" and refined and trunk_variant else SPRITE_FILES[name]
     image = _rgb_on_white(Image.open(_asset_path(filename, refined)))
     centers = _component_centers(image)
     if name == "foot":
@@ -181,7 +190,7 @@ def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> flo
     return degrees(source_angle - target_angle)
 
 
-@lru_cache(maxsize=8)
+@lru_cache(maxsize=32)
 def _load_transparent_sprite(filename: str, refined: bool):
     from PIL import Image
 
@@ -191,7 +200,7 @@ def _load_transparent_sprite(filename: str, refined: bool):
     for y in range(height):
         for x in range(width):
             r, g, b, a = pixels[x, y]
-            if r > 245 and g > 245 and b > 245:
+            if r > 225 and g > 225 and b > 225:
                 pixels[x, y] = (255, 255, 255, 0)
             else:
                 pixels[x, y] = (r, g, b, a)
@@ -242,10 +251,11 @@ def draw_sprite_segment(
     proximal_world: Vector,
     world_to_canvas: Callable[[Vector], Vector],
     refined: bool = False,
+    trunk_variant: tuple[str, str] | None = None,
 ) -> bool:
     if not pillow_available():
         return False
-    spec = sprite_spec(name, refined)
+    spec = sprite_spec(name, refined, trunk_variant)
     distal_px = world_to_canvas(distal_world)
     proximal_px = world_to_canvas(proximal_world)
     target_vector = (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1])

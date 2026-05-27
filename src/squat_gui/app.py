@@ -13,10 +13,10 @@ from math import atan2, degrees, radians
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from .anthropometry import Anthropometry, scale_from_percent
+from .anthropometry import BAR_POSITIONS, SUBJECT_PROFILES, Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends
 from .dynamics import DynamicsResult, available_joint_torque_limits, simulate, torque_presets
-from .kinematics import MotionState, pose_from_angles
+from .kinematics import MotionState, PhaseDurations, pose_from_angles
 from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
 
@@ -50,7 +50,7 @@ class SquatGui(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("Squat 2D - dynamique inverse")
-        self.geometry("1320x820")
+        self.geometry("1480x920")
         self.configure(bg="#f2f4f1")
 
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
@@ -65,11 +65,16 @@ class SquatGui(tk.Tk):
         self.saved_conditions: dict[str, dict[str, object]] = {}
         self.model_cache = BiorbdModelCache()
 
-        self.load_var = tk.DoubleVar(value=20.0)
+        self.subject_profile_var = tk.StringVar(value="homme")
+        self.bar_position_var = tk.StringVar(value="back")
+        self.load_var = tk.DoubleVar(value=0.0)
         self.shank_var = tk.DoubleVar(value=0.0)
         self.thigh_var = tk.DoubleVar(value=0.0)
         self.trunk_var = tk.DoubleVar(value=0.0)
-        self.duration_var = tk.DoubleVar(value=4.0)
+        self.eccentric_duration_var = tk.DoubleVar(value=4.0)
+        self.isometric_duration_var = tk.DoubleVar(value=2.0)
+        self.concentric_duration_var = tk.DoubleVar(value=4.0)
+        self.wedge_var = tk.BooleanVar(value=False)
         self.frame_var = tk.IntVar(value=self.frame_count // 2)
         self.plot_choice = tk.StringVar(value=PLOT_CHOICES[0])
         self.quantity_var = tk.StringVar(value="position")
@@ -94,12 +99,16 @@ class SquatGui(tk.Tk):
         }
         self.show_torque_bounds_var = tk.BooleanVar(value=False)
         self.show_sprite_centers_var = tk.BooleanVar(value=False)
-        self.refined_sprites_var = tk.BooleanVar(value=False)
+        self.show_segment_com_var = tk.BooleanVar(value=False)
+        self.low_quality_sprites_var = tk.BooleanVar(value=False)
         self.angle_adapt_var = tk.BooleanVar(value=True)
         self.subplot_mode_var = tk.BooleanVar(value=True)
         self.normalize_time_var = tk.BooleanVar(value=False)
         self.plot_title_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
+        self.didactic_mode_var = tk.BooleanVar(value=False)
+        self.didactic_step = 0
+        self.didactic_text_var = tk.StringVar(value="")
 
         self._build_layout()
         self.recompute()
@@ -124,19 +133,77 @@ class SquatGui(tk.Tk):
         left = ttk.Frame(root)
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         left.columnconfigure(0, weight=1)
-        left.rowconfigure(2, weight=1)
+        left.rowconfigure(3, weight=1)
+
+        guide_box = ttk.LabelFrame(left, text="Parcours didactique")
+        guide_box.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        guide_box.columnconfigure(0, weight=1)
+        ttk.Checkbutton(
+            guide_box,
+            text="activer",
+            variable=self.didactic_mode_var,
+            command=self.update_didactic_guide,
+        ).grid(row=0, column=0, sticky="w", padx=4)
+        ttk.Button(guide_box, text="Etape suivante", command=self.advance_didactic_guide).grid(row=0, column=1, padx=4, pady=3)
+        self.didactic_label = tk.Label(
+            guide_box,
+            textvariable=self.didactic_text_var,
+            justify="left",
+            anchor="w",
+            wraplength=288,
+            bg="#f2f4f1",
+            fg="#22312a",
+            padx=5,
+            pady=5,
+        )
+        self.didactic_label.grid(row=1, column=0, columnspan=2, sticky="ew")
+        self.update_didactic_guide()
 
         parameter_box = ttk.LabelFrame(left, text="Parametres")
-        parameter_box.grid(row=0, column=0, sticky="ew", pady=(0, 8))
+        parameter_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         parameter_box.columnconfigure(0, weight=1)
-        self._add_scale(parameter_box, "Charge (kg)", self.load_var, 0, 100, 20, 0)
-        self._add_scale(parameter_box, "Tibia (%)", self.shank_var, -5, 5, 2.5, 1)
-        self._add_scale(parameter_box, "Cuisse (%)", self.thigh_var, -5, 5, 2.5, 2)
-        self._add_scale(parameter_box, "Tronc (%)", self.trunk_var, -5, 5, 2.5, 3)
-        self._add_scale(parameter_box, "Duree phase (s)", self.duration_var, 1.0, 5.0, 0.1, 4)
+        identity = ttk.Frame(parameter_box)
+        identity.grid(row=0, column=0, sticky="ew", padx=4, pady=3)
+        identity.columnconfigure(0, weight=1)
+        identity.columnconfigure(1, weight=1)
+        ttk.Label(identity, text="Sujet").grid(row=0, column=0, sticky="w")
+        ttk.Label(identity, text="Prise barre").grid(row=0, column=1, sticky="w")
+        profile_menu = ttk.Combobox(identity, textvariable=self.subject_profile_var, values=SUBJECT_PROFILES, state="readonly", width=14)
+        profile_menu.grid(row=1, column=0, sticky="ew", padx=(0, 3))
+        profile_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
+        bar_menu = ttk.Combobox(identity, textvariable=self.bar_position_var, values=BAR_POSITIONS, state="readonly", width=12)
+        bar_menu.grid(row=1, column=1, sticky="ew", padx=(3, 0))
+        bar_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
+        self._add_scale(parameter_box, "Charge %BW (sujet 70 kg)", self.load_var, 0, 150, 5, 1)
+        duration_box = ttk.LabelFrame(parameter_box, text="Durees des phases (s)")
+        duration_box.grid(row=2, column=0, sticky="ew", padx=4, pady=3)
+        for column, (label, variable) in enumerate(
+            (
+                ("excent.", self.eccentric_duration_var),
+                ("isomet.", self.isometric_duration_var),
+                ("concent.", self.concentric_duration_var),
+            )
+        ):
+            duration_box.columnconfigure(column, weight=1)
+            ttk.Label(duration_box, text=label).grid(row=0, column=column)
+            duration = ttk.Combobox(duration_box, textvariable=variable, values=(2.0, 2.5, 3.0, 3.5, 4.0), state="readonly", width=7)
+            duration.grid(row=1, column=column, sticky="ew", padx=2, pady=(0, 3))
+            duration.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
+        lengths = ttk.LabelFrame(parameter_box, text="Longueurs (%)")
+        lengths.grid(row=3, column=0, sticky="ew", padx=4, pady=3)
+        for column, (label, variable) in enumerate((("tibia", self.shank_var), ("cuisse", self.thigh_var), ("tronc", self.trunk_var))):
+            lengths.columnconfigure(column, weight=1)
+            ttk.Label(lengths, text=label).grid(row=0, column=column)
+            length_menu = ttk.Combobox(lengths, textvariable=variable, values=(-5.0, -2.5, 0.0, 2.5, 5.0), state="readonly", width=7)
+            length_menu.grid(row=1, column=column, sticky="ew", padx=2, pady=(0, 3))
+            length_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
+        options = ttk.Frame(parameter_box)
+        options.grid(row=4, column=0, sticky="ew", padx=4, pady=(3, 4))
+        ttk.Checkbutton(options, text="wedge 20 deg", variable=self.wedge_var, command=self.on_parameter_changed).pack(side="left")
+        ttk.Checkbutton(options, text="CoM segments + barre", variable=self.show_segment_com_var, command=self.redraw).pack(side="left", padx=(8, 0))
 
         torque_box = ttk.LabelFrame(left, text="Couples max")
-        torque_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         for col in range(3):
             torque_box.columnconfigure(col, weight=1)
         for col, joint in enumerate(("cheville", "genou", "hanche")):
@@ -156,7 +223,7 @@ class SquatGui(tk.Tk):
         ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=3, column=2)
 
         plot_box = ttk.LabelFrame(left, text="Resultats")
-        plot_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        plot_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         for col in range(4):
             plot_box.columnconfigure(col, weight=1)
         self.plot_menu = ttk.Combobox(plot_box, textvariable=self.plot_choice, values=PLOT_CHOICES, state="readonly")
@@ -183,8 +250,8 @@ class SquatGui(tk.Tk):
         ).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
         ttk.Checkbutton(
             plot_box,
-            text="refined",
-            variable=self.refined_sprites_var,
+            text="low quality",
+            variable=self.low_quality_sprites_var,
             command=self.redraw,
         ).grid(row=3, column=2, sticky="w", padx=4, pady=(4, 2))
         ttk.Checkbutton(
@@ -194,24 +261,28 @@ class SquatGui(tk.Tk):
             command=self.redraw,
         ).grid(row=3, column=3, sticky="w", padx=4, pady=(4, 2))
 
-        file_box = ttk.Frame(left)
-        file_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
-        file_box.columnconfigure(0, weight=1)
-        file_box.columnconfigure(1, weight=1)
-        ttk.Button(file_box, text="Save JSON", command=self.save_json).grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        ttk.Button(file_box, text="Load JSON", command=self.load_json).grid(row=0, column=1, sticky="ew", padx=(3, 0))
-
         table_box = ttk.LabelFrame(root, text="Conditions enregistrees")
         table_box.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
-        table_box.rowconfigure(0, weight=1)
+        table_box.rowconfigure(1, weight=1)
         table_box.columnconfigure(0, weight=1)
-        columns = ("numero", "squat", "charge", "duree", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
+        table_buttons = ttk.Frame(table_box)
+        table_buttons.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
+        table_buttons.columnconfigure(0, weight=1)
+        table_buttons.columnconfigure(1, weight=1)
+        ttk.Button(table_buttons, text="Ajouter", command=self.record_condition).grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        self.delete_condition_button = ttk.Button(table_buttons, text="Supprimer", command=self.delete_selected_conditions)
+        self.delete_condition_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
+        self.delete_condition_button.state(["disabled"])
+        columns = ("numero", "profil", "prise", "squat", "charge", "phases", "wedge", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
         self.conditions_table = ttk.Treeview(table_box, columns=columns, show="headings", height=7, selectmode="extended")
         headings = {
             "numero": "#",
+            "profil": "sujet",
+            "prise": "barre",
             "squat": "squat deg",
-            "charge": "kg",
-            "duree": "phase s",
+            "charge": "%BW",
+            "phases": "ecc/iso/con s",
+            "wedge": "wedge",
             "tibia": "tibia %",
             "cuisse": "cuisse %",
             "tronc": "tronc %",
@@ -221,9 +292,12 @@ class SquatGui(tk.Tk):
         }
         widths = {
             "numero": 34,
+            "profil": 80,
+            "prise": 64,
             "squat": 78,
             "charge": 48,
-            "duree": 58,
+            "phases": 90,
+            "wedge": 46,
             "tibia": 56,
             "cuisse": 60,
             "tronc": 56,
@@ -234,17 +308,15 @@ class SquatGui(tk.Tk):
         for column in columns:
             self.conditions_table.heading(column, text=headings[column])
             self.conditions_table.column(column, width=widths[column], anchor="center", stretch=True)
-        self.conditions_table.grid(row=0, column=0, sticky="nsew", padx=4, pady=4)
+        self.conditions_table.grid(row=1, column=0, sticky="nsew", padx=4, pady=4)
         self.conditions_table.bind("<<TreeviewSelect>>", self.on_table_selection_changed)
         self.conditions_table.bind("<Button-1>", self.on_table_click)
-        table_buttons = ttk.Frame(table_box)
-        table_buttons.grid(row=1, column=0, sticky="ew", padx=4, pady=(0, 4))
-        table_buttons.columnconfigure(0, weight=1)
-        table_buttons.columnconfigure(1, weight=1)
-        ttk.Button(table_buttons, text="Enregistrer", command=self.record_condition).grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        self.delete_condition_button = ttk.Button(table_buttons, text="Supprimer", command=self.delete_selected_conditions)
-        self.delete_condition_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
-        self.delete_condition_button.state(["disabled"])
+        file_box = ttk.Frame(table_box)
+        file_box.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 4))
+        file_box.columnconfigure(0, weight=1)
+        file_box.columnconfigure(1, weight=1)
+        ttk.Button(file_box, text="Sauver conditions", command=self.save_json).grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        ttk.Button(file_box, text="Charger conditions", command=self.load_json).grid(row=0, column=1, sticky="ew", padx=(3, 0))
 
         self.pose_canvas = tk.Canvas(root, bg=CANVAS_BG, highlightthickness=2, highlightbackground="#7f8f83")
         self.pose_canvas.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
@@ -301,12 +373,42 @@ class SquatGui(tk.Tk):
         var.trace_add("write", sync_label)
         sync_label()
 
+    def update_didactic_guide(self) -> None:
+        steps = (
+            "1. Choisir le sujet: homme ou femme enceinte.",
+            "2. Selectionner la position de barre: front, back ou over-head.",
+            "3. Regler la charge. Le point de depart est 0 % du poids corporel.",
+            "4. Choisir les durees excentrique, isometrique et concentrique.",
+            "5. Glisser les articulations pour construire la position basse.",
+            "6. Lancer l'animation et observer l'equilibre et les efforts.",
+            "7. Examiner successivement cinematique, centre de masse puis couples.",
+            "8. Cliquer sur Ajouter pour conserver cet essai.",
+            "9. Generer un deuxieme cas en changeant un parametre.",
+            "10. Selectionner les deux lignes pour comparer les performances.",
+            "Avance: longueurs, couples max et couples detailles.",
+        )
+        if self.didactic_mode_var.get():
+            self.didactic_text_var.set(steps[self.didactic_step])
+            self.didactic_label.configure(bg="#e5f1e8", fg="#154a34")
+        else:
+            self.didactic_text_var.set("Activer pour guider une exploration etape par etape.")
+            self.didactic_label.configure(bg="#f2f4f1", fg="#506158")
+
+    def advance_didactic_guide(self) -> None:
+        if not self.didactic_mode_var.get():
+            self.didactic_mode_var.set(True)
+        self.didactic_step = min(10, self.didactic_step + 1)
+        self.update_didactic_guide()
+
     def anthro(self) -> Anthropometry:
         return Anthropometry(
-            bar_mass=self.load_var.get(),
+            bar_mass=70.0 * self.load_var.get() / 100.0,
             shank_scale=scale_from_percent(self.shank_var.get()),
             thigh_scale=scale_from_percent(self.thigh_var.get()),
             trunk_scale=scale_from_percent(self.trunk_var.get()),
+            subject_profile=self.subject_profile_var.get(),
+            bar_position=self.bar_position_var.get(),
+            wedge_angle_deg=20.0 if self.wedge_var.get() else 0.0,
         )
 
     def available_plot_choices(self) -> list[str]:
@@ -322,14 +424,26 @@ class SquatGui(tk.Tk):
     def max_torques(self) -> dict[str, float]:
         return {joint: max(1.0, var.get()) for joint, var in self.max_torque_vars.items()}
 
+    def phase_durations(self) -> PhaseDurations:
+        return PhaseDurations(
+            max(2.0, min(4.0, self.eccentric_duration_var.get())),
+            max(2.0, min(4.0, self.isometric_duration_var.get())),
+            max(2.0, min(4.0, self.concentric_duration_var.get())),
+        )
+
     def total_motion_duration(self) -> float:
-        return 2.0 * max(0.1, self.duration_var.get())
+        return self.phase_durations().total
 
     def centered_times(self, states: list[MotionState] | None = None) -> list[float]:
         states = states or self.states
         if not states:
             return []
-        squat_time = states[len(states) // 2].time
+        isometric_times = [state.time for state in states if state.phase == "isometrique"]
+        squat_time = (
+            (isometric_times[0] + isometric_times[-1]) / 2.0
+            if isometric_times
+            else states[len(states) // 2].time
+        )
         return [state.time - squat_time for state in states]
 
     def plot_times(self, states: list[MotionState] | None = None) -> list[float]:
@@ -378,7 +492,7 @@ class SquatGui(tk.Tk):
         self.states, self.results = simulate(
             anthro,
             self.final_q,
-            self.total_motion_duration(),
+            self.phase_durations(),
             self.frame_count,
             self.max_torques(),
             self.angle_adapt_var.get(),
@@ -394,11 +508,17 @@ class SquatGui(tk.Tk):
 
     def current_settings(self) -> dict[str, object]:
         return {
-            "load_kg": self.load_var.get(),
+            "subject_profile": self.subject_profile_var.get(),
+            "bar_position": self.bar_position_var.get(),
+            "load_percent_bw": self.load_var.get(),
+            "load_kg": self.anthro().bar_mass,
             "shank_percent": self.shank_var.get(),
             "thigh_percent": self.thigh_var.get(),
             "trunk_percent": self.trunk_var.get(),
-            "duration_phase_s": self.duration_var.get(),
+            "duration_excentrique_s": self.eccentric_duration_var.get(),
+            "duration_isometrique_s": self.isometric_duration_var.get(),
+            "duration_concentrique_s": self.concentric_duration_var.get(),
+            "wedge_20_deg": self.wedge_var.get(),
             "frame": self.frame_var.get(),
             "plot_choice": self.plot_choice.get(),
             "quantity": self.quantity_var.get(),
@@ -409,7 +529,9 @@ class SquatGui(tk.Tk):
             "show_torque_bounds": self.show_torque_bounds_var.get(),
             "angle_adapt": self.angle_adapt_var.get(),
             "show_sprite_centers": self.show_sprite_centers_var.get(),
-            "refined_sprites": self.refined_sprites_var.get(),
+            "show_segment_com": self.show_segment_com_var.get(),
+            "low_quality_sprites": self.low_quality_sprites_var.get(),
+            "refined_sprites": not self.low_quality_sprites_var.get(),
             "normalize_time": self.normalize_time_var.get(),
             "subplot_mode": self.subplot_mode_var.get(),
             "final_q_deg": [degrees(value) for value in self.final_q],
@@ -419,11 +541,20 @@ class SquatGui(tk.Tk):
     def apply_settings(self, settings: dict[str, object]) -> None:
         self._suspend_selection_clear = True
         try:
-            self.load_var.set(float(settings.get("load_kg", self.load_var.get())))
+            self.subject_profile_var.set(str(settings.get("subject_profile", self.subject_profile_var.get())))
+            self.bar_position_var.set(str(settings.get("bar_position", self.bar_position_var.get())))
+            if "load_percent_bw" in settings:
+                self.load_var.set(float(settings["load_percent_bw"]))
+            elif "load_kg" in settings:
+                self.load_var.set(100.0 * float(settings["load_kg"]) / 70.0)
             self.shank_var.set(float(settings.get("shank_percent", self.shank_var.get())))
             self.thigh_var.set(float(settings.get("thigh_percent", self.thigh_var.get())))
             self.trunk_var.set(float(settings.get("trunk_percent", self.trunk_var.get())))
-            self.duration_var.set(float(settings.get("duration_phase_s", self.duration_var.get())))
+            legacy_duration = float(settings.get("duration_phase_s", 4.0))
+            self.eccentric_duration_var.set(float(settings.get("duration_excentrique_s", legacy_duration)))
+            self.isometric_duration_var.set(float(settings.get("duration_isometrique_s", 2.0)))
+            self.concentric_duration_var.set(float(settings.get("duration_concentrique_s", legacy_duration)))
+            self.wedge_var.set(bool(settings.get("wedge_20_deg", False)))
             self.torque_preset_var.set(str(settings.get("torque_preset", self.torque_preset_var.get())))
             for joint, value in dict(settings.get("max_torques", {})).items():
                 if joint in self.max_torque_vars:
@@ -439,10 +570,16 @@ class SquatGui(tk.Tk):
             self.show_torque_bounds_var.set(bool(settings.get("show_torque_bounds", self.show_torque_bounds_var.get())))
             self.angle_adapt_var.set(bool(settings.get("angle_adapt", self.angle_adapt_var.get())))
             self.show_sprite_centers_var.set(bool(settings.get("show_sprite_centers", self.show_sprite_centers_var.get())))
-            self.refined_sprites_var.set(bool(settings.get("refined_sprites", self.refined_sprites_var.get())))
+            self.show_segment_com_var.set(bool(settings.get("show_segment_com", self.show_segment_com_var.get())))
+            if "low_quality_sprites" in settings:
+                self.low_quality_sprites_var.set(bool(settings["low_quality_sprites"]))
+            else:
+                self.low_quality_sprites_var.set(not bool(settings.get("refined_sprites", True)))
             self.normalize_time_var.set(bool(settings.get("normalize_time", self.normalize_time_var.get())))
             self.subplot_mode_var.set(bool(settings.get("subplot_mode", self.subplot_mode_var.get())))
-            self.final_q = tuple(radians(value) for value in self.normalized_final_q_deg(settings.get("final_q_deg")))
+            self.final_q = self.clamp_final_q(
+                tuple(radians(value) for value in self.normalized_final_q_deg(settings.get("final_q_deg")))
+            )
             self.quantity_var.set(str(settings.get("quantity", self.quantity_var.get())))
             plot_choice = str(settings.get("plot_choice", self.plot_choice.get()))
             self.update_plot_choices()
@@ -475,7 +612,7 @@ class SquatGui(tk.Tk):
                 return
             include_conditions = bool(answer)
         payload = {
-            "version": 1,
+            "version": 2,
             "settings": self.current_settings(),
             "conditions": [
                 {
@@ -596,7 +733,8 @@ class SquatGui(tk.Tk):
 
     def scene_bounds(self, extra_x: float = 0.0) -> tuple[float, float, float, float]:
         anthro = self.anthro()
-        return (-0.25, anthro.foot.length + anthro.shank.length + 0.65 + extra_x, -0.08, 1.85)
+        ymax = 2.22 if anthro.bar_position == "over-head" else 1.92
+        return (-0.36, anthro.foot.length + anthro.shank.length + 0.78 + extra_x, -0.08, ymax)
 
     def cop_in_foot(self, state: MotionState, result: DynamicsResult) -> bool:
         return state.pose.heel[0] <= result.cop_x <= state.pose.toe[0]
@@ -685,12 +823,31 @@ class SquatGui(tk.Tk):
             draw_segment(canvas, segments["thigh"], pose.knee, -state.q[1], self.anthro().thigh.length, mapper)
             draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], self.anthro().trunk.length, mapper)
         canvas.create_line(*points["heel"], *points["toe"], width=3, fill="#333333")
+        if self.anthro().wedge_angle_deg:
+            heel = points["heel"]
+            toe = points["toe"]
+            canvas.create_polygon(
+                heel[0],
+                heel[1],
+                toe[0],
+                toe[1],
+                heel[0],
+                heel[1] + 28,
+                fill="#d9c39b",
+                outline="#7d6542",
+            )
+            canvas.create_text(heel[0] + 10, heel[1] + 20, text="20 deg", anchor="w", fill="#5d4930", font=("Helvetica", 8))
 
         com = self.world_to_canvas(canvas, shifted(pose.com), bounds)
         projection = self.world_to_canvas(canvas, shifted((pose.com[0], 0.0)), bounds)
         canvas.create_line(com[0], com[1], projection[0], projection[1], fill="#3d7580", dash=(4, 4), width=1)
         canvas.create_oval(com[0] - 7, com[1] - 7, com[0] + 7, com[1] + 7, fill="#2c9ab7", outline="")
         canvas.create_oval(projection[0] - 5, projection[1] - 5, projection[0] + 5, projection[1] + 5, fill="#2c9ab7", outline="")
+        if self.show_segment_com_var.get():
+            for label, point in state.pose.segment_coms.items():
+                px = self.world_to_canvas(canvas, shifted(point), bounds)
+                canvas.create_oval(px[0] - 4, px[1] - 4, px[0] + 4, px[1] + 4, fill="#e64357", outline="#ffffff")
+                canvas.create_text(px[0] + 6, px[1] - 6, text=label, anchor="sw", fill="#8a1f32", font=("Helvetica", 8, "bold"))
 
         cop = self.world_to_canvas(canvas, (result.cop_x + x_offset, 0.0), bounds)
         force_end = self.world_to_canvas(
@@ -731,6 +888,8 @@ class SquatGui(tk.Tk):
     def draw_raster_segments(self, canvas: tk.Canvas, state: MotionState, mapper) -> bool:
         try:
             pose = state.pose
+            refined = not self.low_quality_sprites_var.get()
+            trunk_variant = (self.subject_profile_var.get(), self.bar_position_var.get())
             return all(
                 (
                     draw_sprite_segment(
@@ -739,7 +898,7 @@ class SquatGui(tk.Tk):
                         pose.ankle,
                         pose.toe,
                         mapper,
-                        self.refined_sprites_var.get(),
+                        refined,
                     ),
                     draw_sprite_segment(
                         canvas,
@@ -747,7 +906,7 @@ class SquatGui(tk.Tk):
                         pose.ankle,
                         pose.knee,
                         mapper,
-                        self.refined_sprites_var.get(),
+                        refined,
                     ),
                     draw_sprite_segment(
                         canvas,
@@ -755,7 +914,7 @@ class SquatGui(tk.Tk):
                         pose.knee,
                         pose.hip,
                         mapper,
-                        self.refined_sprites_var.get(),
+                        refined,
                     ),
                     draw_sprite_segment(
                         canvas,
@@ -763,7 +922,8 @@ class SquatGui(tk.Tk):
                         pose.hip,
                         pose.shoulder,
                         mapper,
-                        self.refined_sprites_var.get(),
+                        refined,
+                        trunk_variant,
                     ),
                 )
             )
@@ -776,8 +936,15 @@ class SquatGui(tk.Tk):
         canvas._sprite_images = []
         anthro = self.anthro()
         pose = pose_from_angles(anthro, self.final_q)
-        state = MotionState(self.total_motion_duration() / 2.0, self.final_q, (0.0, 0.0, 0.0), (0.0, 0.0, 0.0), pose)
-        result = self.results[len(self.results) // 2]
+        state = MotionState(
+            self.phase_durations().squat_reference_time,
+            self.final_q,
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            pose,
+            "isometrique",
+        )
+        result = min(self.results, key=lambda item: abs(item.com[0] - state.pose.com[0]) + abs(item.com[1] - state.pose.com[1]))
         alerts = self.biomechanical_alerts(state, result, include_com=True)
         self.configure_alert_canvas(canvas, alerts)
         self.draw_skeleton(canvas, state, result, with_handles=True)
@@ -1569,12 +1736,15 @@ class SquatGui(tk.Tk):
             dx = point[0] - pose.hip[0]
             dy = point[1] - pose.hip[1]
             trunk = atan2(dx, dy)
-        self.final_q = (
-            max(radians(-55), min(radians(75), shank)),
-            max(radians(-95), min(radians(45), thigh)),
-            max(radians(-120), min(radians(50), trunk)),
-        )
+        self.final_q = self.clamp_final_q((shank, thigh, trunk))
         self.on_parameter_changed()
+
+    def clamp_final_q(self, q: tuple[float, float, float]) -> tuple[float, float, float]:
+        ankle = max(radians(-30.0), min(radians(40.0), q[0]))
+        knee = max(radians(-140.0), min(radians(0.0), q[1] - ankle))
+        thigh = ankle + knee
+        hip = max(radians(-15.0), min(radians(120.0), q[2] - thigh))
+        return (ankle, thigh, thigh + hip)
 
     def project_on_force_line(
         self,
@@ -1613,6 +1783,9 @@ class SquatGui(tk.Tk):
             results=list(self.results),
         )
         self.status_var.set(f"condition {self.saved_condition_count} enregistree")
+        if self.didactic_mode_var.get() and self.didactic_step < 8:
+            self.didactic_step = 8
+            self.update_didactic_guide()
 
     def clear_conditions(self) -> None:
         self.saved_conditions.clear()
@@ -1656,9 +1829,16 @@ class SquatGui(tk.Tk):
             iid=condition_iid,
             values=(
                 condition_label,
+                str(settings.get("subject_profile", "homme")),
+                str(settings.get("bar_position", "back")),
                 f"{squat_angles[0]:.0f}/{squat_angles[1]:.0f}/{squat_angles[2]:.0f}",
-                f"{float(settings.get('load_kg', 0.0)):.0f}",
-                f"{float(settings.get('duration_phase_s', self.duration_var.get())):.1f}",
+                f"{float(settings.get('load_percent_bw', 100.0 * float(settings.get('load_kg', 0.0)) / 70.0)):.0f}",
+                (
+                    f"{float(settings.get('duration_excentrique_s', settings.get('duration_phase_s', 4.0))):.1f}/"
+                    f"{float(settings.get('duration_isometrique_s', 2.0)):.1f}/"
+                    f"{float(settings.get('duration_concentrique_s', settings.get('duration_phase_s', 4.0))):.1f}"
+                ),
+                "20" if bool(settings.get("wedge_20_deg", False)) else "0",
                 f"{float(settings.get('shank_percent', 0.0)):+.1f}",
                 f"{float(settings.get('thigh_percent', 0.0)):+.1f}",
                 f"{float(settings.get('trunk_percent', 0.0)):+.1f}",
@@ -1692,22 +1872,31 @@ class SquatGui(tk.Tk):
         settings: dict[str, object],
         final_q_deg: list[float],
     ) -> tuple[list[MotionState], list[DynamicsResult]]:
+        load_kg = float(settings.get("load_kg", 70.0 * float(settings.get("load_percent_bw", 0.0)) / 100.0))
         anthro = Anthropometry(
-            bar_mass=float(settings.get("load_kg", 20.0)),
+            bar_mass=load_kg,
             shank_scale=scale_from_percent(float(settings.get("shank_percent", 0.0))),
             thigh_scale=scale_from_percent(float(settings.get("thigh_percent", 0.0))),
             trunk_scale=scale_from_percent(float(settings.get("trunk_percent", 0.0))),
+            subject_profile=str(settings.get("subject_profile", "homme")),
+            bar_position=str(settings.get("bar_position", "back")),
+            wedge_angle_deg=20.0 if bool(settings.get("wedge_20_deg", False)) else 0.0,
         )
-        final_q = tuple(radians(value) for value in self.normalized_final_q_deg(final_q_deg))
+        final_q = self.clamp_final_q(tuple(radians(value) for value in self.normalized_final_q_deg(final_q_deg)))
         max_torques = {
             joint: float(dict(settings.get("max_torques", {})).get(joint, self.max_torque_vars[joint].get()))
             for joint in ("cheville", "genou", "hanche")
         }
-        duration = 2.0 * max(0.1, float(settings.get("duration_phase_s", self.duration_var.get())))
+        legacy_duration = float(settings.get("duration_phase_s", 4.0))
+        durations = PhaseDurations(
+            max(2.0, min(4.0, float(settings.get("duration_excentrique_s", legacy_duration)))),
+            max(2.0, min(4.0, float(settings.get("duration_isometrique_s", 2.0)))),
+            max(2.0, min(4.0, float(settings.get("duration_concentrique_s", legacy_duration)))),
+        )
         return simulate(
             anthro,
             final_q,
-            duration,
+            durations,
             self.frame_count,
             max_torques,
             bool(settings.get("angle_adapt", self.angle_adapt_var.get())),

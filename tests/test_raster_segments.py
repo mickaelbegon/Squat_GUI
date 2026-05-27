@@ -23,6 +23,13 @@ class RasterSegmentAnchorTest(unittest.TestCase):
                 self.assertGreater(spec.distal_anchor[1], spec.proximal_anchor[1])
                 self.assertGreater(abs(spec.distal_anchor[1] - spec.proximal_anchor[1]), 600)
 
+    def test_refined_trunks_are_available_for_each_subject_and_hold(self):
+        for subject in ("homme", "femme enceinte"):
+            for hold in ("front", "back", "over-head"):
+                with self.subTest(subject=subject, hold=hold):
+                    spec = raster_segments.sprite_spec("trunk", refined=True, trunk_variant=(subject, hold))
+                    self.assertGreater(spec.distal_anchor[1], spec.proximal_anchor[1])
+
     def test_foot_uses_target_and_toe_tip(self):
         spec = raster_segments.sprite_spec("foot")
         self.assertAlmostEqual(spec.distal_anchor[0], 84.5, delta=1.0)
