@@ -84,6 +84,21 @@ class RasterSegmentAnchorTest(unittest.TestCase):
         self.assertAlmostEqual(anterior, 0.201445)
         self.assertAlmostEqual(longitudinal, 0.111125)
 
+    def test_display_adjustments_make_thigh_and_foot_silhouettes_more_readable(self):
+        thigh, _ = raster_segments.transformed_sprite_image(
+            raster_segments.sprite_spec("thigh", refined=True),
+            (0.0, -161.0),
+            refined=True,
+        )
+        foot, _ = raster_segments.transformed_sprite_image(
+            raster_segments.sprite_spec("foot", refined=True),
+            (100.0, 0.0),
+            refined=True,
+        )
+
+        self.assertGreater(thigh.size[0], 85)
+        self.assertGreater(foot.size[0], 130)
+
 
 if __name__ == "__main__":
     unittest.main()

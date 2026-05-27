@@ -16,6 +16,7 @@ ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "raster_segments"
 
 @dataclass(frozen=True)
 class SpriteSpec:
+    name: str
     filename: str
     distal_anchor: tuple[float, float]
     proximal_anchor: tuple[float, float]
@@ -35,6 +36,15 @@ TRUNK_VARIANTS = {
     ("femme enceinte", "front"): "trunk_femme_enceinte_front.png",
     ("femme enceinte", "back"): "trunk_femme_enceinte_back.png",
     ("femme enceinte", "over-head"): "trunk_femme_enceinte_over-head.png",
+}
+
+# Display-only adjustments. The articulated anchors and all model quantities
+# remain defined by the kinematic model, while silhouettes read more naturally.
+DISPLAY_WIDTH_SCALE = {
+    "thigh": 1.30,
+}
+DISPLAY_EXTENSION_SCALE = {
+    "foot": 1.16,
 }
 
 
@@ -171,17 +181,17 @@ def sprite_spec(name: str, refined: bool = False, trunk_variant: tuple[str, str]
     if name == "foot":
         if len(centers) != 1:
             raise ValueError(f"Expected one rotation target in {filename}, found {len(centers)}")
-        return SpriteSpec(filename, centers[0], _toe_anchor_from_silhouette(image))
+        return SpriteSpec(name, filename, centers[0], _toe_anchor_from_silhouette(image))
 
     if name == "trunk" and len(centers) == 1:
         distal = centers[0]
-        return SpriteSpec(filename, distal, _trunk_anchor_from_silhouette(image, distal))
+        return SpriteSpec(name, filename, distal, _trunk_anchor_from_silhouette(image, distal))
 
     if len(centers) < 2:
         raise ValueError(f"Expected two rotation targets in {filename}, found {len(centers)}")
     proximal = centers[0]
     distal = centers[-1]
-    return SpriteSpec(filename, distal, proximal)
+    return SpriteSpec(name, filename, distal, proximal)
 
 
 def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> float:
@@ -207,20 +217,43 @@ def _load_transparent_sprite(filename: str, refined: bool):
     return image
 
 
+def _stretch_horizontal_about_distal(source, spec: SpriteSpec, factor: float, extend_only: bool):
+    from PIL import Image
+
+    if factor == 1.0:
+        return source, spec.distal_anchor, spec.proximal_anchor
+    stretched = source.resize((max(1, round(source.width * factor)), source.height), Image.Resampling.LANCZOS)
+    distal = (spec.distal_anchor[0] * factor, spec.distal_anchor[1])
+    if extend_only:
+        proximal = (
+            distal[0] + spec.proximal_anchor[0] - spec.distal_anchor[0],
+            spec.proximal_anchor[1],
+        )
+    else:
+        proximal = (spec.proximal_anchor[0] * factor, spec.proximal_anchor[1])
+    return stretched, distal, proximal
+
+
 def transformed_sprite_image(spec: SpriteSpec, target_vector_px: Vector, refined: bool = False):
     from PIL import Image
 
     source = _load_transparent_sprite(spec.filename, refined)
+    source, display_distal, display_proximal = _stretch_horizontal_about_distal(
+        source,
+        spec,
+        DISPLAY_WIDTH_SCALE.get(spec.name, DISPLAY_EXTENSION_SCALE.get(spec.name, 1.0)),
+        spec.name in DISPLAY_EXTENSION_SCALE,
+    )
     anchor_vector = (
-        spec.proximal_anchor[0] - spec.distal_anchor[0],
-        spec.proximal_anchor[1] - spec.distal_anchor[1],
+        display_proximal[0] - display_distal[0],
+        display_proximal[1] - display_distal[1],
     )
     source_length = hypot(anchor_vector[0], anchor_vector[1])
     target_length = max(1.0, hypot(target_vector_px[0], target_vector_px[1]))
     scale = target_length / source_length
     scaled_size = (max(1, round(source.size[0] * scale)), max(1, round(source.size[1] * scale)))
     scaled = source.resize(scaled_size, Image.Resampling.LANCZOS)
-    scaled_anchor = (spec.distal_anchor[0] * scale, spec.distal_anchor[1] * scale)
+    scaled_anchor = (display_distal[0] * scale, display_distal[1] * scale)
     scaled_anchor_vector = (anchor_vector[0] * scale, anchor_vector[1] * scale)
     angle_deg = sprite_rotation_degrees(scaled_anchor_vector, target_vector_px)
     margin = int(max(scaled.size) * 1.5)
