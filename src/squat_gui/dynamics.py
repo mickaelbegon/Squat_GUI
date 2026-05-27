@@ -12,10 +12,13 @@ from .kinematics import (
     Pose,
     Vector,
     angle_derivative_vector,
+    local_angle_derivative_vector,
     com_accelerations,
     cross_z,
     dot,
     motion_state,
+    phase_durations,
+    PhaseDurations,
     sub,
 )
 
@@ -140,7 +143,7 @@ def _segment_forces(
 
 
 def _jacobians(anthro: Anthropometry, state: MotionState) -> dict[str, list[Vector]]:
-    shank_angle, thigh_angle, trunk_angle = state.q
+    shank_angle, thigh_angle, trunk_angle = tuple(angle + anthro.wedge_angle for angle in state.q)
     shank = anthro.shank
     thigh = anthro.thigh
     trunk = anthro.trunk
@@ -155,8 +158,23 @@ def _jacobians(anthro: Anthropometry, state: MotionState) -> dict[str, list[Vect
         "foot": [zero, zero, zero],
         "shank": [angle_derivative_vector(shank_angle, shank.length * shank.com_fraction), zero, zero],
         "thigh": [dknee_ds, angle_derivative_vector(thigh_angle, thigh.length * thigh.com_fraction), zero],
-        "trunk": [dhip_ds, dhip_dt, angle_derivative_vector(trunk_angle, trunk.length * trunk.com_fraction)],
-        "bar": [dshoulder_ds, dshoulder_dt, dshoulder_dr],
+        "trunk": [
+            dhip_ds,
+            dhip_dt,
+            local_angle_derivative_vector(trunk_angle, trunk.com_anterior_offset, trunk.length * trunk.com_fraction),
+        ],
+        "bar": [
+            dshoulder_ds,
+            dshoulder_dt,
+            (
+                dshoulder_dr[0] + local_angle_derivative_vector(
+                    trunk_angle, anthro.bar_anterior_offset, anthro.bar_longitudinal_offset
+                )[0],
+                dshoulder_dr[1] + local_angle_derivative_vector(
+                    trunk_angle, anthro.bar_anterior_offset, anthro.bar_longitudinal_offset
+                )[1],
+            ),
+        ],
     }
 
 
@@ -453,7 +471,7 @@ def _biorbd_ground_reaction_and_cop(biorbd_model: Any, state: MotionState) -> tu
 def simulate(
     anthro: Anthropometry,
     final_q: tuple[float, float, float],
-    duration: float,
+    duration: float | PhaseDurations,
     frame_count: int,
     max_torques: dict[str, float],
     adapt_max_by_angle: bool,
@@ -467,8 +485,9 @@ def simulate(
             biorbd_model = model_cache.model_for(anthro)
         except Exception:
             biorbd_model = None
+    durations = phase_durations(duration)
     for index in range(frame_count):
-        time = duration * index / max(1, frame_count - 1)
+        time = durations.total * index / max(1, frame_count - 1)
         state = motion_state(anthro, final_q, duration, time)
         if biorbd_model is not None:
             state = _biorbd_motion_state_with_com(biorbd_model, state)

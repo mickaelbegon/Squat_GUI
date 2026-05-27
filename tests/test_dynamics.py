@@ -2,6 +2,7 @@ import math
 import unittest
 
 from squat_gui.anthropometry import Anthropometry
+from squat_gui.backend import biomod_cache_key, biomod_text
 from squat_gui.dynamics import (
     _biorbd_native_cop_x,
     athlete_reference_max_torques,
@@ -12,7 +13,7 @@ from squat_gui.dynamics import (
     simulate,
     torque_presets,
 )
-from squat_gui.kinematics import MotionState, pose_from_angles
+from squat_gui.kinematics import MotionState, PhaseDurations, motion_state, pose_from_angles
 
 
 class DynamicsTests(unittest.TestCase):
@@ -39,6 +40,25 @@ class DynamicsTests(unittest.TestCase):
             for torque in result.torques.values():
                 self.assertTrue(math.isfinite(torque))
 
+    def test_bar_hold_and_pregnancy_shift_combined_com_forward(self) -> None:
+        q = (0.0, 0.0, 0.0)
+        back = pose_from_angles(Anthropometry(bar_mass=20.0, bar_position="back"), q)
+        front = pose_from_angles(Anthropometry(bar_mass=20.0, bar_position="front"), q)
+        overhead = pose_from_angles(Anthropometry(bar_mass=20.0, bar_position="over-head"), q)
+        pregnant = pose_from_angles(
+            Anthropometry(bar_mass=20.0, subject_profile="femme enceinte", bar_position="back"),
+            q,
+        )
+
+        self.assertGreater(front.bar[0], back.bar[0])
+        self.assertGreater(overhead.bar[1], front.bar[1])
+        self.assertGreater(front.com[0], back.com[0])
+        self.assertGreater(pregnant.com[0], back.com[0])
+        self.assertGreater(
+            Anthropometry(subject_profile="femme enceinte").trunk.inertia,
+            Anthropometry().trunk.inertia,
+        )
+
     def test_motion_has_eccentric_then_concentric_phases(self) -> None:
         anthro = Anthropometry()
         states, _ = simulate(
@@ -55,6 +75,37 @@ class DynamicsTests(unittest.TestCase):
         self.assertAlmostEqual(states[0].q[0], 0.0)
         self.assertAlmostEqual(states[2].q[0], math.radians(20.0))
         self.assertAlmostEqual(states[-1].q[0], 0.0)
+
+    def test_motion_supports_an_isometric_squat_phase(self) -> None:
+        anthro = Anthropometry()
+        final_q = (math.radians(20.0), math.radians(-55.0), math.radians(-15.0))
+        durations = PhaseDurations(2.0, 3.0, 4.0)
+        states, _ = simulate(
+            anthro,
+            final_q,
+            durations,
+            10,
+            {"cheville": 180.0, "genou": 220.0, "hanche": 260.0},
+            False,
+        )
+
+        self.assertEqual(states[2].phase, "excentrique")
+        self.assertEqual(states[3].phase, "isometrique")
+        self.assertEqual(states[5].phase, "isometrique")
+        self.assertEqual(states[6].phase, "concentrique")
+        squat = motion_state(anthro, final_q, durations, 3.0)
+        self.assertEqual(squat.q, final_q)
+        self.assertEqual(squat.qdot, (0.0, 0.0, 0.0))
+
+    def test_wedge_is_in_geometry_and_biomod_cache_identity(self) -> None:
+        flat = Anthropometry()
+        wedge = Anthropometry(wedge_angle_deg=20.0)
+        flat_pose = pose_from_angles(flat, (0.0, 0.0, 0.0))
+        wedge_pose = pose_from_angles(wedge, (0.0, 0.0, 0.0))
+
+        self.assertGreater(wedge_pose.knee[0], flat_pose.knee[0])
+        self.assertNotEqual(biomod_cache_key(flat), biomod_cache_key(wedge))
+        self.assertIn("0.939693", biomod_text(wedge))
 
     def test_eccentric_phase_increases_available_torque_by_135_percent(self) -> None:
         anthro = Anthropometry()
