@@ -1,18 +1,51 @@
 # Squat GUI
 
-Premiere interface graphique 2D pour explorer un squat avec:
+Interface graphique 2D pour explorer un squat avec:
 
-- modele pied, jambe, cuisse, tronc/reste du corps et barre sur les epaules;
-- homme initial de 70 kg pour 1.70 m, inerties gauche/droite combinees en 2D;
-- sliders pour la charge, les longueurs tibia/cuisse/tronc et la duree;
+- modele pied, jambe, cuisse, tronc/tete/bras et barre, en prise `front`, `back` ou `over-head`;
+- sujet homme ou femme enceinte de reference, 70 kg pour 1.70 m, inerties gauche/droite combinees en 2D;
+- charge exprimee en `%BW` (pour le sujet de 70 kg), longueurs discretes et wedge de 20 deg;
+- mouvement en trois phases reglables: excentrique, isometrique et concentrique;
 - cinematique d'ordre 5 type Yeadon, issue du profil `6x^5 - 15x^4 + 10x^3`;
 - dynamique inverse analytique 2D de demarrage;
 - calcul de la reaction au sol, du centre de pression, du CoM et de sa projection;
 - animation avec CoM, projection au sol, force de contact et bras de levier pointilles;
 - contraintes de couples max avec feedback vert/rouge;
-- relation couple max-angle optionnelle.
+- relation couple max-angle optionnelle;
+- images `refined` par sujet et prise de barre, avec retour `low quality`.
 
 Le code contient aussi un backend optionnel pour brancher `biobuddy` et `biorbd`. Si ces paquets ne sont pas installes, l'application reste executable avec le solveur analytique pur Python.
+
+## Utilisation pedagogique
+
+Le checkbox `activer` dans `Parcours didactique` affiche une consigne a la fois:
+
+1. choisir `homme` ou `femme enceinte`;
+2. choisir la prise de barre;
+3. augmenter progressivement la charge, initialement a `0 %BW`;
+4. regler les trois durees de phase;
+5. definir la position basse en glissant genou, hanche et epaules;
+6. observer l'animation, le CoM, le CoP et les alertes;
+7. parcourir cinematique, centre de masse puis couples;
+8. cliquer sur `Ajouter`;
+9. construire une deuxieme condition;
+10. selectionner plusieurs conditions dans le tableau pour les comparer.
+
+Les longueurs segmentaires, les couples max et les couples detailles sont des outils avances. `Sauver conditions` et `Charger conditions` ecrivent/lisent un fichier JSON comprenant les widgets et, si demande, les conditions ajoutees au tableau.
+
+Limites de pose imposees par l'interface:
+
+- cheville: -30 deg en flexion plantaire a +40 deg en flexion dorsale;
+- genou: -140 a 0 deg;
+- hanche: -15 a +120 deg.
+
+## Hypotheses des nouvelles conditions
+
+La barre est un segment ponctuel ajoute au modele `.bioMod`; sa masse est `70 * Charge %BW / 100`. Sa position locale par rapport aux epaules est modifiee selon la prise: en avant pour `front`, en arriere pour `back`, et au-dessus des bras pour `over-head`. Le CoM du segment regroupe `tronc-tete-bras` est aussi deplace pour representer le changement de posture des bras.
+
+La version `femme enceinte` est actuellement un scenario didactique initial, pas un modele clinique valide: elle conserve une masse corporelle totale de 70 kg pour permettre des comparaisons controlees, deplace le CoM du segment tronc de `+0.060 m` vers l'avant et multiplie son moment d'inertie par `1.18`. Ces deux coefficients sont centralises dans [anthropometry.py](src/squat_gui/anthropometry.py) et devront etre remplaces ou calibres a partir d'un jeu anthropometrique de grossesse choisi pour le cours.
+
+Le wedge ajoute une orientation initiale de 20 deg a la cheville dans le `.bioMod` genere et dans la geometrie 2D. Le contact reste represente sur le plan du sol horizontal; il s'agit donc d'une exploration du changement de configuration, et non d'un modele de contact complet du wedge.
 
 ## Installation de A a Z
 
@@ -262,6 +295,14 @@ python -c "import biorbd; m=biorbd.Model(); print(biorbd.__version__); print(has
 
 On veut `True` sur la deuxieme ligne.
 
+Pour valider le calcul ZMP avant installation, il est aussi possible de compiler les tests avec `-DBUILD_TESTS=ON`, puis d'executer:
+
+```bash
+./build-squat/test/biorbd_eigen_tests --gtest_filter=CoM.zeroMomentPoint
+```
+
+Sur Mac Apple Silicon, utiliser la compilation CMake directe ci-dessus plutot que `pip install .` si `scikit-build` signale un melange de dossiers `arm64` et `x86_64`: l'emballage Python de la branche peut encore construire son chemin d'installation avec le mauvais nom d'architecture, alors que le module CMake arm64 et son test ZMP fonctionnent correctement.
+
 #### Windows: compiler biorbd avec la PR ZMP
 
 Installer d'abord:
@@ -348,6 +389,7 @@ biorbd actif (ZMP biorbd): ...
 - `No module named squat_gui`: vous n'etes probablement pas dans le dossier `Squat_GUI`, ou `python -m pip install -e .` n'a pas ete lance.
 - `No module named PIL`: lancer `conda install -c conda-forge pillow -y`.
 - `No module named biorbd`: lancer `conda install -c conda-forge biorbd -y`, ou continuer avec le backend analytique.
+- message `compiled using NumPy 1.x cannot be run in NumPy 2.x`: reinstaller/recompiler `biorbd` contre la version de NumPy de l'environnement, ou creer un environnement avec `numpy<2` compatible avec le binaire installe.
 - `Could NOT find SWIG`: verifier `swig=4.3.1`, puis relancer la commande CMake avec `-DSWIG_EXECUTABLE=...`.
 - `hasattr(m, 'CalcZeroMomentPoint')` affiche `False`: la version installee de `biorbd` ne contient pas encore la PR ZMP; compiler la branche PR ou attendre la release conda-forge.
 - Le GUI s'ouvre mais les images sont moches ou absentes: installer Pillow, puis relancer.
@@ -391,15 +433,19 @@ Exemple analytique, sans forcer biorbd:
 
 ```bash
 python -m squat_gui run \
-  --condition-id squat_40kg \
-  --load 40 \
-  --duration-phase 1.2 \
+  --condition-id front_80bw \
+  --subject-profile homme \
+  --bar-position front \
+  --load-percent-bw 80 \
+  --duration-excentrique 3 \
+  --duration-isometrique 2 \
+  --duration-concentrique 3 \
   --joint-angles-deg 22 -80 78 \
   --torque-preset sportifs \
   --backend analytical \
   --frames 101 \
-  --out exports/squat_40kg.csv \
-  --summary exports/squat_40kg_summary.json
+  --out exports/front_80bw.csv \
+  --summary exports/front_80bw_summary.json
 ```
 
 Exemple avec biorbd obligatoire:
@@ -407,7 +453,9 @@ Exemple avec biorbd obligatoire:
 ```bash
 python -m squat_gui run \
   --condition-id squat_biorbd \
-  --load 20 \
+  --bar-position over-head \
+  --load-percent-bw 30 \
+  --wedge \
   --backend biorbd \
   --out exports/squat_biorbd.csv \
   --summary exports/squat_biorbd_summary.json
@@ -417,9 +465,13 @@ Si `--backend biorbd` est demande et que biorbd n'est pas disponible, la command
 
 Arguments utiles:
 
-- `--load`: charge sur les epaules en kg;
+- `--subject-profile`: `homme` ou `femme enceinte`;
+- `--bar-position`: `front`, `back` ou `over-head`;
+- `--load-percent-bw`: charge de barre en pourcentage du poids du sujet de 70 kg;
+- `--load KG`: compatibilite avec les scripts historiques, prioritaire sur `%BW`;
+- `--wedge`: ajoute la talonnette de 20 deg;
 - `--shank`, `--thigh`, `--trunk`: variations de longueur en pourcentage;
-- `--duration-phase`: duree de la phase excentrique, et aussi de la phase concentrique;
+- `--duration-excentrique`, `--duration-isometrique`, `--duration-concentrique`: durees entre 2 et 4 s;
 - `--joint-angles-deg ANKLE KNEE HIP`: angles articulaires finaux en degres;
 - `--q-segment-deg SHANK THIGH TRUNK`: angles segmentaires finaux en degres, convention interne du modele;
 - `--torque-preset anderson` ou `--torque-preset sportifs`;
@@ -447,10 +499,10 @@ Le JSON de resume contient les pics par articulation, le nombre de frames ou le 
 Creer un fichier `conditions.csv`, par exemple:
 
 ```csv
-condition_id,load_kg,shank_percent,thigh_percent,trunk_percent,duration_phase_s,frames,backend,torque_preset,ankle_deg,knee_deg,hip_deg
-leger,0,0,0,0,1.0,81,analytical,anderson,22,-80,78
-lourd,60,0,0,0,1.2,101,auto,sportifs,24,-85,75
-tibia_long,40,5,0,0,1.2,101,auto,sportifs,22,-80,78
+condition_id,subject_profile,bar_position,load_percent_bw,wedge_20_deg,shank_percent,thigh_percent,trunk_percent,duration_excentrique_s,duration_isometrique_s,duration_concentrique_s,frames,backend,torque_preset,ankle_deg,knee_deg,hip_deg
+back_libre,homme,back,0,false,0,0,0,4,2,4,81,analytical,anderson,22,-80,78
+front_charge,homme,front,80,false,0,0,0,3,2,3,101,auto,sportifs,24,-85,75
+enceinte_wedge,femme enceinte,back,30,true,5,0,0,4,3,4,101,auto,anderson,20,-75,70
 ```
 
 Puis lancer:
@@ -473,7 +525,7 @@ python -m unittest discover -s tests
 
 Le backend `biorbd` est deja utilise, quand il est disponible, pour:
 
-- generer/mettre en cache un modele `.bioMod` selon la charge et les longueurs;
+- generer/mettre en cache un modele `.bioMod` selon la charge, les longueurs, le profil, la prise de barre et le wedge;
 - calculer `InverseDynamics(...)`;
 - calculer `NonLinearEffect(...)`;
 - calculer `CoM(...)`, `CoMdot(...)`, `CoMddot(...)`;
@@ -527,12 +579,13 @@ La proposition `Sportifs` est volontairement un preset de travail, pas une norme
 
 ## Modifier les images de segments
 
-Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`. Le checkbox `refined` active le second jeu d'images dans `assets/raster_segments/refined/`.
+Les sprites PNG utilises par l'animation sont dans `assets/raster_segments/`. Les images `refined` sont maintenant actives par defaut; le checkbox `low quality` revient aux premiers sprites.
 Ils sont ancres par les cibles dessinees dans les images:
 
 - `pied.png`: cible de cheville et pointe du pied detectee sur la silhouette;
 - `jambe.png`: cibles cheville et genou;
 - `cuisse.png`: cibles genou et hanche;
-- `tronc.png`: cibles hanche et epaule.
+- `tronc.png`: cibles hanche et epaule pour le rendu simple;
+- `trunk_homme_{front,back,over-head}.png` et `trunk_femme_enceinte_{front,back,over-head}.png`: torses refined adaptes a la prise.
 
 Pour remplacer une image, garder un fond blanc ou transparent, garder le segment en vue de profil, et dessiner les cibles comme un rond noir/blanc avec un point noir central. Le renderer detecte automatiquement ces points. Si Pillow n'est pas disponible, l'application revient automatiquement aux formes vectorielles JSON.

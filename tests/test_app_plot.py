@@ -1,4 +1,5 @@
 import unittest
+from math import radians
 
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.app import PLOT_CHOICES, SquatGui
@@ -126,6 +127,17 @@ class PlotSeriesTests(unittest.TestCase):
             gui.biomechanical_alerts(state, unsafe, include_com=False),
             ["CoP hors pied", "couple > max: cheville, hanche"],
         )
+
+    def test_pose_limits_are_applied_in_joint_coordinates(self):
+        gui = object.__new__(SquatGui)
+        q = gui.clamp_final_q((radians(80), radians(-180), radians(100)))
+        ankle, knee, hip = gui.display_joint_angles(q)
+
+        self.assertAlmostEqual(ankle, 40.0)
+        self.assertGreaterEqual(knee, -140.0)
+        self.assertLessEqual(knee, 0.0)
+        self.assertGreaterEqual(hip, -15.0)
+        self.assertLessEqual(hip, 120.0)
 
 
 if __name__ == "__main__":

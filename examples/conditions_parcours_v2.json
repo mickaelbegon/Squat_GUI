@@ -1,0 +1,45 @@
+{
+  "version": 2,
+  "settings": {
+    "subject_profile": "homme",
+    "bar_position": "back",
+    "load_percent_bw": 0.0,
+    "shank_percent": 0.0,
+    "thigh_percent": 0.0,
+    "trunk_percent": 0.0,
+    "duration_excentrique_s": 4.0,
+    "duration_isometrique_s": 2.0,
+    "duration_concentrique_s": 4.0,
+    "wedge_20_deg": false,
+    "plot_choice": "cinematique articulaire",
+    "quantity": "position",
+    "show_joints": {
+      "cheville": true,
+      "genou": true,
+      "hanche": true
+    },
+    "show_com_components": {
+      "horizontal": true,
+      "vertical": true
+    },
+    "max_torques": {
+      "cheville": 222.0,
+      "genou": 380.0,
+      "hanche": 376.0
+    },
+    "torque_preset": "Anderson actif x2",
+    "show_torque_bounds": false,
+    "angle_adapt": true,
+    "show_segment_com": false,
+    "low_quality_sprites": false,
+    "normalize_time": false,
+    "subplot_mode": true,
+    "final_q_deg": [
+      22.0,
+      -58.0,
+      20.0
+    ],
+    "frame_count": 81
+  },
+  "conditions": []
+}
