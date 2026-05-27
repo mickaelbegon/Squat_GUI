@@ -104,11 +104,11 @@ class Anthropometry:
 
     @property
     def bar_anterior_offset(self) -> float:
-        return {"front": 0.14, "back": -0.07, "over-head": 0.02}[self.bar_position]
+        return {"front": 0.14, "back": -0.07, "over-head": 0.0}[self.bar_position]
 
     @property
     def bar_longitudinal_offset(self) -> float:
-        return {"front": -0.02, "back": -0.02, "over-head": 0.43}[self.bar_position]
+        return {"front": -0.02, "back": -0.02, "over-head": self.trunk.length}[self.bar_position]
 
 
 def scale_from_percent(percent: float) -> float:

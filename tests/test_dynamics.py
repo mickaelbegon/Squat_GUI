@@ -101,9 +101,12 @@ class DynamicsTests(unittest.TestCase):
         flat = Anthropometry()
         wedge = Anthropometry(wedge_angle_deg=20.0)
         flat_pose = pose_from_angles(flat, (0.0, 0.0, 0.0))
-        wedge_pose = pose_from_angles(wedge, (0.0, 0.0, 0.0))
+        wedge_state = motion_state(wedge, (0.0, 0.0, 0.0), PhaseDurations(2.0, 2.0, 2.0), 0.0)
+        wedge_pose = wedge_state.pose
 
-        self.assertGreater(wedge_pose.knee[0], flat_pose.knee[0])
+        self.assertGreater(wedge_pose.heel[1], wedge_pose.toe[1])
+        self.assertAlmostEqual(wedge_state.q[0], math.radians(-20.0))
+        self.assertAlmostEqual(wedge_pose.knee[0] - wedge_pose.ankle[0], flat_pose.knee[0] - flat_pose.ankle[0])
         self.assertNotEqual(biomod_cache_key(flat), biomod_cache_key(wedge))
         self.assertIn("0.939693", biomod_text(wedge))
 

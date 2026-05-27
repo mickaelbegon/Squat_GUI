@@ -4,7 +4,7 @@ Interface graphique 2D pour explorer un squat avec:
 
 - modele pied, jambe, cuisse, tronc/tete/bras et barre, en prise `front`, `back` ou `over-head`;
 - sujet homme ou femme enceinte de reference, 70 kg pour 1.70 m, inerties gauche/droite combinees en 2D;
-- charge exprimee en `%BW` (pour le sujet de 70 kg), longueurs discretes et wedge de 20 deg;
+- charge exprimee en `%BW` (pour le sujet de 70 kg) avec 11 choix de `0` a `100 %BW`, longueurs discretes et wedge de 20 deg;
 - mouvement en trois phases reglables: excentrique, isometrique et concentrique;
 - cinematique d'ordre 5 type Yeadon, issue du profil `6x^5 - 15x^4 + 10x^3`;
 - dynamique inverse analytique 2D de demarrage;
@@ -41,11 +41,11 @@ Limites de pose imposees par l'interface:
 
 ## Hypotheses des nouvelles conditions
 
-La barre est un segment ponctuel ajoute au modele `.bioMod`; sa masse est `70 * Charge %BW / 100`. Sa position locale par rapport aux epaules est modifiee selon la prise: en avant pour `front`, en arriere pour `back`, et au-dessus des bras pour `over-head`. Le CoM du segment regroupe `tronc-tete-bras` est aussi deplace pour representer le changement de posture des bras.
+La barre est un segment ponctuel ajoute au modele `.bioMod`; sa masse est `70 * Charge %BW / 100`. Dans l'interface, la charge prend 11 valeurs discretes: `0, 10, ..., 100 %BW`. Sa position locale par rapport aux epaules est modifiee selon la prise: en avant pour `front`, en arriere pour `back`, et au milieu des mains au-dessus des epaules pour `over-head`. Le CoM du segment regroupe `tronc-tete-bras` est aussi deplace pour representer le changement de posture des bras.
 
 La version `femme enceinte` est actuellement un scenario didactique initial, pas un modele clinique valide: elle conserve une masse corporelle totale de 70 kg pour permettre des comparaisons controlees, deplace le CoM du segment tronc de `+0.060 m` vers l'avant et multiplie son moment d'inertie par `1.18`. Ces deux coefficients sont centralises dans [anthropometry.py](src/squat_gui/anthropometry.py) et devront etre remplaces ou calibres a partir d'un jeu anthropometrique de grossesse choisi pour le cours.
 
-Le wedge ajoute une orientation initiale de 20 deg a la cheville dans le `.bioMod` genere et dans la geometrie 2D. Le contact reste represente sur le plan du sol horizontal; il s'agit donc d'une exploration du changement de configuration, et non d'un modele de contact complet du wedge.
+Le wedge fait tourner le pied de 20 deg en surelevant le talon dans la geometrie 2D et dans le `.bioMod` genere. La pose debout de reference applique simultanement `-20 deg` a la cheville, afin de conserver la jambe et le tronc verticaux hors de la position basse. Le contact reste represente sur le plan du sol horizontal; il s'agit donc d'une exploration du changement de configuration, et non d'un modele de contact complet du wedge.
 
 ## Installation de A a Z
 

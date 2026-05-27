@@ -92,6 +92,13 @@ def local_point(origin: Vector, angle: float, anterior: float, longitudinal: flo
     )
 
 
+def rotate_clockwise(vector: Vector, angle: float) -> Vector:
+    return (
+        vector[0] * cos(angle) + vector[1] * sin(angle),
+        -vector[0] * sin(angle) + vector[1] * cos(angle),
+    )
+
+
 def angle_derivative_vector(angle: float, length: float) -> Vector:
     return (length * cos(angle), -length * sin(angle))
 
@@ -132,15 +139,18 @@ def pose_from_angles(anthro: Anthropometry, q: tuple[float, float, float]) -> Po
     thigh = anthro.thigh
     trunk = anthro.trunk
 
-    heel = (0.0, 0.0)
-    toe = (foot.length, 0.0)
-    ankle = (anthro.ankle_x_from_heel, anthro.ankle_height)
+    heel = (0.0, foot.length * sin(anthro.wedge_angle))
+    toe = add(heel, rotate_clockwise((foot.length, 0.0), anthro.wedge_angle))
+    ankle = add(
+        heel,
+        rotate_clockwise((anthro.ankle_x_from_heel, anthro.ankle_height), anthro.wedge_angle),
+    )
     knee = add(ankle, scale(unit_from_vertical(shank_angle), shank.length))
     hip = add(knee, scale(unit_from_vertical(thigh_angle), thigh.length))
     shoulder = add(hip, scale(unit_from_vertical(trunk_angle), trunk.length))
     bar = local_point(shoulder, trunk_angle, anthro.bar_anterior_offset, anthro.bar_longitudinal_offset)
 
-    foot_com = (foot.length * foot.com_fraction, 0.025)
+    foot_com = add(heel, rotate_clockwise((foot.length * foot.com_fraction, 0.025), anthro.wedge_angle))
     shank_com = add(ankle, scale(unit_from_vertical(shank_angle), shank.length * shank.com_fraction))
     thigh_com = add(knee, scale(unit_from_vertical(thigh_angle), thigh.length * thigh.com_fraction))
     trunk_com = local_point(hip, trunk_angle, trunk.com_anterior_offset, trunk.length * trunk.com_fraction)
@@ -216,11 +226,15 @@ def motion_state(
     time: float,
 ) -> MotionState:
     durations = phase_durations(duration)
+    standing_q = tuple(-anthro.wedge_angle for _angle in final_q)
     eccentric_end = durations.excentrique
     isometric_end = eccentric_end + durations.isometrique
     if time <= eccentric_end:
         phase = "excentrique"
-        trajectories = [QuinticBoundaryTrajectory(0.0, eccentric_end, 0.0, angle) for angle in final_q]
+        trajectories = [
+            QuinticBoundaryTrajectory(0.0, eccentric_end, start_angle, squat_angle)
+            for start_angle, squat_angle in zip(standing_q, final_q)
+        ]
         q = tuple(item.position(time) for item in trajectories)
         qdot = tuple(item.velocity(time) for item in trajectories)
         qddot = tuple(item.acceleration(time) for item in trajectories)
@@ -231,7 +245,10 @@ def motion_state(
         qddot = (0.0, 0.0, 0.0)
     else:
         phase = "concentrique"
-        trajectories = [QuinticBoundaryTrajectory(isometric_end, durations.total, angle, 0.0) for angle in final_q]
+        trajectories = [
+            QuinticBoundaryTrajectory(isometric_end, durations.total, squat_angle, end_angle)
+            for squat_angle, end_angle in zip(final_q, standing_q)
+        ]
         q = tuple(item.position(time) for item in trajectories)
         qdot = tuple(item.velocity(time) for item in trajectories)
         qddot = tuple(item.acceleration(time) for item in trajectories)
