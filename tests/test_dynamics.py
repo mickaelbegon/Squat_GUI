@@ -143,6 +143,15 @@ class DynamicsTests(unittest.TestCase):
         self.assertTrue(zmp_in_support(pose, posterior))
         self.assertTrue(zmp_in_support(pose, anterior))
 
+    def test_wedge_moves_posterior_zmp_limit_to_ankle_projection(self) -> None:
+        anthro = Anthropometry(wedge_angle_deg=20.0)
+        pose = pose_from_angles(anthro, (0.0, 0.0, 0.0))
+        posterior, _ = zmp_support_limits(pose)
+
+        self.assertAlmostEqual(posterior, pose.ankle[0])
+        self.assertFalse(zmp_in_support(pose, posterior - 0.001))
+        self.assertTrue(zmp_in_support(pose, posterior))
+
     def test_eccentric_phase_increases_available_torque_by_135_percent(self) -> None:
         anthro = Anthropometry()
         q = (math.radians(20.0), math.radians(-55.0), math.radians(-15.0))

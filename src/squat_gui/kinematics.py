@@ -98,10 +98,14 @@ def zmp_support_limits(pose: Pose) -> tuple[float, float]:
 
     The rear 15% of the projected foot is treated as a heel-edge safety
     margin: a ZMP in this region is geometrically under the foot, but not an
-    acceptable postural-balance solution for the teaching model.
+    acceptable postural-balance solution for the teaching model. With a heel
+    wedge, the posterior boundary is moved to the ankle projection to prevent
+    accepting a rear-loaded pose on the inclined support.
     """
     projected_length = pose.toe[0] - pose.heel[0]
     posterior = pose.heel[0] + ZMP_POSTERIOR_MARGIN_FRACTION * projected_length
+    if pose.heel[1] > pose.toe[1] + 1e-9:
+        posterior = max(posterior, pose.ankle[0])
     return posterior, pose.toe[0]
 
 

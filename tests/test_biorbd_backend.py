@@ -6,7 +6,7 @@ from pathlib import Path
 
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.backend import BiorbdModelCache
-from squat_gui.dynamics import simulate
+from squat_gui.dynamics import _contact_moments, simulate
 from squat_gui.kinematics import PhaseDurations, motion_state
 
 
@@ -60,6 +60,30 @@ class BiorbdBackendTests(unittest.TestCase):
             self.assertGreater(states[0].pose.heel[1], states[0].pose.toe[1])
             self.assertAlmostEqual(results[0].com[0], expected.pose.com[0], places=5)
             self.assertAlmostEqual(results[0].com[1], expected.pose.com[1], places=5)
+
+    def test_contact_component_is_computed_with_biorbd_external_force_set(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            anthro = Anthropometry(bar_mass=28.0, bar_position="back")
+            states, results = simulate(
+                anthro,
+                (math.radians(22.0), math.radians(-58.0), math.radians(20.0)),
+                PhaseDurations(4.0, 1.0, 4.0),
+                5,
+                {"cheville": 222.0, "genou": 380.0, "hanche": 376.0},
+                True,
+                BiorbdModelCache(Path(tmpdir)),
+            )
+            state = states[2]
+            result = results[2]
+            geometric = _contact_moments(state, result.ground_reaction, result.cop_x)
+
+            for joint in ("cheville", "genou", "hanche"):
+                self.assertAlmostEqual(result.torque_components[joint]["contact"], geometric[joint], places=8)
+                self.assertAlmostEqual(
+                    result.torque_components[joint]["inertiels_non_lineaires"],
+                    result.torque_components[joint]["total"] - geometric[joint],
+                    places=8,
+                )
 
 
 if __name__ == "__main__":

@@ -314,7 +314,11 @@ def inverse_dynamics(
             biorbd_model,
             state,
         )
-        inverse_dynamics_total, _, _ = _biorbd_joint_torques(biorbd_model, state)
+        inverse_dynamics_total = _biorbd_inverse_dynamics_torques(biorbd_model, state)
+        try:
+            contact = _biorbd_contact_torques(biorbd_model, state, reaction, cop_x, inverse_dynamics_total)
+        except (AttributeError, RuntimeError, TypeError):
+            contact = _contact_moments(state, reaction, cop_x)
         backend = "biorbd"
     else:
         inertial_abs = _absolute_generalized_torque(
@@ -333,7 +337,7 @@ def inverse_dynamics(
         )
         total_abs = tuple(inertial_abs[i] + nle_abs[i] for i in range(3))
         inverse_dynamics_total = _joint_from_absolute(total_abs)
-    contact = _contact_moments(state, reaction, cop_x)
+        contact = _contact_moments(state, reaction, cop_x)
     inertial_nonlinear = _inertial_nonlinear_from_components(inverse_dynamics_total, contact)
     torques = inverse_dynamics_total
     components = {
@@ -400,21 +404,41 @@ def _joint_dict_from_biorbd_tau(tau: list[float]) -> dict[str, float]:
     }
 
 
-def _biorbd_joint_torques(biorbd_model: Any, state: MotionState) -> tuple[dict[str, float], dict[str, float], dict[str, float]]:
+def _biorbd_inverse_dynamics_torques(biorbd_model: Any, state: MotionState, external_forces: Any | None = None) -> dict[str, float]:
+    q, qdot, qddot = _numpy_biorbd_coordinates(state)
+    if external_forces is None:
+        tau = biorbd_model.InverseDynamics(q, qdot, qddot)
+    else:
+        tau = biorbd_model.InverseDynamics(q, qdot, qddot, external_forces)
+    return _joint_dict_from_biorbd_tau(_array_from_biorbd(tau))
+
+
+def _biorbd_contact_torques(
+    biorbd_model: Any,
+    state: MotionState,
+    reaction: Vector,
+    cop_x: float,
+    inverse_dynamics_total: dict[str, float],
+) -> dict[str, float]:
+    """Return the GRF contribution through biorbd's external-force dynamics.
+
+    The fixed foot is the model base and has no generalized coordinate.
+    Applying the equivalent world-frame wrench at the ZMP to the terminal
+    actuated segment gives its generalized contribution at all three joints.
+    """
     import numpy as np
 
-    q, qdot, qddot = _numpy_biorbd_coordinates(state)
-    zero = np.zeros(3)
-    total = _array_from_biorbd(biorbd_model.InverseDynamics(q, qdot, qddot))
-    nle = _array_from_biorbd(biorbd_model.NonLinearEffect(q, qdot))
-    inertial_with_static_nle = _array_from_biorbd(biorbd_model.InverseDynamics(q, zero, qddot))
-    static_nle = _array_from_biorbd(biorbd_model.NonLinearEffect(q, zero))
-    inertial = [inertial_with_static_nle[index] - static_nle[index] for index in range(3)]
-    return (
-        _joint_dict_from_biorbd_tau(total),
-        _joint_dict_from_biorbd_tau(inertial),
-        _joint_dict_from_biorbd_tau(nle),
+    external_forces = biorbd_model.externalForceSet()
+    external_forces.add(
+        "tronc",
+        np.array([0.0, 0.0, 0.0, reaction[0], reaction[1], 0.0]),
+        np.array([cop_x, 0.0, 0.0]),
     )
+    with_contact = _biorbd_inverse_dynamics_torques(biorbd_model, state, external_forces)
+    return {
+        joint: inverse_dynamics_total[joint] - with_contact[joint]
+        for joint in ("cheville", "genou", "hanche")
+    }
 
 
 def _biorbd_motion_state_with_com(biorbd_model: Any, state: MotionState) -> MotionState:

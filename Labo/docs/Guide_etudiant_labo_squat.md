@@ -76,7 +76,7 @@ Questions d’analyse :
 - Dans quels cas le ZMP sort-il de la zone d’appui, et pendant combien de frames?
 - La prise qui améliore l’équilibre réduit-elle nécessairement le ratio d’effort de toutes les articulations?
 
-Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le ZMP dans la zone d’appui, puis enregistrer la condition adaptée. La zone retenue exclut les 15 % postérieurs de la projection du pied : le bord du talon constitue une alerte, même si le point est encore sous la silhouette du pied. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
+Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le ZMP dans la zone d’appui, puis enregistrer la condition adaptée. La zone retenue exclut les 15 % postérieurs de la projection du pied : le bord du talon constitue une alerte, même si le point est encore sous la silhouette du pied. Avec le wedge, la limite postérieure est la projection verticale de la cheville pour écarter les appuis excessivement postérieurs sur le talon surélevé. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
 
 Variables à extraire : `squat_com_x_m`, `squat_cop_x_m`, `zmp_outside_support_frames`, excursion du ZMP, pics de couples et ratios d’effort.
 

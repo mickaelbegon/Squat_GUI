@@ -43,4 +43,4 @@ Le fichier `results_labo_squat/results.csv` contient toutes les frames. Le fichi
 
 Le CSV public donne uniquement les conditions de depart; il ne contient ni la posture corrigee ni les reponses numeriques.
 
-Dans le GUI, la zone d'appui fonctionnelle du ZMP exclut les 15 % posterieurs du pied projete au sol. Cette marge de talon evite d'accepter une posture dont le ZMP est encore sous la silhouette du pied, mais pratiquement au bord posterieur de l'appui.
+Dans le GUI, la zone d'appui fonctionnelle du ZMP exclut les 15 % posterieurs du pied projete au sol. Cette marge de talon evite d'accepter une posture dont le ZMP est encore sous la silhouette du pied, mais pratiquement au bord posterieur de l'appui. Avec le wedge, la limite posterieure devient la projection verticale de la cheville afin de signaler les strategies trop chargees vers le talon sureleve.

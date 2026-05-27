@@ -540,7 +540,6 @@ Le backend `biorbd` est deja utilise, quand il est disponible, pour:
 
 - generer/mettre en cache un modele `.bioMod` selon la charge, les longueurs, le profil, la prise de barre et le wedge;
 - calculer `InverseDynamics(...)`;
-- calculer `NonLinearEffect(...)`;
 - calculer `CoM(...)`, `CoMdot(...)`, `CoMddot(...)`;
 - calculer `CalcAngularMomentum(...)` pour le moment dynamique.
 
@@ -551,7 +550,9 @@ total = inverse_dynamics(q, qdot, qddot)
 inertiels_non_lineaires = total - contact
 ```
 
-Dans le GUI, `total` vient de `biorbd_model.InverseDynamics(q, qdot, qddot)` quand `biorbd` est disponible. C'est ce `total` qui est utilise pour les courbes de couples articulaires, les puissances, les ratios d'effort et le tableau des conditions. Le terme `contact` represente l'effet de la reaction au sol estimee au CoP. La courbe `inertiels_non_lineaires` est simplement `total - contact`, ce qui evite d'afficher separement `Mqddot` et `NLeffects`. Pour l'instant, le terme de contact reste calcule dans le code du GUI, car le `.bioMod` actuel garde le pied fixe au sol; une integration encore plus propre consisterait a passer un `ExternalForceSet` a `InverseDynamics(..., externalForces)` dans un modele avec base/contacts compatibles.
+Dans le GUI, `total` vient de `biorbd_model.InverseDynamics(q, qdot, qddot)` quand `biorbd` est disponible. C'est ce `total` qui est utilise pour les courbes de couples articulaires, les puissances, les ratios d'effort et le tableau des conditions. Comme le pied est fixe a la base du `.bioMod`, cette definition est volontairement conservee pour ne pas annuler artificiellement les moments de maintien du squat.
+
+Le terme `contact` est maintenant calcule avec `biorbd`: la reaction au sol est appliquee au ZMP dans un `ExternalForceSet`, sur le segment terminal de la chaine mobile, puis le GUI calcule la difference entre `InverseDynamics` sans et avec cette force. Cette difference reproduit l'effet du bras de levier de la reaction aux trois articulations. La courbe `inertiels_non_lineaires` est definie simplement comme `total - contact`; elle ne doit pas etre interpretee comme l'appel direct a `NonLinearEffect(...)` de `biorbd`.
 
 Pour utiliser directement le centre de pression/ZMP depuis `biorbd`, il faut une version de `biorbd` qui expose `Model.CalcZeroMomentPoint(...)`. Une PR locale a ete preparee pour cela:
 
@@ -571,7 +572,7 @@ PYTHONPATH=src /Users/mickaelbegon/miniconda3/envs/vitpose-ekf/bin/python -c "fr
 
 Le GUI detecte automatiquement `CalcZeroMomentPoint`. Si la fonction existe, le centre de pression/ZMP est obtenu par `biorbd` avec la normale du sol `(0, 1, 0)` et un point du sol `(0, 0, 0)`. Si la fonction n'existe pas encore dans l'environnement installe, le GUI garde le calcul de fallback base sur le moment dynamique et la reaction verticale.
 
-Le calcul du ZMP et le critere d'acceptabilite sont distincts. Pour l'alerte d'equilibre, la zone d'appui fonctionnelle exclut les `15 %` posterieurs de la projection antéro-posterieure du pied : un ZMP place au bord du talon est donc signale en rouge meme s'il est encore sous la silhouette du pied. La limite anterieure reste l'extremite des orteils. Cette borne posterieure est tracee par un petit repere rouge dans les vues du GUI et exportee dans les CSV (`zmp_posterior_limit_m`, `zmp_in_support`).
+Le calcul du ZMP et le critere d'acceptabilite sont distincts. Pour l'alerte d'equilibre, la zone d'appui fonctionnelle exclut les `15 %` posterieurs de la projection antéro-posterieure du pied : un ZMP place au bord du talon est donc signale en rouge meme s'il est encore sous la silhouette du pied. Avec le `wedge 20 deg`, la limite posterieure est rendue plus conservative et placee a la projection verticale de la cheville, afin de refuser un appui trop charge vers le talon sureleve. La limite anterieure reste l'extremite des orteils. Cette borne posterieure est tracee par un petit repere rouge dans les vues du GUI et exportee dans les CSV (`zmp_posterior_limit_m`, `zmp_in_support`).
 
 ## Relation couple-angle max
 
