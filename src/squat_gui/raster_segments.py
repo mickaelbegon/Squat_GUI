@@ -165,7 +165,7 @@ def _trunk_anchor_from_silhouette(image, distal_anchor: tuple[float, float]) -> 
 def sprite_spec(name: str, refined: bool = False, trunk_variant: tuple[str, str] | None = None) -> SpriteSpec:
     from PIL import Image
 
-    filename = TRUNK_VARIANTS[trunk_variant] if name == "trunk" and refined and trunk_variant else SPRITE_FILES[name]
+    filename = TRUNK_VARIANTS[trunk_variant] if name == "trunk" and trunk_variant else SPRITE_FILES[name]
     image = _rgb_on_white(Image.open(_asset_path(filename, refined)))
     centers = _component_centers(image)
     if name == "foot":
