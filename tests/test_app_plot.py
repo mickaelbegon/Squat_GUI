@@ -1,5 +1,6 @@
 import unittest
 from math import radians
+from unittest.mock import patch
 
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.app import PLOT_CHOICES, SquatGui
@@ -33,6 +34,46 @@ class PlotSeriesTests(unittest.TestCase):
         gui.conditions_table = FakeTable()
 
         self.assertIn("couples detailles", gui.available_plot_choices())
+
+    def test_multiple_conditions_keep_their_own_sprite_variant_and_quality(self):
+        gui = self.gui_without_tk()
+        gui.conditions_table = FakeTable()
+        gui.saved_conditions = {
+            "cond1": {
+                "label": "homme back",
+                "states": gui.states,
+                "results": gui.results,
+                "settings": {"subject_profile": "homme", "bar_position": "back", "low_quality_sprites": False},
+            },
+            "cond2": {
+                "label": "femme overhead",
+                "states": gui.states,
+                "results": gui.results,
+                "settings": {
+                    "subject_profile": "femme enceinte",
+                    "bar_position": "over-head",
+                    "wedge_20_deg": True,
+                    "low_quality_sprites": True,
+                },
+            },
+        }
+        datasets = gui.plot_datasets()
+
+        self.assertEqual(datasets[1]["anthro"].subject_profile, "femme enceinte")
+        self.assertEqual(datasets[1]["anthro"].bar_position, "over-head")
+        self.assertEqual(datasets[1]["anthro"].wedge_angle_deg, 20.0)
+        self.assertFalse(datasets[1]["refined_sprites"])
+        with patch("squat_gui.app.draw_sprite_segment", side_effect=lambda *args: True) as draw_sprite:
+            gui.draw_raster_segments(
+                None,
+                gui.states[0],
+                lambda point: point,
+                datasets[1]["anthro"],
+                datasets[1]["refined_sprites"],
+            )
+        trunk_call = draw_sprite.call_args_list[-1].args
+        self.assertFalse(trunk_call[5])
+        self.assertEqual(trunk_call[6], ("femme enceinte", "over-head"))
 
     def gui_without_tk(self):
         anthro = Anthropometry()

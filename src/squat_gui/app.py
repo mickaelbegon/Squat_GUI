@@ -581,15 +581,34 @@ class SquatGui(tk.Tk):
         self.update_didactic_guide()
 
     def anthro(self) -> Anthropometry:
-        return Anthropometry(
-            bar_mass=70.0 * self.load_var.get() / 100.0,
-            shank_scale=scale_from_percent(self.shank_var.get()),
-            thigh_scale=scale_from_percent(self.thigh_var.get()),
-            trunk_scale=scale_from_percent(self.trunk_var.get()),
-            subject_profile=self.subject_profile_var.get(),
-            bar_position=self.bar_position_var.get(),
-            wedge_angle_deg=20.0 if self.wedge_var.get() else 0.0,
+        return self.anthro_from_settings(
+            {
+                "load_percent_bw": self.load_var.get(),
+                "shank_percent": self.shank_var.get(),
+                "thigh_percent": self.thigh_var.get(),
+                "trunk_percent": self.trunk_var.get(),
+                "subject_profile": self.subject_profile_var.get(),
+                "bar_position": self.bar_position_var.get(),
+                "wedge_20_deg": self.wedge_var.get(),
+            }
         )
+
+    def anthro_from_settings(self, settings: dict[str, object]) -> Anthropometry:
+        load_kg = float(settings.get("load_kg", 70.0 * float(settings.get("load_percent_bw", 0.0)) / 100.0))
+        return Anthropometry(
+            bar_mass=load_kg,
+            shank_scale=scale_from_percent(float(settings.get("shank_percent", 0.0))),
+            thigh_scale=scale_from_percent(float(settings.get("thigh_percent", 0.0))),
+            trunk_scale=scale_from_percent(float(settings.get("trunk_percent", 0.0))),
+            subject_profile=str(settings.get("subject_profile", "homme")),
+            bar_position=str(settings.get("bar_position", "back")),
+            wedge_angle_deg=20.0 if bool(settings.get("wedge_20_deg", False)) else 0.0,
+        )
+
+    def refined_sprites_from_settings(self, settings: dict[str, object]) -> bool:
+        if "low_quality_sprites" in settings:
+            return not bool(settings["low_quality_sprites"])
+        return bool(settings.get("refined_sprites", True))
 
     def available_plot_choices(self) -> list[str]:
         return PLOT_CHOICES
@@ -911,10 +930,15 @@ class SquatGui(tk.Tk):
         scale = min((width - 2 * pad) / (xmax - xmin), (height - 2 * pad) / (ymax - ymin))
         return (xmin + (x - pad) / scale, ymin + (height - pad - y) / scale)
 
-    def scene_bounds(self, extra_x: float = 0.0) -> tuple[float, float, float, float]:
-        anthro = self.anthro()
-        ymax = 2.22 if anthro.bar_position == "over-head" else 1.92
-        return (-0.36, anthro.foot.length + anthro.shank.length + 0.78 + extra_x, -0.08, ymax)
+    def scene_bounds(
+        self,
+        extra_x: float = 0.0,
+        anthropometries: list[Anthropometry] | None = None,
+    ) -> tuple[float, float, float, float]:
+        anthropometries = anthropometries or [self.anthro()]
+        ymax = max(2.22 if anthro.bar_position == "over-head" else 1.92 for anthro in anthropometries)
+        xmax = max(anthro.foot.length + anthro.shank.length + 0.78 for anthro in anthropometries)
+        return (-0.36, xmax + extra_x, -0.08, ymax)
 
     def cop_in_foot(self, state: MotionState, result: DynamicsResult) -> bool:
         return zmp_in_support(state.pose, result.cop_x)
@@ -983,7 +1007,11 @@ class SquatGui(tk.Tk):
         with_handles: bool,
         bounds: tuple[float, float, float, float] | None = None,
         x_offset: float = 0.0,
+        render_anthro: Anthropometry | None = None,
+        refined_sprites: bool | None = None,
     ) -> None:
+        render_anthro = render_anthro or self.anthro()
+        refined_sprites = not self.low_quality_sprites_var.get() if refined_sprites is None else refined_sprites
         bounds = bounds or self.scene_bounds()
         pose = state.pose
         joints = [pose.heel, pose.toe, pose.ankle, pose.knee, pose.hip, pose.shoulder]
@@ -999,14 +1027,14 @@ class SquatGui(tk.Tk):
         def mapper(point: tuple[float, float]) -> tuple[float, float]:
             return self.world_to_canvas(canvas, shifted(point), bounds)
 
-        raster_drawn = self.draw_raster_segments(canvas, state, mapper)
+        raster_drawn = self.draw_raster_segments(canvas, state, mapper, render_anthro, refined_sprites)
         if not raster_drawn:
             segments = load_segments()
-            foot_scale = self.anthro().foot.length / 1.07
+            foot_scale = render_anthro.foot.length / 1.07
             draw_segment(canvas, segments["foot"], pose.ankle, 0.0, foot_scale, mapper)
-            draw_segment(canvas, segments["shank"], pose.ankle, -state.q[0], self.anthro().shank.length, mapper)
-            draw_segment(canvas, segments["thigh"], pose.knee, -state.q[1], self.anthro().thigh.length, mapper)
-            draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], self.anthro().trunk.length, mapper)
+            draw_segment(canvas, segments["shank"], pose.ankle, -state.q[0], render_anthro.shank.length, mapper)
+            draw_segment(canvas, segments["thigh"], pose.knee, -state.q[1], render_anthro.thigh.length, mapper)
+            draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], render_anthro.trunk.length, mapper)
         canvas.create_line(*points["heel"], *points["toe"], width=3, fill="#333333")
         posterior_limit, _ = zmp_support_limits(pose)
         posterior_px = self.world_to_canvas(canvas, shifted((posterior_limit, 0.0)), bounds)
@@ -1019,7 +1047,7 @@ class SquatGui(tk.Tk):
             width=2,
             dash=(3, 2),
         )
-        if self.anthro().wedge_angle_deg:
+        if render_anthro.wedge_angle_deg:
             heel = self.world_to_canvas(canvas, shifted(pose.heel), bounds)
             toe = self.world_to_canvas(canvas, shifted(pose.toe), bounds)
             floor_heel = self.world_to_canvas(canvas, shifted((pose.heel[0], 0.0)), bounds)
@@ -1082,11 +1110,19 @@ class SquatGui(tk.Tk):
                 x, y = points[name]
                 canvas.create_oval(x - 9, y - 9, x + 9, y + 9, fill="#f7f7f2", outline="#1d3d35", width=2, tags=name)
 
-    def draw_raster_segments(self, canvas: tk.Canvas, state: MotionState, mapper) -> bool:
+    def draw_raster_segments(
+        self,
+        canvas: tk.Canvas,
+        state: MotionState,
+        mapper,
+        render_anthro: Anthropometry | None = None,
+        refined_sprites: bool | None = None,
+    ) -> bool:
         try:
             pose = state.pose
-            refined = not self.low_quality_sprites_var.get()
-            trunk_variant = (self.subject_profile_var.get(), self.bar_position_var.get())
+            render_anthro = render_anthro or self.anthro()
+            refined = not self.low_quality_sprites_var.get() if refined_sprites is None else refined_sprites
+            trunk_variant = (render_anthro.subject_profile, render_anthro.bar_position)
             return all(
                 (
                     draw_sprite_segment(
@@ -1144,7 +1180,14 @@ class SquatGui(tk.Tk):
         result = min(self.results, key=lambda item: abs(item.com[0] - state.pose.com[0]) + abs(item.com[1] - state.pose.com[1]))
         alerts = self.biomechanical_alerts(state, result, include_com=True)
         self.configure_alert_canvas(canvas, alerts)
-        self.draw_skeleton(canvas, state, result, with_handles=True)
+        self.draw_skeleton(
+            canvas,
+            state,
+            result,
+            with_handles=True,
+            render_anthro=anthro,
+            refined_sprites=not self.low_quality_sprites_var.get(),
+        )
         self.draw_squat_angle_labels(canvas, state)
         canvas.create_text(16, 16, text="Position de squat", anchor="nw", fill="#22312a", font=("Helvetica", 13, "bold"))
         canvas.create_text(16, 38, text="Glisser genou, hanche ou epaules", anchor="nw", fill="#506158")
@@ -1199,9 +1242,21 @@ class SquatGui(tk.Tk):
             for alert in self.biomechanical_alerts(item["state"], item["result"], include_com=False)  # type: ignore[arg-type]
         ]
         self.configure_alert_canvas(canvas, alerts)
-        bounds = self.scene_bounds(extra_x=max(0, len(sampled) - 1))
+        bounds = self.scene_bounds(
+            extra_x=max(0, len(sampled) - 1),
+            anthropometries=[item["anthro"] for item in sampled],  # type: ignore[list-item]
+        )
         for index, item in enumerate(sampled):
-            self.draw_skeleton(canvas, item["state"], item["result"], with_handles=False, bounds=bounds, x_offset=float(index))  # type: ignore[arg-type]
+            self.draw_skeleton(
+                canvas,
+                item["state"],  # type: ignore[arg-type]
+                item["result"],  # type: ignore[arg-type]
+                with_handles=False,
+                bounds=bounds,
+                x_offset=float(index),
+                render_anthro=item["anthro"],  # type: ignore[arg-type]
+                refined_sprites=bool(item["refined_sprites"]),
+            )
             if len(sampled) > 1:
                 label_point = self.world_to_canvas(canvas, (float(index), -0.045), bounds)
                 color = str(item["color"])
@@ -1262,17 +1317,30 @@ class SquatGui(tk.Tk):
     def plot_datasets(self) -> list[dict[str, object]]:
         selected = [iid for iid in self.conditions_table.selection() if iid in self.saved_conditions]
         if not selected:
-            return [{"label": "courant", "states": self.states, "results": self.results, "color": None}]
+            settings = self.current_settings()
+            return [
+                {
+                    "label": "courant",
+                    "states": self.states,
+                    "results": self.results,
+                    "color": None,
+                    "anthro": self.anthro(),
+                    "refined_sprites": self.refined_sprites_from_settings(settings),
+                }
+            ]
         total = len(selected)
         datasets: list[dict[str, object]] = []
         for index, iid in enumerate(selected):
             condition = self.saved_conditions[iid]
+            settings = condition["settings"]  # type: ignore[assignment]
             datasets.append(
                 {
                     "label": condition["label"],
                     "states": condition["states"],
                     "results": condition["results"],
                     "color": self.condition_color(index, total),
+                    "anthro": self.anthro_from_settings(settings),  # type: ignore[arg-type]
+                    "refined_sprites": self.refined_sprites_from_settings(settings),  # type: ignore[arg-type]
                 }
             )
         return datasets
@@ -2069,16 +2137,7 @@ class SquatGui(tk.Tk):
         settings: dict[str, object],
         final_q_deg: list[float],
     ) -> tuple[list[MotionState], list[DynamicsResult]]:
-        load_kg = float(settings.get("load_kg", 70.0 * float(settings.get("load_percent_bw", 0.0)) / 100.0))
-        anthro = Anthropometry(
-            bar_mass=load_kg,
-            shank_scale=scale_from_percent(float(settings.get("shank_percent", 0.0))),
-            thigh_scale=scale_from_percent(float(settings.get("thigh_percent", 0.0))),
-            trunk_scale=scale_from_percent(float(settings.get("trunk_percent", 0.0))),
-            subject_profile=str(settings.get("subject_profile", "homme")),
-            bar_position=str(settings.get("bar_position", "back")),
-            wedge_angle_deg=20.0 if bool(settings.get("wedge_20_deg", False)) else 0.0,
-        )
+        anthro = self.anthro_from_settings(settings)
         final_q = self.clamp_final_q(tuple(radians(value) for value in self.normalized_final_q_deg(final_q_deg)))
         max_torques = {
             joint: float(dict(settings.get("max_torques", {})).get(joint, self.max_torque_vars[joint].get()))
