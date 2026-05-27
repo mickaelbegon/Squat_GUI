@@ -4,7 +4,7 @@ from math import radians
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.app import PLOT_CHOICES, SquatGui
 from squat_gui.dynamics import inverse_dynamics
-from squat_gui.kinematics import motion_state
+from squat_gui.kinematics import motion_state, zmp_support_limits
 
 
 class FakeVar:
@@ -121,12 +121,21 @@ class PlotSeriesTests(unittest.TestCase):
                 "effort_ratios": {"cheville": 1.2, "genou": 0.3, "hanche": 1.1},
             }
         )
+        posterior, _ = zmp_support_limits(state.pose)
+        rear_edge = result.__class__(
+            **{
+                **result.__dict__,
+                "cop_x": posterior - 0.001,
+                "effort_ratios": {"cheville": 0.2, "genou": 0.3, "hanche": 0.4},
+            }
+        )
 
         self.assertEqual(gui.biomechanical_alerts(state, safe, include_com=False), [])
         self.assertEqual(
             gui.biomechanical_alerts(state, unsafe, include_com=False),
-            ["CoP hors pied", "couple > max: cheville, hanche"],
+            ["ZMP hors zone d'appui", "couple > max: cheville, hanche"],
         )
+        self.assertEqual(gui.biomechanical_alerts(state, rear_edge, include_com=False), ["ZMP hors zone d'appui"])
 
     def test_pose_limits_are_applied_in_joint_coordinates(self):
         gui = object.__new__(SquatGui)

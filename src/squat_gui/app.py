@@ -16,7 +16,7 @@ from tkinter import filedialog, messagebox, ttk
 from .anthropometry import BAR_POSITIONS, SUBJECT_PROFILES, Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache, detect_optional_backends
 from .dynamics import DynamicsResult, available_joint_torque_limits, simulate, torque_presets
-from .kinematics import MotionState, PhaseDurations, pose_from_angles
+from .kinematics import MotionState, PhaseDurations, pose_from_angles, zmp_in_support, zmp_support_limits
 from .raster_segments import draw_sprite_segment
 from .segment_shapes import draw_segment, load_segments
 
@@ -917,7 +917,7 @@ class SquatGui(tk.Tk):
         return (-0.36, anthro.foot.length + anthro.shank.length + 0.78 + extra_x, -0.08, ymax)
 
     def cop_in_foot(self, state: MotionState, result: DynamicsResult) -> bool:
-        return state.pose.heel[0] <= result.cop_x <= state.pose.toe[0]
+        return zmp_in_support(state.pose, result.cop_x)
 
     def com_projection_in_foot(self, state: MotionState) -> bool:
         return state.pose.heel[0] <= state.pose.com[0] <= state.pose.toe[0]
@@ -932,7 +932,7 @@ class SquatGui(tk.Tk):
     def biomechanical_alerts(self, state: MotionState, result: DynamicsResult, include_com: bool) -> list[str]:
         alerts = []
         if not self.cop_in_foot(state, result):
-            alerts.append("CoP hors pied")
+            alerts.append("ZMP hors zone d'appui")
         if include_com and not self.com_projection_in_foot(state):
             alerts.append("CoM hors pied")
         over_limit = self.over_limit_joints(result)
@@ -1008,6 +1008,17 @@ class SquatGui(tk.Tk):
             draw_segment(canvas, segments["thigh"], pose.knee, -state.q[1], self.anthro().thigh.length, mapper)
             draw_segment(canvas, segments["trunk_bar"], pose.hip, -state.q[2], self.anthro().trunk.length, mapper)
         canvas.create_line(*points["heel"], *points["toe"], width=3, fill="#333333")
+        posterior_limit, _ = zmp_support_limits(pose)
+        posterior_px = self.world_to_canvas(canvas, shifted((posterior_limit, 0.0)), bounds)
+        canvas.create_line(
+            posterior_px[0],
+            posterior_px[1] - 8,
+            posterior_px[0],
+            posterior_px[1] + 8,
+            fill="#c9332c",
+            width=2,
+            dash=(3, 2),
+        )
         if self.anthro().wedge_angle_deg:
             heel = self.world_to_canvas(canvas, shifted(pose.heel), bounds)
             toe = self.world_to_canvas(canvas, shifted(pose.toe), bounds)

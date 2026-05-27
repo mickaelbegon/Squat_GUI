@@ -56,13 +56,19 @@ def mean(rows: list[dict[str, str]], column: str) -> float:
     return sum(number(row, column) for row in rows) / len(rows)
 
 
+def zmp_supported(row: dict[str, str]) -> bool:
+    return parse_bool(row.get("zmp_in_support", row["cop_in_foot"]))
+
+
 def summarize_condition(condition_id: str, rows: list[dict[str, str]]) -> dict[str, object]:
-    outside_frames = sum(1 for frame in rows if not parse_bool(frame["cop_in_foot"]))
+    outside_frames = sum(1 for frame in rows if not zmp_supported(frame))
     summary: dict[str, object] = {
         "scenario": condition_id,
         "frames": len(rows),
         "cop_outside_foot_frames": outside_frames,
         "cop_outside_foot_percent": 100.0 * outside_frames / len(rows),
+        "zmp_outside_support_frames": outside_frames,
+        "zmp_outside_support_percent": 100.0 * outside_frames / len(rows),
     }
     for column in CONDITION_COLUMNS:
         if column in rows[0]:

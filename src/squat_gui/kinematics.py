@@ -10,6 +10,7 @@ from .yeadon import QuinticBoundaryTrajectory
 
 
 Vector = tuple[float, float]
+ZMP_POSTERIOR_MARGIN_FRACTION = 0.15
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,23 @@ def local_point(origin: Vector, angle: float, anterior: float, longitudinal: flo
         origin,
         add(scale(anterior_unit_from_vertical(angle), anterior), scale(unit_from_vertical(angle), longitudinal)),
     )
+
+
+def zmp_support_limits(pose: Pose) -> tuple[float, float]:
+    """Return functional AP support limits on the horizontal ZMP plane.
+
+    The rear 15% of the projected foot is treated as a heel-edge safety
+    margin: a ZMP in this region is geometrically under the foot, but not an
+    acceptable postural-balance solution for the teaching model.
+    """
+    projected_length = pose.toe[0] - pose.heel[0]
+    posterior = pose.heel[0] + ZMP_POSTERIOR_MARGIN_FRACTION * projected_length
+    return posterior, pose.toe[0]
+
+
+def zmp_in_support(pose: Pose, zmp_x: float) -> bool:
+    posterior, anterior = zmp_support_limits(pose)
+    return posterior <= zmp_x <= anterior
 
 
 def rotate_clockwise(vector: Vector, angle: float) -> Vector:

@@ -38,7 +38,9 @@ Le fichier `results_labo_squat/results.csv` contient toutes les frames. Le fichi
 
 1. Comparer `balance_bar_back`, `balance_bar_front` et `balance_bar_overhead` avec la meme pose et une charge de 40 % du poids de corps.
 2. Comparer ensuite une modification morphologique (`balance_long_thigh_*`) ou du profil du sujet (`balance_pregnant_*`) avec la meme prise.
-3. Observer `squat_com_x_m`, `squat_cop_x_m` et `cop_outside_foot_frames`.
+3. Observer `squat_com_x_m`, `squat_cop_x_m` et `zmp_outside_support_frames`.
 4. Dans le GUI, modifier la position basse pour retrouver un appui acceptable, puis enregistrer cette condition adaptee.
 
 Le CSV public donne uniquement les conditions de depart; il ne contient ni la posture corrigee ni les reponses numeriques.
+
+Dans le GUI, la zone d'appui fonctionnelle du ZMP exclut les 15 % posterieurs du pied projete au sol. Cette marge de talon evite d'accepter une posture dont le ZMP est encore sous la silhouette du pied, mais pratiquement au bord posterieur de l'appui.

@@ -557,7 +557,9 @@ PYTHONPATH=src /Users/mickaelbegon/miniconda3/envs/vitpose-ekf/bin/python -c "fr
 
 3. relancer le GUI avec ce meme Python.
 
-Le GUI detecte automatiquement `CalcZeroMomentPoint`. Si la fonction existe, le centre de pression est obtenu par `biorbd` avec la normale du sol `(0, 1, 0)` et un point du sol `(0, 0, 0)`. Si la fonction n'existe pas encore dans l'environnement installe, le GUI garde le calcul de fallback base sur le moment dynamique et la reaction verticale.
+Le GUI detecte automatiquement `CalcZeroMomentPoint`. Si la fonction existe, le centre de pression/ZMP est obtenu par `biorbd` avec la normale du sol `(0, 1, 0)` et un point du sol `(0, 0, 0)`. Si la fonction n'existe pas encore dans l'environnement installe, le GUI garde le calcul de fallback base sur le moment dynamique et la reaction verticale.
+
+Le calcul du ZMP et le critere d'acceptabilite sont distincts. Pour l'alerte d'equilibre, la zone d'appui fonctionnelle exclut les `15 %` posterieurs de la projection antéro-posterieure du pied : un ZMP place au bord du talon est donc signale en rouge meme s'il est encore sous la silhouette du pied. La limite anterieure reste l'extremite des orteils. Cette borne posterieure est tracee par un petit repere rouge dans les vues du GUI et exportee dans les CSV (`zmp_posterior_limit_m`, `zmp_in_support`).
 
 ## Relation couple-angle max
 

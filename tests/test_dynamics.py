@@ -14,7 +14,7 @@ from squat_gui.dynamics import (
     simulate,
     torque_presets,
 )
-from squat_gui.kinematics import MotionState, PhaseDurations, motion_state, pose_from_angles
+from squat_gui.kinematics import MotionState, PhaseDurations, motion_state, pose_from_angles, zmp_in_support, zmp_support_limits
 
 
 class DynamicsTests(unittest.TestCase):
@@ -122,6 +122,15 @@ class DynamicsTests(unittest.TestCase):
         self.assertAlmostEqual(wedge_pose.knee[0] - wedge_pose.ankle[0], flat_pose.knee[0] - flat_pose.ankle[0])
         self.assertNotEqual(biomod_cache_key(flat), biomod_cache_key(wedge))
         self.assertIn("0.939693", biomod_text(wedge))
+
+    def test_functional_zmp_support_excludes_posterior_heel_margin(self) -> None:
+        pose = pose_from_angles(Anthropometry(), (0.0, 0.0, 0.0))
+        posterior, anterior = zmp_support_limits(pose)
+
+        self.assertAlmostEqual(posterior, pose.heel[0] + 0.15 * (pose.toe[0] - pose.heel[0]))
+        self.assertFalse(zmp_in_support(pose, pose.heel[0] + 0.10 * (pose.toe[0] - pose.heel[0])))
+        self.assertTrue(zmp_in_support(pose, posterior))
+        self.assertTrue(zmp_in_support(pose, anterior))
 
     def test_eccentric_phase_increases_available_torque_by_135_percent(self) -> None:
         anthro = Anthropometry()

@@ -17,7 +17,7 @@ from .dynamics import (
     simulate,
     torque_presets,
 )
-from .kinematics import PhaseDurations
+from .kinematics import PhaseDurations, zmp_in_support, zmp_support_limits
 
 
 JOINTS = ("cheville", "genou", "hanche")
@@ -218,6 +218,8 @@ def simulate_condition(condition: Condition) -> tuple[list[dict[str, object]], d
     rows = []
     for frame, (state, result) in enumerate(zip(states, results)):
         limits = available_joint_torque_limits(state, condition.max_torques, condition.angle_adapt)
+        zmp_posterior_limit, zmp_anterior_limit = zmp_support_limits(state.pose)
+        zmp_supported = zmp_in_support(state.pose, result.cop_x)
         joint_angles = {
             "cheville": degrees(state.q[0]),
             "genou": degrees(state.q[1] - state.q[0]),
@@ -261,7 +263,10 @@ def simulate_condition(condition: Condition) -> tuple[list[dict[str, object]], d
             "com_ax_m_s2": result.com_acceleration[0],
             "com_ay_m_s2": result.com_acceleration[1],
             "cop_x_m": result.cop_x,
-            "cop_in_foot": state.pose.heel[0] <= result.cop_x <= state.pose.toe[0],
+            "zmp_posterior_limit_m": zmp_posterior_limit,
+            "zmp_anterior_limit_m": zmp_anterior_limit,
+            "zmp_in_support": zmp_supported,
+            "cop_in_foot": zmp_supported,
             "grf_x_N": result.ground_reaction[0],
             "grf_y_N": result.ground_reaction[1],
             "dynamic_moment_z_Nm": result.dynamic_moment_z,
@@ -298,6 +303,7 @@ def condition_summary(condition: Condition, rows: list[dict[str, object]], actua
         "actual_backend": actual_backend,
         "frames": len(rows),
         "cop_outside_foot_frames": sum(1 for row in rows if not bool(row["cop_in_foot"])),
+        "zmp_outside_support_frames": sum(1 for row in rows if not bool(row["zmp_in_support"])),
         "over_limit_frames": sum(
             1
             for row in rows

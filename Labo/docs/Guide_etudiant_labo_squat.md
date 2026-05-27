@@ -11,7 +11,7 @@ Le laboratoire est construit pour être associé à des questions dans Studium/M
 À la fin du laboratoire, l’étudiant devrait pouvoir :
 
 1. expliquer comment la posture modifie la distribution des moments entre hanche, genou et cheville;
-2. interpréter le CoM, le CoP/ZMP et le polygone d’appui dans une tâche de squat;
+2. interpréter le CoM, le CoP/ZMP et la zone d’appui fonctionnelle dans une tâche de squat;
 3. distinguer couple brut et ratio d’effort normalisé par capacité articulaire;
 4. analyser l’effet de la morphologie et de la position de barre sur l’équilibre, puis proposer une compensation posturale;
 5. analyser l’effet de la charge, de la vitesse et des longueurs segmentaires;
@@ -46,7 +46,7 @@ Lancer une simulation baseline. Identifier les angles articulaires, les vitesses
 Questions d’analyse :
 
 - Le pic de couple au genou survient-il au point bas ou pendant la remontée?
-- Le CoP reste-t-il dans le pied?
+- Le ZMP reste-t-il dans la zone d’appui fonctionnelle?
 - Quelle articulation a le ratio d’effort le plus élevé?
 
 ### Bloc 2 — Posture : hanche vs genou
@@ -73,12 +73,12 @@ Questions d’analyse :
 
 - À pose identique, comment la prise de barre déplace-t-elle le CoM au point bas et le CoP/ZMP pendant le mouvement?
 - Une cuisse plus longue ou le profil `femme enceinte` rend-il la même stratégie posturale plus difficile à équilibrer?
-- Dans quels cas le CoP sort-il du pied, et pendant combien de frames?
+- Dans quels cas le ZMP sort-il de la zone d’appui, et pendant combien de frames?
 - La prise qui améliore l’équilibre réduit-elle nécessairement le ratio d’effort de toutes les articulations?
 
-Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le CoP dans le pied, puis enregistrer la condition adaptée. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
+Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le ZMP dans la zone d’appui, puis enregistrer la condition adaptée. La zone retenue exclut les 15 % postérieurs de la projection du pied : le bord du talon constitue une alerte, même si le point est encore sous la silhouette du pied. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
 
-Variables à extraire : `squat_com_x_m`, `squat_cop_x_m`, `cop_outside_foot_frames`, excursion du CoP, pics de couples et ratios d’effort.
+Variables à extraire : `squat_com_x_m`, `squat_cop_x_m`, `zmp_outside_support_frames`, excursion du ZMP, pics de couples et ratios d’effort.
 
 Lien littérature attendu : Chan & Sigward (2020), Kim et al. (2021), Schoenfeld (2010).
 
@@ -86,9 +86,9 @@ Lien littérature attendu : Chan & Sigward (2020), Kim et al. (2021), Schoenfeld
 
 Comparer `stability_forward` et `stability_backward`.
 
-Hypothèse : une posture peut être biomécaniquement exigeante sans être acceptable si le CoP sort du pied.
+Hypothèse : une posture peut être biomécaniquement exigeante sans être acceptable si le ZMP sort de la zone d’appui fonctionnelle.
 
-Variables à extraire : CoP, CoM, couleur d’alerte du GUI, moments normalisés.
+Variables à extraire : ZMP, CoM, couleur d’alerte du GUI, moments normalisés.
 
 Lien littérature attendu : Chan & Sigward (2020), Kitamura et al. (2019).
 
