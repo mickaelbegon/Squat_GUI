@@ -18,7 +18,7 @@ Le code contient aussi un backend optionnel pour brancher `biobuddy` et `biorbd`
 
 ## Utilisation pedagogique
 
-Le checkbox `activer` dans `Parcours didactique` affiche une consigne a la fois:
+Le checkbox `activer` dans `Parcours didactique` affiche une consigne a la fois. Le controle ou la figure a regarder est surligne dans la couleur du mot cle de l'etape; les alertes biomecaniques rouges restent prioritaires:
 
 1. choisir `homme` ou `femme enceinte`;
 2. choisir la prise de barre;

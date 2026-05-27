@@ -108,9 +108,57 @@ class SquatGui(tk.Tk):
         self.status_var = tk.StringVar(value=detect_optional_backends().message)
         self.didactic_mode_var = tk.BooleanVar(value=False)
         self.didactic_step = 0
+        self._didactic_canvas_colors: dict[tk.Canvas, str] = {}
 
         self._build_layout()
         self.recompute()
+
+    @staticmethod
+    def _configure_didactic_styles(style: ttk.Style) -> None:
+        focus_styles = {
+            "Sujet": ("#d9f0eb", "#16756d"),
+            "Barre": ("#f7e7d5", "#b05e16"),
+            "Charge": ("#dceff4", "#237f9f"),
+            "Phase": ("#ebe7f6", "#6d5ea8"),
+            "Pose": ("#e0f0e2", "#2e7d54"),
+            "Results": ("#e6eff7", "#276c92"),
+        }
+        for name, (background, border) in focus_styles.items():
+            style.configure(
+                f"Guide{name}.TLabelframe",
+                background=background,
+                foreground=border,
+                bordercolor=border,
+                lightcolor=border,
+                darkcolor=border,
+            )
+            style.configure(f"Guide{name}.TLabelframe.Label", background=background, foreground=border)
+        for name, (background, border) in focus_styles.items():
+            style.configure(
+                f"Guide{name}.TCombobox",
+                fieldbackground=background,
+                background=background,
+                bordercolor=border,
+                lightcolor=border,
+                darkcolor=border,
+                arrowcolor=border,
+            )
+            style.map(f"Guide{name}.TCombobox", fieldbackground=[("readonly", background)])
+        style.configure(
+            "GuidePose.TButton",
+            background="#e0f0e2",
+            foreground="#2e7d54",
+            bordercolor="#2e7d54",
+            font=("Helvetica", 10, "bold"),
+        )
+        style.map("GuidePose.TButton", background=[("active", "#d1e8d5")])
+        style.configure(
+            "GuidePhase.Treeview",
+            fieldbackground="#ebe7f6",
+            background="#ebe7f6",
+            bordercolor="#6d5ea8",
+        )
+        style.configure("GuidePhase.Treeview.Heading", foreground="#6d5ea8", font=("Helvetica", 9, "bold"))
 
     def _build_layout(self) -> None:
         style = ttk.Style(self)
@@ -120,6 +168,7 @@ class SquatGui(tk.Tk):
         style.configure("TLabel", background="#f2f4f1", foreground="#22312a")
         style.configure("TCheckbutton", background="#f2f4f1")
         style.configure("TButton", padding=6)
+        self._configure_didactic_styles(style)
 
         root = ttk.Frame(self, padding=10)
         root.pack(fill="both", expand=True)
@@ -162,126 +211,126 @@ class SquatGui(tk.Tk):
         self.didactic_label.tag_configure("pose", foreground="#2e7d54", font=("Helvetica", 9, "bold"))
         self.didactic_label.tag_configure("alerte", foreground="#c9332c", font=("Helvetica", 9, "bold"))
         ttk.Button(guide_box, text="Suivant", command=self.advance_didactic_guide).grid(row=0, column=2, padx=4, pady=3)
-        self.update_didactic_guide()
 
-        parameter_box = ttk.LabelFrame(left, text="Parametres")
-        parameter_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
-        parameter_box.columnconfigure(0, weight=1)
-        parameter_box.columnconfigure(1, weight=1)
-        identity = ttk.Frame(parameter_box)
+        self.parameter_box = ttk.LabelFrame(left, text="Parametres")
+        self.parameter_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
+        self.parameter_box.columnconfigure(0, weight=1)
+        self.parameter_box.columnconfigure(1, weight=1)
+        identity = ttk.Frame(self.parameter_box)
         identity.grid(row=0, column=0, columnspan=2, sticky="ew", padx=4, pady=3)
         identity.columnconfigure(0, weight=1)
         identity.columnconfigure(1, weight=1)
         ttk.Label(identity, text="Sujet").grid(row=0, column=0, sticky="w")
         ttk.Label(identity, text="Prise barre").grid(row=0, column=1, sticky="w")
-        profile_menu = ttk.Combobox(identity, textvariable=self.subject_profile_var, values=SUBJECT_PROFILES, state="readonly", width=14)
-        profile_menu.grid(row=1, column=0, sticky="ew", padx=(0, 3))
-        profile_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
-        bar_menu = ttk.Combobox(identity, textvariable=self.bar_position_var, values=BAR_POSITIONS, state="readonly", width=12)
-        bar_menu.grid(row=1, column=1, sticky="ew", padx=(3, 0))
-        bar_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
-        self._add_scale(parameter_box, "Charge %BW (sujet 70 kg)", self.load_var, 0, 100, 10, 1, 2)
-        duration_box = ttk.LabelFrame(parameter_box, text="Durees des phases (s)")
-        duration_box.grid(row=2, column=0, sticky="ew", padx=(4, 2), pady=3)
-        for column, (label, variable) in enumerate(
+        self.profile_menu = ttk.Combobox(identity, textvariable=self.subject_profile_var, values=SUBJECT_PROFILES, state="readonly", width=14)
+        self.profile_menu.grid(row=1, column=0, sticky="ew", padx=(0, 3))
+        self.profile_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
+        self.bar_menu = ttk.Combobox(identity, textvariable=self.bar_position_var, values=BAR_POSITIONS, state="readonly", width=12)
+        self.bar_menu.grid(row=1, column=1, sticky="ew", padx=(3, 0))
+        self.bar_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
+        self.charge_box = self._add_scale(self.parameter_box, "Charge %BW (sujet 70 kg)", self.load_var, 0, 100, 10, 1, 2)
+        self.duration_box = ttk.LabelFrame(self.parameter_box, text="Durees des phases (s)")
+        self.duration_box.grid(row=2, column=0, sticky="ew", padx=(4, 2), pady=3)
+        for column, (label, variable, values) in enumerate(
             (
-                ("excent.", self.eccentric_duration_var),
-                ("isomet.", self.isometric_duration_var),
-                ("concent.", self.concentric_duration_var),
+                ("excent.", self.eccentric_duration_var, (2.0, 2.5, 3.0, 3.5, 4.0)),
+                ("isomet.", self.isometric_duration_var, (0.0, 0.5, 1.0, 1.5, 2.0)),
+                ("concent.", self.concentric_duration_var, (2.0, 2.5, 3.0, 3.5, 4.0)),
             )
         ):
-            duration_box.columnconfigure(column, weight=1)
-            ttk.Label(duration_box, text=label).grid(row=0, column=column)
-            duration = ttk.Combobox(duration_box, textvariable=variable, values=(0.0, 0.5, 1.0, 1.5, 2.0), state="readonly", width=4)
+            self.duration_box.columnconfigure(column, weight=1)
+            ttk.Label(self.duration_box, text=label).grid(row=0, column=column)
+            duration = ttk.Combobox(self.duration_box, textvariable=variable, values=values, state="readonly", width=4)
             duration.grid(row=1, column=column, sticky="ew", padx=2, pady=(0, 3))
             duration.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
-        lengths = ttk.LabelFrame(parameter_box, text="Longueurs (%)")
-        lengths.grid(row=2, column=1, sticky="ew", padx=(2, 4), pady=3)
+        self.lengths_box = ttk.LabelFrame(self.parameter_box, text="Longueurs (%)")
+        self.lengths_box.grid(row=2, column=1, sticky="ew", padx=(2, 4), pady=3)
         for column, (label, variable) in enumerate((("tibia", self.shank_var), ("cuisse", self.thigh_var), ("tronc", self.trunk_var))):
-            lengths.columnconfigure(column, weight=1)
-            ttk.Label(lengths, text=label).grid(row=0, column=column)
-            length_menu = ttk.Combobox(lengths, textvariable=variable, values=(-5.0, -2.5, 0.0, 2.5, 5.0), state="readonly", width=4)
+            self.lengths_box.columnconfigure(column, weight=1)
+            ttk.Label(self.lengths_box, text=label).grid(row=0, column=column)
+            length_menu = ttk.Combobox(self.lengths_box, textvariable=variable, values=(-5.0, -2.5, 0.0, 2.5, 5.0), state="readonly", width=4)
             length_menu.grid(row=1, column=column, sticky="ew", padx=2, pady=(0, 3))
             length_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
-        options = ttk.Frame(parameter_box)
+        options = ttk.Frame(self.parameter_box)
         options.grid(row=3, column=0, columnspan=2, sticky="ew", padx=4, pady=(3, 4))
         ttk.Checkbutton(options, text="wedge 20 deg", variable=self.wedge_var, command=self.on_parameter_changed).pack(side="left")
         ttk.Checkbutton(options, text="CoM segments + barre", variable=self.show_segment_com_var, command=self.redraw).pack(side="left", padx=(8, 0))
 
-        torque_box = ttk.LabelFrame(left, text="Couples max")
-        torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
+        self.torque_box = ttk.LabelFrame(left, text="Couples max")
+        self.torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         for col in range(3):
-            torque_box.columnconfigure(col, weight=1)
+            self.torque_box.columnconfigure(col, weight=1)
         for col, joint in enumerate(("cheville", "genou", "hanche")):
-            ttk.Label(torque_box, text=joint).grid(row=0, column=col, padx=4)
-            entry = ttk.Entry(torque_box, textvariable=self.max_torque_vars[joint], width=7)
+            ttk.Label(self.torque_box, text=joint).grid(row=0, column=col, padx=4)
+            entry = ttk.Entry(self.torque_box, textvariable=self.max_torque_vars[joint], width=7)
             entry.grid(row=1, column=col, sticky="ew", padx=4)
             entry.bind("<FocusOut>", lambda _event: self.on_parameter_changed())
             entry.bind("<Return>", lambda _event: self.on_parameter_changed())
         ttk.OptionMenu(
-            torque_box,
+            self.torque_box,
             self.torque_preset_var,
             self.torque_preset_var.get(),
             *torque_presets(70.0, 1.70),
             command=lambda _value: self.apply_torque_preset(),
         ).grid(row=2, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
-        ttk.Checkbutton(torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.on_parameter_changed).grid(row=3, column=0, columnspan=2)
-        ttk.Checkbutton(torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=3, column=2)
+        ttk.Checkbutton(self.torque_box, text="max-angle", variable=self.angle_adapt_var, command=self.on_parameter_changed).grid(row=3, column=0, columnspan=2)
+        ttk.Checkbutton(self.torque_box, text="show", variable=self.show_torque_bounds_var, command=self.redraw).grid(row=3, column=2)
 
-        plot_box = ttk.LabelFrame(left, text="Resultats")
-        plot_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        self.plot_box = ttk.LabelFrame(left, text="Resultats")
+        self.plot_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         for col in range(4):
-            plot_box.columnconfigure(col, weight=1)
-        self.plot_menu = ttk.Combobox(plot_box, textvariable=self.plot_choice, values=PLOT_CHOICES, state="readonly")
+            self.plot_box.columnconfigure(col, weight=1)
+        self.plot_menu = ttk.Combobox(self.plot_box, textvariable=self.plot_choice, values=PLOT_CHOICES, state="readonly")
         self.plot_menu.grid(row=0, column=0, columnspan=4, sticky="ew", padx=4, pady=(2, 4))
         self.plot_menu.bind("<<ComboboxSelected>>", lambda _event: self.on_plot_choice_changed())
         for index, name in enumerate(self.show_vars):
-            checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
+            checkbutton = ttk.Checkbutton(self.plot_box, text=name, variable=self.show_vars[name], command=self.redraw)
             checkbutton.grid(row=1, column=index, sticky="w", padx=4)
             self.show_checkbuttons[name] = checkbutton
-        quantity_menu = ttk.OptionMenu(plot_box, self.quantity_var, self.quantity_var.get(), "position", "vitesse", "acceleration", command=lambda _value: self.redraw())
+        quantity_menu = ttk.OptionMenu(self.plot_box, self.quantity_var, self.quantity_var.get(), "position", "vitesse", "acceleration", command=lambda _value: self.redraw())
         quantity_menu.grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(6, 2))
         self.quantity_controls.append(quantity_menu)
         for index, name in enumerate(self.com_component_vars):
-            checkbutton = ttk.Checkbutton(plot_box, text=name, variable=self.com_component_vars[name], command=self.redraw)
+            checkbutton = ttk.Checkbutton(self.plot_box, text=name, variable=self.com_component_vars[name], command=self.redraw)
             checkbutton.grid(row=2, column=index + 2, sticky="w", padx=4, pady=(6, 2))
             self.com_controls.append(checkbutton)
         for control in self.com_controls:
             control.state(["disabled"])
         ttk.Checkbutton(
-            plot_box,
+            self.plot_box,
             text="3 subplots",
             variable=self.subplot_mode_var,
             command=self.update_plot_choices,
         ).grid(row=3, column=0, columnspan=2, sticky="w", padx=4, pady=(4, 2))
         ttk.Checkbutton(
-            plot_box,
+            self.plot_box,
             text="low quality",
             variable=self.low_quality_sprites_var,
             command=self.redraw,
         ).grid(row=3, column=2, sticky="w", padx=4, pady=(4, 2))
         ttk.Checkbutton(
-            plot_box,
+            self.plot_box,
             text="temps %",
             variable=self.normalize_time_var,
             command=self.redraw,
         ).grid(row=3, column=3, sticky="w", padx=4, pady=(4, 2))
 
-        table_box = ttk.LabelFrame(root, text="Conditions enregistrees", width=420, height=318)
-        table_box.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
-        table_box.grid_propagate(False)
-        table_box.rowconfigure(1, weight=1)
-        table_box.columnconfigure(0, weight=1)
-        table_buttons = ttk.Frame(table_box)
+        self.table_box = ttk.LabelFrame(root, text="Conditions enregistrees", width=420, height=318)
+        self.table_box.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
+        self.table_box.grid_propagate(False)
+        self.table_box.rowconfigure(1, weight=1)
+        self.table_box.columnconfigure(0, weight=1)
+        table_buttons = ttk.Frame(self.table_box)
         table_buttons.grid(row=0, column=0, sticky="ew", padx=4, pady=4)
         table_buttons.columnconfigure(0, weight=1)
         table_buttons.columnconfigure(1, weight=1)
-        ttk.Button(table_buttons, text="Ajouter", command=self.record_condition).grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        self.add_condition_button = ttk.Button(table_buttons, text="Ajouter", command=self.record_condition)
+        self.add_condition_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
         self.delete_condition_button = ttk.Button(table_buttons, text="Supprimer", command=self.delete_selected_conditions)
         self.delete_condition_button.grid(row=0, column=1, sticky="ew", padx=(3, 0))
         self.delete_condition_button.state(["disabled"])
         columns = ("numero", "profil", "prise", "squat", "charge", "phases", "wedge", "tibia", "cuisse", "tronc", "cheville", "genou", "hanche")
-        self.conditions_table = ttk.Treeview(table_box, columns=columns, show="headings", height=7, selectmode="extended")
+        self.conditions_table = ttk.Treeview(self.table_box, columns=columns, show="headings", height=7, selectmode="extended")
         headings = {
             "numero": "#",
             "profil": "sujet",
@@ -316,12 +365,12 @@ class SquatGui(tk.Tk):
             self.conditions_table.heading(column, text=headings[column])
             self.conditions_table.column(column, width=widths[column], anchor="center", stretch=True)
         self.conditions_table.grid(row=1, column=0, sticky="nsew", padx=4, pady=(4, 0))
-        table_scroll = ttk.Scrollbar(table_box, orient="horizontal", command=self.conditions_table.xview)
+        table_scroll = ttk.Scrollbar(self.table_box, orient="horizontal", command=self.conditions_table.xview)
         table_scroll.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 4))
         self.conditions_table.configure(xscrollcommand=table_scroll.set)
         self.conditions_table.bind("<<TreeviewSelect>>", self.on_table_selection_changed)
         self.conditions_table.bind("<Button-1>", self.on_table_click)
-        file_box = ttk.Frame(table_box)
+        file_box = ttk.Frame(self.table_box)
         file_box.grid(row=3, column=0, sticky="ew", padx=4, pady=(0, 4))
         file_box.columnconfigure(0, weight=1)
         file_box.columnconfigure(1, weight=1)
@@ -363,6 +412,7 @@ class SquatGui(tk.Tk):
         self.plot_canvas.bind("<Configure>", self.schedule_redraw)
 
         ttk.Label(root, textvariable=self.status_var).grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
+        self.update_didactic_guide()
 
     def _add_scale(
         self,
@@ -374,7 +424,7 @@ class SquatGui(tk.Tk):
         resolution: float,
         row: int,
         columnspan: int = 1,
-    ) -> None:
+    ) -> ttk.LabelFrame:
         box = ttk.LabelFrame(parent, text=label)
         box.grid(row=row, column=0, columnspan=columnspan, sticky="ew", padx=4, pady=2)
         box.columnconfigure(0, weight=1)
@@ -392,6 +442,51 @@ class SquatGui(tk.Tk):
 
         var.trace_add("write", sync_label)
         sync_label()
+        return box
+
+    def update_didactic_focus(self) -> None:
+        if not hasattr(self, "profile_menu"):
+            return
+        self.profile_menu.configure(style="TCombobox")
+        self.bar_menu.configure(style="TCombobox")
+        for frame in (
+            self.parameter_box,
+            self.charge_box,
+            self.duration_box,
+            self.lengths_box,
+            self.torque_box,
+            self.plot_box,
+            self.table_box,
+        ):
+            frame.configure(style="TLabelframe")
+        self.add_condition_button.configure(style="TButton")
+        self.conditions_table.configure(style="Treeview")
+        self._didactic_canvas_colors.clear()
+        self.plot_canvas.configure(highlightthickness=1, highlightbackground="#c9d1c7")
+
+        if self.didactic_mode_var.get():
+            focus_steps = {
+                0: (("widget", self.profile_menu, "GuideSujet.TCombobox"),),
+                1: (("widget", self.bar_menu, "GuideBarre.TCombobox"),),
+                2: (("widget", self.charge_box, "GuideCharge.TLabelframe"),),
+                3: (("widget", self.duration_box, "GuidePhase.TLabelframe"),),
+                4: (("canvas", self.pose_canvas, "#2e7d54"),),
+                5: (("canvas", self.animation_canvas, "#2e7d54"), ("widget", self.play_button, "GuidePose.TButton")),
+                6: (("widget", self.plot_box, "GuideResults.TLabelframe"), ("plot_canvas", self.plot_canvas, "#276c92")),
+                7: (("widget", self.add_condition_button, "GuidePose.TButton"),),
+                8: (("widget", self.parameter_box, "GuideCharge.TLabelframe"),),
+                9: (("widget", self.table_box, "GuidePhase.TLabelframe"), ("widget", self.conditions_table, "GuidePhase.Treeview")),
+                10: (("widget", self.lengths_box, "GuideCharge.TLabelframe"), ("widget", self.torque_box, "GuideResults.TLabelframe")),
+            }
+            for target_type, widget, style_or_color in focus_steps[self.didactic_step]:
+                if target_type == "widget":
+                    widget.configure(style=style_or_color)
+                elif target_type == "canvas":
+                    self._didactic_canvas_colors[widget] = style_or_color
+                else:
+                    widget.configure(highlightthickness=4, highlightbackground=style_or_color)
+        if self.states:
+            self.redraw()
 
     def update_didactic_guide(self) -> None:
         steps = (
@@ -418,6 +513,7 @@ class SquatGui(tk.Tk):
         for text, tag in pieces:
             self.didactic_label.insert("end", text, () if tag is None else (tag,))
         self.didactic_label.configure(state="disabled")
+        self.update_didactic_focus()
 
     def advance_didactic_guide(self) -> None:
         if not self.didactic_mode_var.get():
@@ -786,10 +882,15 @@ class SquatGui(tk.Tk):
         return alerts
 
     def configure_alert_canvas(self, canvas: tk.Canvas, alerts: list[str]) -> None:
+        focus_color = self._didactic_canvas_colors.get(canvas)
         if alerts:
-            canvas.configure(bg=ALERT_BG, highlightbackground=ALERT_BORDER)
+            canvas.configure(bg=ALERT_BG, highlightbackground=ALERT_BORDER, highlightthickness=4)
         else:
-            canvas.configure(bg=CANVAS_BG, highlightbackground=OK_BORDER)
+            canvas.configure(
+                bg=CANVAS_BG,
+                highlightbackground=focus_color or OK_BORDER,
+                highlightthickness=4 if focus_color else 2,
+            )
 
     def draw_alert_banner(self, canvas: tk.Canvas, alerts: list[str], y: int) -> None:
         if not alerts:
