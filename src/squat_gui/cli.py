@@ -364,7 +364,7 @@ def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--thigh", type=float, default=0.0, help="Variation longueur cuisse en pourcent.")
     parser.add_argument("--trunk", type=float, default=0.0, help="Variation longueur tronc en pourcent.")
     parser.add_argument("--duration-excentrique", type=float, choices=(2.0, 2.5, 3.0, 3.5, 4.0), default=4.0)
-    parser.add_argument("--duration-isometrique", type=float, choices=(2.0, 2.5, 3.0, 3.5, 4.0), default=2.0)
+    parser.add_argument("--duration-isometrique", type=float, choices=(0.0, 0.5, 1.0, 1.5, 2.0), default=2.0)
     parser.add_argument("--duration-concentrique", type=float, choices=(2.0, 2.5, 3.0, 3.5, 4.0), default=4.0)
     parser.add_argument("--frames", type=int, default=81)
     parser.add_argument("--q-segment-deg", type=float, nargs=3, default=DEFAULT_SEGMENT_ANGLES_DEG, metavar=("SHANK", "THIGH", "TRUNK"))

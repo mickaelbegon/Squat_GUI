@@ -5,7 +5,7 @@ Interface graphique 2D pour explorer un squat avec:
 - modele pied, jambe, cuisse, tronc/tete/bras et barre, en prise `front`, `back` ou `over-head`;
 - sujet homme ou femme enceinte de reference, 70 kg pour 1.70 m, inerties gauche/droite combinees en 2D;
 - charge exprimee en `%BW` (pour le sujet de 70 kg) avec 11 choix de `0` a `100 %BW`, longueurs discretes et wedge de 20 deg;
-- mouvement en trois phases reglables: excentrique, isometrique et concentrique;
+- mouvement en trois phases reglables: excentrique et concentrique entre 2 et 4 s, isometrique entre 0 et 2 s;
 - cinematique d'ordre 5 type Yeadon, issue du profil `6x^5 - 15x^4 + 10x^3`;
 - dynamique inverse analytique 2D de demarrage;
 - calcul de la reaction au sol, du centre de pression, du CoM et de sa projection;
@@ -471,7 +471,8 @@ Arguments utiles:
 - `--load KG`: compatibilite avec les scripts historiques, prioritaire sur `%BW`;
 - `--wedge`: ajoute la talonnette de 20 deg;
 - `--shank`, `--thigh`, `--trunk`: variations de longueur en pourcentage;
-- `--duration-excentrique`, `--duration-isometrique`, `--duration-concentrique`: durees entre 2 et 4 s;
+- `--duration-excentrique`, `--duration-concentrique`: durees entre 2 et 4 s;
+- `--duration-isometrique`: duree entre 0 et 2 s;
 - `--joint-angles-deg ANKLE KNEE HIP`: angles articulaires finaux en degres;
 - `--q-segment-deg SHANK THIGH TRUNK`: angles segmentaires finaux en degres, convention interne du modele;
 - `--torque-preset anderson` ou `--torque-preset sportifs`;

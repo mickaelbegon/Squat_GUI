@@ -192,7 +192,7 @@ class SquatGui(tk.Tk):
         ):
             duration_box.columnconfigure(column, weight=1)
             ttk.Label(duration_box, text=label).grid(row=0, column=column)
-            duration = ttk.Combobox(duration_box, textvariable=variable, values=(2.0, 2.5, 3.0, 3.5, 4.0), state="readonly", width=4)
+            duration = ttk.Combobox(duration_box, textvariable=variable, values=(0.0, 0.5, 1.0, 1.5, 2.0), state="readonly", width=4)
             duration.grid(row=1, column=column, sticky="ew", padx=2, pady=(0, 3))
             duration.bind("<<ComboboxSelected>>", lambda _event: self.on_parameter_changed())
         lengths = ttk.LabelFrame(parameter_box, text="Longueurs (%)")
@@ -452,7 +452,7 @@ class SquatGui(tk.Tk):
     def phase_durations(self) -> PhaseDurations:
         return PhaseDurations(
             max(2.0, min(4.0, self.eccentric_duration_var.get())),
-            max(2.0, min(4.0, self.isometric_duration_var.get())),
+            max(0.0, min(2.0, self.isometric_duration_var.get())),
             max(2.0, min(4.0, self.concentric_duration_var.get())),
         )
 
@@ -1916,7 +1916,7 @@ class SquatGui(tk.Tk):
         legacy_duration = float(settings.get("duration_phase_s", 4.0))
         durations = PhaseDurations(
             max(2.0, min(4.0, float(settings.get("duration_excentrique_s", legacy_duration)))),
-            max(2.0, min(4.0, float(settings.get("duration_isometrique_s", 2.0)))),
+            max(0.0, min(2.0, float(settings.get("duration_isometrique_s", 2.0)))),
             max(2.0, min(4.0, float(settings.get("duration_concentrique_s", legacy_duration)))),
         )
         return simulate(
