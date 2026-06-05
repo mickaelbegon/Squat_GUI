@@ -68,6 +68,8 @@ Il y a deux niveaux possibles:
 - installation simple: le GUI se lance, avec le solveur analytique Python et les images de segments;
 - installation complete biorbd: le GUI utilise `biorbd` pour la dynamique inverse, le CoM, et le ZMP si la version installee expose `CalcZeroMomentPoint`.
 
+Pour une premiere installation, suivre uniquement les sections 0 a 5. Les sections 6 et 7 sur `biorbd` peuvent etre faites plus tard.
+
 ### 0. Vocabulaire minimal
 
 - `Terminal` sur macOS et `Anaconda Prompt` sur Windows sont les fenetres ou on tape les commandes.
@@ -75,6 +77,70 @@ Il y a deux niveaux possibles:
 - `squat-gui` sera le nom de l'environnement conda.
 - Quand une commande commence par `conda activate squat-gui`, il faut voir quelque chose comme `(squat-gui)` au debut de la ligne suivante.
 - Ne pas taper les signes `$` ou `>` si vous les voyez dans un tutoriel; ici les blocs de code contiennent seulement les commandes a copier.
+
+### 0.5. Les trois verifications qui evitent presque toutes les erreurs
+
+Avant de copier les commandes d'installation, verifier ces trois points.
+
+1. Vous etes dans le bon dossier du projet.
+
+Le dossier courant doit contenir au minimum:
+
+- `README.md`;
+- `pyproject.toml`;
+- le dossier `src`;
+- le dossier `assets`.
+
+Pour verifier sur Windows:
+
+```bat
+dir
+```
+
+Pour verifier sur macOS:
+
+```bash
+ls
+```
+
+Si ces fichiers n'apparaissent pas, vous n'etes pas dans le bon dossier. C'est frequent apres extraction d'un `.zip`: il peut y avoir un dossier dans un dossier, par exemple `Squat_GUI-main\Squat_GUI-main`, ou vous pouvez etre reste dans `Downloads`.
+
+2. L'environnement conda doit etre cree avant d'etre active.
+
+La commande:
+
+```bash
+conda activate squat-gui
+```
+
+ne fonctionne que si cette commande a deja reussi au moins une fois:
+
+```bash
+conda create -n squat-gui python=3.11 -y
+```
+
+Si vous voyez `EnvironmentNameNotFound: Could not find conda environment: squat-gui`, ce n'est pas grave: cela veut simplement dire que l'environnement n'a pas encore ete cree. Revenir a la section 3 et commencer par `conda create`.
+
+3. Si conda bloque sur des conditions d'utilisation, les accepter.
+
+Sur certaines installations recentes de conda/Anaconda, `conda create` peut s'arreter avec un message du type `Terms of Service have not been accepted`. Dans ce cas, executer:
+
+```bash
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+```
+
+Puis relancer:
+
+```bash
+conda create -n squat-gui python=3.11 -y
+```
+
+Si `conda tos` n'existe pas, mettre conda a jour puis reessayer:
+
+```bash
+conda update -n base conda -y
+```
 
 ### 1. Installer Conda
 
@@ -124,6 +190,15 @@ Pour Mac Intel ancien, utiliser plutot Miniforge ou un installateur Intel dispon
 
 Si le projet est fourni en dossier ou en `.zip`, placer le dossier `Squat_GUI` dans `Documents`.
 
+Cas le plus frequent avec un ZIP:
+
+1. Telecharger le `.zip`.
+2. L'extraire.
+3. Renommer le dossier extrait en `Squat_GUI` si necessaire.
+4. Deplacer ce dossier dans `Documents`.
+5. Ouvrir `Anaconda Prompt` sur Windows ou `Terminal` sur macOS.
+6. Aller dans le dossier du projet.
+
 Si le projet est disponible via Git, installer Git puis cloner le depot. Exemple, a adapter avec la vraie URL du depot:
 
 Windows:
@@ -156,16 +231,44 @@ macOS:
 cd ~/Documents/Squat_GUI
 ```
 
+Verifier ensuite que le dossier est complet.
+
+Windows:
+
+```bat
+dir README.md pyproject.toml src assets
+```
+
+macOS:
+
+```bash
+ls README.md pyproject.toml src assets
+```
+
+Si une erreur indique qu'un fichier ou dossier est introuvable, ne pas continuer l'installation. Rechercher le vrai dossier qui contient `pyproject.toml`, puis refaire le `cd`.
+
 ### 3. Creer l'environnement conda
 
 Dans `Anaconda Prompt` sur Windows, ou dans `Terminal` sur macOS:
 
 ```bash
 conda create -n squat-gui python=3.11 -y
+```
+
+Si conda affiche une erreur sur des conditions d'utilisation non acceptees (`Terms of Service`), executer les deux commandes suivantes, puis relancer le `conda create`:
+
+```bash
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main
+conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r
+```
+
+Quand `conda create` est termine, activer l'environnement:
+
+```bash
 conda activate squat-gui
 ```
 
-Verifier que le debut de la ligne contient `(squat-gui)`.
+Verifier que le debut de la ligne contient `(squat-gui)`. Si ce n'est pas le cas, ne pas installer les paquets tout de suite: reessayer `conda activate squat-gui`.
 
 Installer les paquets de base:
 
@@ -398,6 +501,9 @@ biorbd actif (ZMP biorbd): ...
 ### 9. Problemes frequents
 
 - `conda n'est pas reconnu`: fermer puis rouvrir `Anaconda Prompt` ou `Terminal`. Sur macOS, lancer `~/miniconda3/bin/conda init zsh`, fermer puis rouvrir.
+- `EnvironmentNameNotFound: squat-gui`: l'environnement n'a pas encore ete cree. Lancer `conda create -n squat-gui python=3.11 -y`, attendre la fin, puis seulement ensuite `conda activate squat-gui`.
+- `Terms of Service have not been accepted`: lancer `conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/main`, puis `conda tos accept --override-channels --channel https://repo.anaconda.com/pkgs/r`, et relancer la commande qui avait bloque.
+- `DirectoryNotFoundError`, `No such file or directory`, ou `pyproject.toml` introuvable: vous n'etes pas dans le dossier racine du projet. Aller dans le dossier qui contient `README.md`, `pyproject.toml`, `src` et `assets`.
 - `No module named squat_gui`: vous n'etes probablement pas dans le dossier `Squat_GUI`, ou `python -m pip install -e .` n'a pas ete lance.
 - `No module named PIL`: lancer `conda install -c conda-forge pillow -y`.
 - `No module named biorbd`: lancer `conda install -c conda-forge biorbd -y`, ou continuer avec le backend analytique.
