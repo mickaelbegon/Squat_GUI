@@ -5,13 +5,13 @@ from __future__ import annotations
 import json
 from functools import lru_cache
 from math import cos, sin
-from pathlib import Path
 from typing import Callable
 
 from .kinematics import Vector
+from .resources import asset_path
 
 
-ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "side_view_segments"
+ASSET_DIR = asset_path("side_view_segments")
 
 
 @lru_cache(maxsize=1)

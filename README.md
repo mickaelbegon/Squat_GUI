@@ -59,6 +59,101 @@ Le profil `femme enceinte` conserve les parametres de membres inferieurs de la r
 
 Le wedge fait tourner le pied de 20 deg en surelevant le talon dans la geometrie 2D et dans le `.bioMod` genere. La pose debout de reference applique simultanement `-20 deg` a la cheville, afin de conserver la jambe et le tronc verticaux hors de la position basse. Le contact reste represente sur le plan du sol horizontal; il s'agit donc d'une exploration du changement de configuration, et non d'un modele de contact complet du wedge.
 
+## Version locale "un clic" pour les etudiants
+
+L'objectif de cette option est que l'etudiant n'installe pas Python, ne cree pas d'environnement conda et ne tape aucune commande. Il recoit une application deja empaquetee.
+
+Ce que recoit l'etudiant:
+
+- Windows: un fichier `.zip` contenant le dossier `Squat GUI`, puis double-clic sur `Squat GUI.exe`;
+- macOS: un fichier `.zip` contenant `Squat GUI.app`, puis double-clic sur l'application.
+
+Ce que fait la personne qui prepare le cours:
+
+1. construire l'application une fois sur Windows pour les etudiants Windows;
+2. construire l'application une fois sur macOS pour les etudiants macOS;
+3. tester les deux fichiers obtenus sur un ordinateur propre;
+4. distribuer les `.zip`.
+
+Les fichiers de packaging sont dans `packaging/`:
+
+- `packaging/squat_gui.spec`: configuration PyInstaller;
+- `packaging/build_windows.ps1`: build Windows;
+- `packaging/build_macos.sh`: build macOS;
+- `packaging/squat_gui_launcher.py`: point d'entree GUI pour l'application empaquetee.
+
+### Construire la version macOS
+
+Sur un Mac, ouvrir `Terminal`, aller dans le dossier du projet, activer l'environnement qui contient les dependances voulues, puis lancer:
+
+```bash
+conda activate squat-gui
+bash packaging/build_macos.sh
+```
+
+Sorties attendues:
+
+- `dist/Squat GUI.app`;
+- `dist/Squat GUI/`.
+
+Distribuer de preference `dist/Squat GUI.app` compresse en `.zip`. Si macOS bloque l'application parce qu'elle n'est pas signee, faire clic droit sur `Squat GUI.app`, puis `Ouvrir`, puis confirmer `Ouvrir`.
+
+### Construire la version Windows
+
+Sur Windows, ouvrir `Anaconda Prompt` ou PowerShell dans le dossier du projet, activer l'environnement qui contient les dependances voulues, puis lancer:
+
+```powershell
+conda activate squat-gui
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+```
+
+Sortie attendue:
+
+```text
+dist\Squat GUI\Squat GUI.exe
+```
+
+Distribuer le dossier complet `dist\Squat GUI` compresse en `.zip`. Il ne faut pas sortir le `.exe` de son dossier, car les bibliotheques et les assets sont a cote.
+
+### Inclure ou non biorbd dans l'application
+
+Par defaut, les scripts creent un build simple qui n'embarque pas `biorbd`/`biobuddy`. C'est le choix recommande pour une premiere distribution etudiante: le fichier est plus leger et moins sensible aux bibliotheques natives.
+
+Pour produire un build complet qui tente d'embarquer les backends optionnels, activer explicitement:
+
+macOS:
+
+```bash
+conda activate squat-gui
+SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS=1 bash packaging/build_macos.sh
+```
+
+Windows PowerShell:
+
+```powershell
+conda activate squat-gui
+$env:SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS = "1"
+powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
+```
+
+Pour un deploiement etudiant, le plus prudent est de produire deux builds propres:
+
+- build simple, sans `biorbd`, plus leger et plus facile a distribuer;
+- build complet, avec `biorbd`, a tester sur une machine Windows/macOS comparable a celles des etudiants.
+
+Important: le build complet doit etre fait depuis un environnement ou `import biorbd` et les fonctions utilisees par le GUI fonctionnent reellement. Si un paquet `biorbd` est present mais incompatible avec la version de Python, rester sur le build simple ou corriger l'environnement avant de construire.
+
+### Verification minimale avant distribution
+
+Avant d'envoyer le `.zip`, tester:
+
+1. ouvrir l'application par double-clic;
+2. verifier que les images refined s'affichent;
+3. changer sujet, prise de barre, wedge et charge;
+4. cliquer sur `Ajouter`;
+5. creer une deuxieme condition et comparer;
+6. sauvegarder puis recharger un JSON de conditions.
+
 ## Installation de A a Z
 
 Cette section est volontairement tres detaillee. L'objectif est qu'une personne qui n'a jamais installe Python puisse lancer le GUI.

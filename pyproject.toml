@@ -13,6 +13,10 @@ biomechanics = [
 dev = [
     "pytest",
 ]
+packaging = [
+    "pillow",
+    "pyinstaller",
+]
 
 [project.scripts]
 squat-gui = "squat_gui.app:main"

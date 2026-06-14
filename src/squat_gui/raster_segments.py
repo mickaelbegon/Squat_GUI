@@ -9,9 +9,10 @@ from pathlib import Path
 from typing import Callable
 
 from .kinematics import Vector
+from .resources import asset_path
 
 
-ASSET_DIR = Path(__file__).resolve().parents[2] / "assets" / "raster_segments"
+ASSET_DIR = asset_path("raster_segments")
 
 
 @dataclass(frozen=True)

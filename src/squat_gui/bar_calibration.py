@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from functools import lru_cache
 import json
-from pathlib import Path
+
+from .resources import asset_path
 
 
-CALIBRATION_PATH = Path(__file__).resolve().parents[2] / "assets" / "raster_segments" / "bar_com_points.json"
+CALIBRATION_PATH = asset_path("raster_segments", "bar_com_points.json")
 PHYSICAL_REFERENCE_QUALITY = "refined"
 
 
