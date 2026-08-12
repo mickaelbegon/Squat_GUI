@@ -4,8 +4,7 @@ on:
   pull_request:
     branches: [main]
   push:
-    branches:
-      - codex/release-0.2.0-rc
+    branches: [main]
 
 permissions:
   contents: read
