@@ -107,7 +107,15 @@ class ExportSchemaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "squat.xlsx"
             previews = Path(temporary) / "previews"
-            report = write_xlsx(output, self.rows(), preview_directory=previews)
+            with patch.dict(
+                os.environ, {"SQUAT_GUI_XLSX_WRITER": "artifact-tool"}, clear=False
+            ):
+                try:
+                    report = write_xlsx(
+                        output, self.rows(), preview_directory=previews
+                    )
+                except RuntimeError as error:
+                    self.skipTest(f"Runtime Artifact Tool indisponible: {error}")
             self.assertEqual(report["writer"], "artifact-tool")
             self.assertEqual(report["formulaErrors"], [])
             self.assertEqual(len(report["sheets"]), 11)

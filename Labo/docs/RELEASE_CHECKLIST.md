@@ -2,6 +2,7 @@
 
 ## Qualité logicielle
 
+- [x] CI GitHub Actions ajoutée pour Python 3.11, installation propre et suite complète.
 - [x] Tests ciblés des corrections d’audit.
 - [x] Suite complète avec le backend biorbd réel.
 - [x] Smoke test GUI natif : navigation, curseur, JSON, condition et export Excel.
