@@ -23,6 +23,10 @@ function Ensure-PythonModule {
 
 Ensure-PythonModule -ModuleName "PyInstaller" -PackageName "pyinstaller"
 Ensure-PythonModule -ModuleName "PIL" -PackageName "pillow"
+Ensure-PythonModule -ModuleName "numpy" -PackageName "numpy"
+Ensure-PythonModule -ModuleName "imageio" -PackageName "imageio"
+Ensure-PythonModule -ModuleName "imageio_ffmpeg" -PackageName "imageio-ffmpeg"
+Ensure-PythonModule -ModuleName "openpyxl" -PackageName "openpyxl"
 
 & $PythonBin -m PyInstaller --clean --noconfirm packaging\squat_gui.spec
 $env:SQUAT_GUI_SMOKE_TEST = "1"

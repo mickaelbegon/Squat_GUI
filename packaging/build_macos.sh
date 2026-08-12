@@ -24,6 +24,10 @@ ensure_python_module() {
 
 ensure_python_module PyInstaller pyinstaller
 ensure_python_module PIL pillow
+ensure_python_module numpy numpy
+ensure_python_module imageio imageio
+ensure_python_module imageio_ffmpeg imageio-ffmpeg
+ensure_python_module openpyxl openpyxl
 
 "$PYTHON_BIN" -m PyInstaller --clean --noconfirm packaging/squat_gui.spec
 SQUAT_GUI_SMOKE_TEST=1 "dist/Squat GUI/Squat GUI"

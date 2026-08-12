@@ -1,7 +1,20 @@
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
 generated/
 build/
 dist/
+outputs/
+exports/
+.coverage
+htmlcov/
 .DS_Store
+
+# Matériel enseignant local — ne pas publier dans le dépôt étudiant public.
+Labo/Corrige_enseignant_labo_squat.docx
+Labo/corrige/
+Labo/data_exemple/
+Labo/studium_import/
+Labo/scenarios/scenarios_labo_squat.yaml
+Labo/scripts/generate_questions_from_gui_summary.py

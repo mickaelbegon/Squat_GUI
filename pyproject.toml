@@ -1,14 +1,15 @@
 [project]
 name = "squat-gui"
-version = "0.1.0"
+version = "0.2.0"
 description = "Interface 2D pour explorer la cinematique et la dynamique inverse d'un squat."
 requires-python = ">=3.9"
-dependencies = []
+dependencies = [
+    "openpyxl>=3.1,<4",
+]
 
 [project.optional-dependencies]
 biomechanics = [
     "biorbd",
-    "biobuddy",
 ]
 dev = [
     "pytest",
@@ -17,11 +18,20 @@ packaging = [
     "pillow",
     "pyinstaller",
 ]
+video = [
+    "pillow",
+    "numpy",
+    "imageio",
+    "imageio-ffmpeg",
+]
 
 [project.scripts]
 squat-gui = "squat_gui.app:main"
 squat-gui-cli = "squat_gui.cli:main"
 squat-bar-com-editor = "squat_gui.bar_com_editor:main"
+
+[tool.setuptools.package-data]
+squat_gui = ["*.mjs"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

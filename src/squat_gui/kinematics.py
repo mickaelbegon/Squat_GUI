@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import cos, sin
+from math import atan2, cos, pi, sin
 
 from .anthropometry import Anthropometry
 from .yeadon import QuinticBoundaryTrajectory
@@ -11,6 +11,7 @@ from .yeadon import QuinticBoundaryTrajectory
 
 Vector = tuple[float, float]
 ZMP_POSTERIOR_MARGIN_FRACTION = 0.15
+DEFAULT_SAMPLE_PERIOD_S = 0.05
 
 
 @dataclass(frozen=True)
@@ -58,6 +59,17 @@ def phase_durations(duration: float | PhaseDurations) -> PhaseDurations:
     return PhaseDurations(half, 0.0, half)
 
 
+def frame_count_for_duration(
+    duration: float | PhaseDurations,
+    sample_period_s: float = DEFAULT_SAMPLE_PERIOD_S,
+) -> int:
+    """Return an endpoint-inclusive sample count for a target time step."""
+    durations = phase_durations(duration)
+    if sample_period_s <= 0.0:
+        raise ValueError("Le pas temporel doit être strictement positif.")
+    return max(2, int(round(durations.total / sample_period_s)) + 1)
+
+
 def add(a: Vector, b: Vector) -> Vector:
     return (a[0] + b[0], a[1] + b[1])
 
@@ -93,8 +105,78 @@ def local_point(origin: Vector, angle: float, anterior: float, longitudinal: flo
     )
 
 
-def zmp_support_limits(pose: Pose) -> tuple[float, float]:
-    """Return functional AP support limits on the horizontal ZMP plane.
+def _wrapped_angle(angle: float) -> float:
+    """Wrap an angle to [-pi, pi)."""
+    return (angle + pi) % (2.0 * pi) - pi
+
+
+def segment_orientations(pose: Pose) -> dict[str, float]:
+    """Return absolute segment orientations in the global x-y frame.
+
+    Orientations are measured from global +x, with counter-clockwise angles
+    positive. Segment directions are heel->toe, ankle->knee, knee->hip and
+    hip->shoulder.
+    """
+
+    endpoints = {
+        "foot": (pose.heel, pose.toe),
+        "shank": (pose.ankle, pose.knee),
+        "thigh": (pose.knee, pose.hip),
+        "trunk": (pose.hip, pose.shoulder),
+    }
+    return {
+        name: atan2(end[1] - start[1], end[0] - start[0])
+        for name, (start, end) in endpoints.items()
+    }
+
+
+def joint_angles_from_orientations(orientations: dict[str, float]) -> dict[str, float]:
+    """Reconstruct the signed joint angles used by Squat_GUI.
+
+    Ankle dorsiflexion is positive relative to the foot. Knee flexion keeps
+    the historical negative sign, and hip flexion is positive for a trunk
+    orientation anterior to the thigh in the current squat convention.
+    """
+
+    foot = orientations["foot"]
+    shank = orientations["shank"]
+    thigh = orientations["thigh"]
+    trunk = orientations["trunk"]
+    return {
+        "cheville": _wrapped_angle(pi / 2.0 - _wrapped_angle(shank - foot)),
+        "genou": _wrapped_angle(shank - thigh),
+        "hanche": _wrapped_angle(thigh - trunk),
+    }
+
+
+def joint_angles_from_pose(pose: Pose) -> dict[str, float]:
+    return joint_angles_from_orientations(segment_orientations(pose))
+
+
+def joint_values_from_segment_values(values: tuple[float, float, float]) -> dict[str, float]:
+    shank, thigh, trunk = values
+    return {
+        "cheville": shank,
+        "genou": thigh - shank,
+        "hanche": trunk - thigh,
+    }
+
+
+def segment_values_from_joint_values(ankle: float, knee: float, hip: float) -> tuple[float, float, float]:
+    shank = ankle
+    thigh = shank + knee
+    trunk = thigh + hip
+    return (shank, thigh, trunk)
+
+
+def geometric_support_limits(pose: Pose) -> tuple[float, float]:
+    """Return the projected heel-to-toe support interval on the ground plane."""
+
+    return (min(pose.heel[0], pose.toe[0]), max(pose.heel[0], pose.toe[0]))
+
+
+def functional_support_limits(pose: Pose) -> tuple[float, float]:
+    """Return functional AP support limits on the horizontal support plane.
 
     The rear 15% of the projected foot is treated as a heel-edge safety
     margin: a ZMP in this region is geometrically under the foot, but not an
@@ -102,15 +184,22 @@ def zmp_support_limits(pose: Pose) -> tuple[float, float]:
     wedge, the posterior boundary is moved to the ankle projection to prevent
     accepting a rear-loaded pose on the inclined support.
     """
-    projected_length = pose.toe[0] - pose.heel[0]
-    posterior = pose.heel[0] + ZMP_POSTERIOR_MARGIN_FRACTION * projected_length
+    geometric_posterior, geometric_anterior = geometric_support_limits(pose)
+    projected_length = geometric_anterior - geometric_posterior
+    posterior = geometric_posterior + ZMP_POSTERIOR_MARGIN_FRACTION * projected_length
     if pose.heel[1] > pose.toe[1] + 1e-9:
         posterior = max(posterior, pose.ankle[0])
-    return posterior, pose.toe[0]
+    return posterior, geometric_anterior
+
+
+def zmp_support_limits(pose: Pose) -> tuple[float, float]:
+    """Compatibility alias for the functional support interval."""
+
+    return functional_support_limits(pose)
 
 
 def zmp_in_support(pose: Pose, zmp_x: float) -> bool:
-    posterior, anterior = zmp_support_limits(pose)
+    posterior, anterior = functional_support_limits(pose)
     return posterior <= zmp_x <= anterior
 
 
@@ -172,7 +261,13 @@ def pose_from_angles(anthro: Anthropometry, q: tuple[float, float, float]) -> Po
     shoulder = add(hip, scale(unit_from_vertical(trunk_angle), trunk.length))
     bar = local_point(shoulder, trunk_angle, anthro.bar_anterior_offset, anthro.bar_longitudinal_offset)
 
-    foot_com = add(heel, rotate_clockwise((foot.length * foot.com_fraction, 0.025), anthro.wedge_angle))
+    foot_com = add(
+        heel,
+        rotate_clockwise(
+            (foot.length * foot.com_fraction, anthro.foot_com_transverse_offset),
+            anthro.wedge_angle,
+        ),
+    )
     shank_com = add(ankle, scale(unit_from_vertical(shank_angle), shank.length * shank.com_fraction))
     thigh_com = add(knee, scale(unit_from_vertical(thigh_angle), thigh.length * thigh.com_fraction))
     trunk_com = local_point(hip, trunk_angle, trunk.com_anterior_offset, trunk.length * trunk.com_fraction)
@@ -200,6 +295,67 @@ def pose_from_angles(anthro: Anthropometry, q: tuple[float, float, float]) -> Po
     )
     com = (weighted_x / anthro.total_mass, weighted_y / anthro.total_mass)
     return Pose(heel, toe, ankle, knee, hip, shoulder, bar, com, segment_coms)
+
+
+def com_velocities(
+    anthro: Anthropometry,
+    q: tuple[float, float, float],
+    qdot: tuple[float, float, float],
+) -> dict[str, Vector]:
+    """Return analytical global velocities of all segment CoM points."""
+
+    shank_angle, thigh_angle, trunk_angle = tuple(angle + anthro.wedge_angle for angle in q)
+    shank_dot, thigh_dot, trunk_dot = qdot
+    shank = anthro.shank
+    thigh = anthro.thigh
+    trunk = anthro.trunk
+
+    zero = (0.0, 0.0)
+    knee_velocity = scale(angle_derivative_vector(shank_angle, shank.length), shank_dot)
+    hip_velocity = add(
+        knee_velocity,
+        scale(angle_derivative_vector(thigh_angle, thigh.length), thigh_dot),
+    )
+    shoulder_velocity = add(
+        hip_velocity,
+        scale(angle_derivative_vector(trunk_angle, trunk.length), trunk_dot),
+    )
+    return {
+        "foot": zero,
+        "shank": scale(
+            angle_derivative_vector(shank_angle, shank.length * shank.com_fraction),
+            shank_dot,
+        ),
+        "thigh": add(
+            knee_velocity,
+            scale(
+                angle_derivative_vector(thigh_angle, thigh.length * thigh.com_fraction),
+                thigh_dot,
+            ),
+        ),
+        "trunk": add(
+            hip_velocity,
+            scale(
+                local_angle_derivative_vector(
+                    trunk_angle,
+                    trunk.com_anterior_offset,
+                    trunk.length * trunk.com_fraction,
+                ),
+                trunk_dot,
+            ),
+        ),
+        "bar": add(
+            shoulder_velocity,
+            scale(
+                local_angle_derivative_vector(
+                    trunk_angle,
+                    anthro.bar_anterior_offset,
+                    anthro.bar_longitudinal_offset,
+                ),
+                trunk_dot,
+            ),
+        ),
+    }
 
 
 def com_accelerations(anthro: Anthropometry, q: tuple[float, float, float], qdot: tuple[float, float, float], qddot: tuple[float, float, float]) -> dict[str, Vector]:

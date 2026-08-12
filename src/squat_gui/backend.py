@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from contextlib import redirect_stderr
+from hashlib import sha256
+from importlib import import_module
 from importlib.util import find_spec
+from io import StringIO
 from math import cos, radians, sin
 import os
 from pathlib import Path
@@ -20,39 +24,54 @@ class OptionalBackendStatus:
 
 @dataclass(frozen=True)
 class BiomodCacheKey:
-    load_tenths_kg: int
+    load_kg: float
     shank_percent: float
     thigh_percent: float
     trunk_percent: float
+    scaling_mode: str
     subject_profile: str
     bar_position: str
     wedge_angle_deg: float
 
 
+def optional_module_importable(name: str) -> bool:
+    """Return True only when an optional package and its native extensions import."""
+    if find_spec(name) is None:
+        return False
+    try:
+        with redirect_stderr(StringIO()):
+            import_module(name)
+    except Exception:
+        return False
+    return True
+
+
 def detect_optional_backends() -> OptionalBackendStatus:
-    biobuddy_available = find_spec("biobuddy") is not None
-    biorbd_available = find_spec("biorbd") is not None
-    if biobuddy_available and biorbd_available:
-        message = "biobuddy/biorbd disponibles"
+    biobuddy_available = optional_module_importable("biobuddy")
+    biorbd_available = optional_module_importable("biorbd")
+    if biorbd_available:
+        message = "biorbd disponible"
+        if biobuddy_available:
+            message += "; biobuddy disponible"
+        else:
+            message += "; biobuddy optionnel absent"
     else:
-        missing = []
-        if not biobuddy_available:
-            missing.append("biobuddy")
-        if not biorbd_available:
-            missing.append("biorbd")
-        message = "backend analytique actif; paquets manquants: " + ", ".join(missing)
+        message = "backend analytique actif; biorbd absent ou incompatible"
+        if biobuddy_available:
+            message += "; biobuddy seul ne fournit pas le backend dynamique"
     return OptionalBackendStatus(biobuddy_available, biorbd_available, message)
 
 
 def biomod_cache_key(anthro: Anthropometry) -> BiomodCacheKey:
     return BiomodCacheKey(
-        load_tenths_kg=int(round(10.0 * anthro.bar_mass)),
-        shank_percent=round((anthro.shank_scale - 1.0) * 100.0, 1),
-        thigh_percent=round((anthro.thigh_scale - 1.0) * 100.0, 1),
-        trunk_percent=round((anthro.trunk_scale - 1.0) * 100.0, 1),
+        load_kg=round(anthro.bar_mass, 12),
+        shank_percent=round((anthro.shank_scale - 1.0) * 100.0, 12),
+        thigh_percent=round((anthro.thigh_scale - 1.0) * 100.0, 12),
+        trunk_percent=round((anthro.trunk_scale - 1.0) * 100.0, 12),
+        scaling_mode=anthro.scaling_mode,
         subject_profile=anthro.subject_profile,
         bar_position=anthro.bar_position,
-        wedge_angle_deg=round(anthro.wedge_angle_deg, 1),
+        wedge_angle_deg=round(anthro.wedge_angle_deg, 12),
     )
 
 
@@ -79,12 +98,18 @@ def _segment_block(
     initial_angle_z: float = 0.0,
 ) -> str:
     inertia = max(segment.inertia, 1e-8)
-    out = [f"segment\t{segment.name}\n", f"\tparent\t{parent}\n", _matrix_block(translation, initial_angle_z)]
+    out = [
+        f"segment\t{segment.name}\n",
+        f"\tparent\t{parent}\n",
+        _matrix_block(translation, initial_angle_z),
+    ]
     if rotations is not None:
         out.append(f"\trotations\t{rotations}\n")
         out.append("\trangesQ\n\t\t-3.141593\t3.141593\n")
     out.append(f"\tmass\t{segment.mass:.8f}\n")
-    out.append(f"\tCenterOfMass\t{segment.com_anterior_offset:.8f}\t{segment.length * segment.com_fraction:.8f}\t0.00000000\n")
+    out.append(
+        f"\tCenterOfMass\t{segment.com_anterior_offset:.8f}\t{segment.length * segment.com_fraction:.8f}\t0.00000000\n"
+    )
     out.append("\tinertia\n")
     out.append(f"\t\t{inertia:.8f}\t0.00000000\t0.00000000\n")
     out.append(f"\t\t0.00000000\t{inertia:.8f}\t0.00000000\n")
@@ -108,7 +133,7 @@ def biomod_text(anthro: Anthropometry) -> str:
         "\tparent\tbase\n"
         f"{_matrix_block((0.0, foot.length * sin(radians(anthro.wedge_angle_deg)), 0.0), -radians(anthro.wedge_angle_deg))}"
         f"\tmass\t{foot.mass:.8f}\n"
-        f"\tCenterOfMass\t{foot.length * foot.com_fraction:.8f}\t0.02500000\t0.00000000\n"
+        f"\tCenterOfMass\t{foot.length * foot.com_fraction:.8f}\t{anthro.foot_com_transverse_offset:.8f}\t0.00000000\n"
         "\tinertia\n"
         f"\t\t{foot.inertia:.8f}\t0.00000000\t0.00000000\n"
         f"\t\t0.00000000\t{foot.inertia:.8f}\t0.00000000\n"
@@ -154,14 +179,20 @@ class BiorbdModelCache:
     def path_for(self, anthro: Anthropometry) -> Path:
         key = biomod_cache_key(anthro)
         profile = key.subject_profile.replace(" ", "_")
+        fingerprint = sha256(repr(key).encode("utf-8")).hexdigest()[:12]
         stem = (
-            f"squat_load{key.load_tenths_kg / 10.0:04.1f}_"
-            f"shank{key.shank_percent:+.1f}_"
-            f"thigh{key.thigh_percent:+.1f}_"
-            f"trunk{key.trunk_percent:+.1f}_"
-            f"{profile}_{key.bar_position}_wedge{key.wedge_angle_deg:.0f}"
+            f"squat_load{key.load_kg:05.2f}_"
+            f"shank{key.shank_percent:+.2f}_"
+            f"thigh{key.thigh_percent:+.2f}_"
+            f"trunk{key.trunk_percent:+.2f}_"
+            f"{key.scaling_mode.replace(' ', '_')}_"
+            f"{profile}_{key.bar_position}_wedge{key.wedge_angle_deg:.2f}_"
+            f"{fingerprint}"
         )
-        return self.directory / f"{stem.replace('+', 'p').replace('-', 'm').replace('.', 'd')}.bioMod"
+        return (
+            self.directory
+            / f"{stem.replace('+', 'p').replace('-', 'm').replace('.', 'd')}.bioMod"
+        )
 
     def model_for(self, anthro: Anthropometry):
         key = biomod_cache_key(anthro)

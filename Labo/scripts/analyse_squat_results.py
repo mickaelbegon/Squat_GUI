@@ -22,6 +22,7 @@ CONDITION_COLUMNS = (
     "shank_percent",
     "thigh_percent",
     "trunk_percent",
+    "anthropometry_mode",
     "duration_excentrique_s",
     "duration_isometrique_s",
     "duration_concentrique_s",
@@ -56,19 +57,34 @@ def mean(rows: list[dict[str, str]], column: str) -> float:
     return sum(number(row, column) for row in rows) / len(rows)
 
 
-def zmp_supported(row: dict[str, str]) -> bool:
-    return parse_bool(row.get("zmp_in_support", row["cop_in_foot"]))
+def available_numbers(rows: list[dict[str, str]], column: str) -> list[float]:
+    return [
+        float(row[column])
+        for row in rows
+        if column in row and row[column] not in ("", "None", None)
+    ]
+
+
+def support_point_in_functional_base(row: dict[str, str]) -> bool:
+    return parse_bool(row["support_point_in_functional_base"])
 
 
 def summarize_condition(condition_id: str, rows: list[dict[str, str]]) -> dict[str, object]:
-    outside_frames = sum(1 for frame in rows if not zmp_supported(frame))
+    cop_outside_frames = sum(
+        1
+        for frame in rows
+        if not parse_bool(frame["support_point_in_geometric_base"])
+    )
+    zmp_outside_frames = sum(
+        1 for frame in rows if not support_point_in_functional_base(frame)
+    )
     summary: dict[str, object] = {
         "scenario": condition_id,
         "frames": len(rows),
-        "cop_outside_foot_frames": outside_frames,
-        "cop_outside_foot_percent": 100.0 * outside_frames / len(rows),
-        "zmp_outside_support_frames": outside_frames,
-        "zmp_outside_support_percent": 100.0 * outside_frames / len(rows),
+        "cop_outside_foot_frames": cop_outside_frames,
+        "cop_outside_foot_percent": 100.0 * cop_outside_frames / len(rows),
+        "zmp_outside_support_frames": zmp_outside_frames,
+        "zmp_outside_support_percent": 100.0 * zmp_outside_frames / len(rows),
     }
     for column in CONDITION_COLUMNS:
         if column in rows[0]:
@@ -78,31 +94,39 @@ def summarize_condition(condition_id: str, rows: list[dict[str, str]]) -> dict[s
     if not squat_rows:
         squat_rows = [min(rows, key=lambda frame: number(frame, "com_y_m"))]
     summary["squat_com_x_m"] = mean(squat_rows, "com_x_m")
-    summary["squat_cop_x_m"] = mean(squat_rows, "cop_x_m")
+    summary["squat_support_point_x_m"] = mean(squat_rows, "support_point_x_m")
 
     for english, french in JOINT_MAP.items():
         summary[f"peak_{english}_torque_Nm"] = peak_abs(rows, f"{french}_torque_Nm")
-        summary[f"peak_{english}_effort"] = max(number(row, f"{french}_effort_percent") for row in rows) / 100.0
+        utilizations = available_numbers(rows, f"{french}_utilization_ratio")
+        summary[f"peak_{english}_effort"] = (
+            max(utilizations) if utilizations else None
+        )
         summary[f"peak_{english}_power_W"] = peak_abs(rows, f"{french}_power_W")
-        totals = [number(row, f"{french}_inverse_dynamics_total_Nm") for row in rows]
-        contacts = [number(row, f"{french}_contact_Nm") for row in rows]
-        remainders = [total - contact for total, contact in zip(totals, contacts)]
-        summary[f"peak_{english}_total_Nm"] = max(abs(value) for value in totals)
-        summary[f"peak_{english}_contact_Nm"] = max(abs(value) for value in contacts)
-        summary[f"peak_{english}_inertial_nonlinear_Nm"] = max(abs(value) for value in remainders)
-        exported = f"{french}_inertial_nonlinear_Nm"
-        if exported in rows[0]:
-            summary[f"{english}_component_identity_error_Nm"] = max(
-                abs(number(row, exported) - remainder)
-                for row, remainder in zip(rows, remainders)
+        for metric, suffix in (
+            ("total", "inverse_dynamics_total_Nm"),
+            ("mass_acceleration", "mass_acceleration_Nm"),
+            ("velocity_dependent", "velocity_dependent_Nm"),
+            ("gravity", "gravity_Nm"),
+            ("external_contact_effect", "external_contact_effect_Nm"),
+            ("reconstruction_residual", "inverse_dynamics_reconstruction_residual_Nm"),
+        ):
+            summary[f"peak_{english}_{metric}_Nm"] = peak_abs(
+                rows, f"{french}_{suffix}"
             )
 
     summary["peak_hip_to_knee_torque_ratio"] = (
         float(summary["peak_hip_torque_Nm"]) / float(summary["peak_knee_torque_Nm"])
     )
-    summary["cop_x_min_m"] = min(number(row, "cop_x_m") for row in rows)
-    summary["cop_x_max_m"] = max(number(row, "cop_x_m") for row in rows)
-    summary["cop_excursion_m"] = float(summary["cop_x_max_m"]) - float(summary["cop_x_min_m"])
+    summary["support_point_x_min_m"] = min(
+        number(row, "support_point_x_m") for row in rows
+    )
+    summary["support_point_x_max_m"] = max(
+        number(row, "support_point_x_m") for row in rows
+    )
+    summary["support_point_excursion_m"] = float(
+        summary["support_point_x_max_m"]
+    ) - float(summary["support_point_x_min_m"])
     summary["com_x_min_m"] = min(number(row, "com_x_m") for row in rows)
     summary["com_x_max_m"] = max(number(row, "com_x_m") for row in rows)
     summary["com_excursion_m"] = float(summary["com_x_max_m"]) - float(summary["com_x_min_m"])

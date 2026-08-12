@@ -25,16 +25,27 @@ ROOT = next(
 datas = [
     (str(ROOT / "assets"), "assets"),
     (str(ROOT / "examples"), "examples"),
+    (str(ROOT / "src" / "squat_gui" / "build_workbook.mjs"), "squat_gui"),
 ]
 binaries = []
 hiddenimports = [
     "PIL.Image",
     "PIL.ImageTk",
     "PIL._tkinter_finder",
+    "imageio",
+    "imageio_ffmpeg",
+    "numpy",
+    "openpyxl",
 ]
 
+for runtime_module in ("imageio", "imageio_ffmpeg", "openpyxl"):
+    module_datas, module_binaries, module_hiddenimports = collect_all(runtime_module)
+    datas += module_datas
+    binaries += module_binaries
+    hiddenimports += module_hiddenimports
+
 if os.environ.get("SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS") == "1":
-    for optional_module in ("biorbd", "biobuddy"):
+    for optional_module in ("biorbd",):
         try:
             importlib.import_module(optional_module)
         except Exception as error:
@@ -53,7 +64,7 @@ if os.environ.get("SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS") == "1":
         binaries += module_binaries
         hiddenimports += module_hiddenimports
 else:
-    print("Skipping optional biorbd/biobuddy collection; set SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS=1 for a complete build.")
+    print("Skipping optional biorbd collection; set SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS=1 for a complete build.")
 
 a = Analysis(
     [str(ROOT / "packaging" / "squat_gui_launcher.py")],
@@ -86,6 +97,11 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    version=(
+        str(ROOT / "packaging" / "windows_version_info.txt")
+        if sys.platform == "win32"
+        else None
+    ),
 )
 
 coll = COLLECT(
@@ -106,7 +122,7 @@ if sys.platform == "darwin":
         bundle_identifier="ca.umontreal.squat-gui",
         info_plist={
             "NSHighResolutionCapable": "True",
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": "0.2.0",
             "CFBundleDisplayName": "Squat GUI",
         },
     )

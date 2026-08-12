@@ -15,7 +15,7 @@ Le laboratoire est construit pour être associé à des questions dans Studium/M
 3. distinguer couple brut et ratio d’effort normalisé par capacité articulaire;
 4. analyser l’effet de la morphologie et de la position de barre sur l’équilibre, puis proposer une compensation posturale;
 5. analyser l’effet de la charge, de la vitesse et des longueurs segmentaires;
-6. décomposer un moment articulaire en couple total, effet du contact et efforts inertiels/non-linéaires;
+6. décomposer un moment articulaire en `M(q)q̈`, termes dépendant de `q̇` et gravité, puis distinguer l'effet externe du contact;
 7. relier les résultats simulés à des résultats expérimentaux publiés;
 8. formuler une recommandation pratique nuancée plutôt qu’une règle universelle.
 
@@ -37,11 +37,68 @@ python scripts/run_squat_batch.py --conditions scenarios/scenarios_labo_squat.cs
 python scripts/analyse_squat_results.py --results results_labo_squat/results.csv --out results_labo_squat/summary_metrics.csv
 ```
 
+## Tutoriel de prise en main du GUI
+
+Lancer l'interface depuis la racine du projet :
+
+```bash
+python -m squat_gui
+```
+
+Le tutoriel intégré suit une progression volontairement graduelle. Les résultats et les alertes restent masqués pendant l'étape **Observation**, afin de formuler une hypothèse avant de consulter les métriques.
+
+### 1. Préparer la condition
+
+1. Renseigner le sujet, la position de la barre, la charge et la posture basse.
+2. Pour une variation de longueur, choisir `longueur seule` afin d'isoler la géométrie, ou `morphotype recalibre` pour appliquer la sensibilité didactique documentée aux masses et inerties.
+3. Choisir un profil temporel : `Référence 4/2/4`, `Lent 6/2/6`, `Rapide 2/0,5/2`, `Sans pause 4/0/4`, `Descente lente / montée rapide 6/1/2` ou `Descente rapide / montée lente 2/1/6`.
+4. Vérifier les durées de descente, de pause et de remontée. Le pas temporel est fixé à `Δt = 0,05 s`; une modification manuelle des durées active le profil `Personnalisé`.
+5. Lancer la simulation, puis démarrer l'animation.
+
+### 2. Observer avant de mesurer
+
+Pendant **Observation**, décrire qualitativement la stratégie : déplacement du tronc et du bassin, progression des genoux, position apparente du centre de masse et phase qui semble la plus exigeante. Noter une prédiction sur l'articulation limitante et sur le risque de sortie de la zone d'appui.
+
+### 3. Examiner la cinématique
+
+Passer à **Cinématique**, puis utiliser le menu `Affichage` pour choisir les couches visibles : articulations, centre de masse global ou segmentaire, angles segmentaires et coordonnées articulaires. Survoler une articulation dans l'animation pour afficher ses coordonnées dans une infobulle.
+
+Dans la vue synchronisée :
+
+- choisir une articulation ou le CoM comme source;
+- comparer position, vitesse et accélération sur les trois graphiques alignés;
+- cliquer ou faire glisser le curseur vertical pour déplacer simultanément l'animation et les trois graphiques;
+- ouvrir l'inspecteur numérique pour lire les valeurs exactes de la frame courante;
+- masquer indépendamment les noms de phases ou leurs limites si elles gênent la lecture.
+- choisir le repère `absolu`, `centré` ou `normalisé`; en mode normalisé, tenir compte de l'avertissement indiquant que les différences de durée sont masquées.
+
+### 4. Examiner la dynamique
+
+Passer à **Dynamique** et comparer les forces de réaction au sol, le CoP/ZMP, les couples articulaires, les puissances et l'utilisation demande/capacité `U`. Les contrôles `max-angle (Anderson)` et `max-vitesse (Anderson)` modulent séparément la capacité active. Le régime est cohérent avec la puissance affichée : puissance positive en concentrique/génération, négative en excentrique/absorption et vitesse nulle en isométrique. Dans `couples détaillés`, utiliser `Affichage` pour masquer ou afficher séparément `M(q)q̈`, les termes dépendant de `q̇`, la gravité, le contact externe signé et le `total ID`.
+
+Interpréter `U = |couple requis| / capacité active disponible` comme une **faisabilité mécanique dans les hypothèses du modèle**. `U > 1` signale une demande supérieure à cette capacité modélisée, mais ne constitue pas un verdict absolu sur la réussite d'une personne. Le tableau des conditions donne `U max`, l'articulation limitante, le temps, la phase et le dépassement éventuel.
+
+Dans ce modèle à pied fixé, vérifier la reconstruction `total ID = M(q)q̈ + termes q̇ + gravité`. Le contact est présenté séparément : il ne doit pas être ajouté une seconde fois au total contraint. Revenir ensuite à l'hypothèse formulée en Observation et préciser ce qui est confirmé, infirmé ou reste ambigu.
+
+### 5. Comparer en contrôlant les variables
+
+Enregistrer d'abord une condition de référence. La sélectionner, cliquer sur `Dupliquer`, modifier un seul paramètre scientifique, puis cliquer sur `Ajouter`. Sélectionner ensuite les deux conditions et ouvrir l'onglet `Variables contrôlées` : il doit nommer le paramètre modifié et présenter les valeurs de référence et comparée avec leurs unités. Les différences de simple affichage ne sont pas comptées.
+
+Le menu `Affichage` centralise les courbes, composantes, axes, limites et couches de l'animation. Changer une couche modifie uniquement le rendu et ne relance pas la simulation.
+
+Lors d'une comparaison morphologique, vérifier dans la couche `Anthropométrie utilisée` que le mode est identique entre conditions, sauf si le mode lui-même constitue la variable étudiée. Les trois prises de barre modifient la géométrie et la dynamique, mais la barre est modélisée comme un point massique sans longueur ni inertie propre.
+
+### 6. Conserver une trace reproductible
+
+Enregistrer la condition lorsqu'elle doit être réutilisée. Pour une analyse complète, exporter le classeur Excel : chaque famille de métriques est placée dans un onglet dédié et la table anthropométrique effectivement utilisée est incluse. L'export vidéo MP4 permet de conserver l'animation et les couches d'affichage sélectionnées.
+
+Avant de poursuivre, vérifier que vous savez : sélectionner un preset temporel, afficher une coordonnée par survol, déplacer le curseur synchronisé, lire l'inspecteur numérique, distinguer les trois repères temporels, dupliquer une référence, vérifier les variables contrôlées et produire un export.
+
 ## Déroulement proposé
 
 ### Bloc 1 — Référence et lecture des sorties
 
-Lancer une simulation baseline. Identifier les angles articulaires, les vitesses, les accélérations, les moments, les puissances, le CoM, le CoP/ZMP et les ratios d’effort.
+Lancer une simulation baseline en suivant le tutoriel intégré. Formuler d'abord une hypothèse en mode Observation, puis identifier les angles articulaires, les vitesses, les accélérations, les moments, les puissances, le CoM, le CoP/ZMP et les ratios d'effort.
 
 Questions d’analyse :
 
@@ -78,7 +135,7 @@ Questions d’analyse :
 
 Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le ZMP dans la zone d’appui, puis enregistrer la condition adaptée. La zone retenue exclut les 15 % postérieurs de la projection du pied : le bord du talon constitue une alerte, même si le point est encore sous la silhouette du pied. Avec le wedge, la limite postérieure est la projection verticale de la cheville pour écarter les appuis excessivement postérieurs sur le talon surélevé. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
 
-Variables à extraire : `squat_com_x_m`, `squat_cop_x_m`, `zmp_outside_support_frames`, excursion du ZMP, pics de couples et ratios d’effort.
+Variables à extraire : `squat_com_x_m`, `squat_support_point_x_m`, `zmp_outside_support_frames`, excursion du point d’appui, pics de couples et ratios d’effort.
 
 Lien littérature attendu : Chan & Sigward (2020), Kim et al. (2021), Schoenfeld (2010).
 
@@ -104,11 +161,11 @@ Lien littérature attendu : Pürzel et al. (2025), Schoenfeld (2010).
 
 ### Bloc 6 — Durée du mouvement
 
-Comparer `duration_slow` et `duration_fast` avec posture, charge et prise de barre constantes.
+Comparer `duration_slow` et `duration_fast` avec posture, charge et prise de barre constantes. Dans le GUI, reproduire cette comparaison avec les presets `Lent 6/2/6` et `Rapide 2/0,5/2`, puis utiliser le curseur synchronisé pour comparer les mêmes événements du mouvement.
 
-Hypothèse : réduire la durée augmente les accélérations et peut modifier la part des efforts inertiels/non-linéaires dans le couple total.
+Hypothèse : réduire la durée augmente les accélérations et peut modifier les parts `M(q)q̈` et dépendante de `q̇` dans le couple total.
 
-Variables à extraire : couple total de dynamique inverse, effet du contact, efforts inertiels/non-linéaires (`total - contact`) et puissance.
+Variables à extraire : couple total de dynamique inverse, `M(q)q̈`, termes dépendant de `q̇`, gravité, effet externe signé du contact, résidu de reconstruction et puissance.
 
 Lien littérature attendu : Hannan & King (2022).
 
@@ -140,7 +197,7 @@ Le rapport doit inclure une hypothèse, un plan de simulations, une figure princ
 | Simulations reproductibles et bien comparées | 20 |
 | Analyse des moments, CoP/ZMP et ratios d’effort | 20 |
 | Équilibre morphologie / prise de barre et adaptation proposée | 15 |
-| Analyse dynamique total, contact, inertiels/non-linéaires et durée | 10 |
+| Analyse dynamique total, `M(q)q̈`, `q̇`, gravité, contact et durée | 10 |
 | Utilisation pertinente de la littérature | 20 |
 | Recommandation pratique nuancée | 10 |
 | Clarté des figures et tableaux | 5 |

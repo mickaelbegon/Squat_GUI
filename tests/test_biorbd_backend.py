@@ -1,16 +1,18 @@
 import math
 import tempfile
 import unittest
-from importlib.util import find_spec
 from pathlib import Path
 
 from squat_gui.anthropometry import Anthropometry
-from squat_gui.backend import BiorbdModelCache
+from squat_gui.backend import BiorbdModelCache, detect_optional_backends
 from squat_gui.dynamics import _contact_moments, simulate
 from squat_gui.kinematics import PhaseDurations, motion_state
 
 
-@unittest.skipUnless(find_spec("biorbd") is not None, "biorbd is not installed")
+@unittest.skipUnless(
+    detect_optional_backends().biorbd_available,
+    "biorbd is absent or cannot import its native extensions",
+)
 class BiorbdBackendTests(unittest.TestCase):
     def test_simulation_uses_cached_biorbd_model(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -60,6 +62,7 @@ class BiorbdBackendTests(unittest.TestCase):
             self.assertGreater(states[0].pose.heel[1], states[0].pose.toe[1])
             self.assertAlmostEqual(results[0].com[0], expected.pose.com[0], places=5)
             self.assertAlmostEqual(results[0].com[1], expected.pose.com[1], places=5)
+            self.assertTrue(all(result.backend == "biorbd" for result in results))
 
     def test_contact_component_is_computed_with_biorbd_external_force_set(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -75,13 +78,27 @@ class BiorbdBackendTests(unittest.TestCase):
             )
             state = states[2]
             result = results[2]
+            self.assertEqual(result.backend, "biorbd")
+            self.assertEqual(result.contact_source, "biorbd.ExternalForceSet")
             geometric = _contact_moments(state, result.ground_reaction, result.cop_x)
 
             for joint in ("cheville", "genou", "hanche"):
-                self.assertAlmostEqual(result.torque_components[joint]["contact"], geometric[joint], places=8)
                 self.assertAlmostEqual(
-                    result.torque_components[joint]["inertiels_non_lineaires"],
-                    result.torque_components[joint]["total"] - geometric[joint],
+                    result.torque_components[joint]["contact"],
+                    geometric[joint],
+                    places=8,
+                )
+                self.assertAlmostEqual(
+                    result.torque_components[joint]["total"],
+                    result.torque_components[joint]["mass_acceleration"]
+                    + result.torque_components[joint]["velocity"]
+                    + result.torque_components[joint]["gravity"],
+                    places=8,
+                )
+                self.assertAlmostEqual(
+                    result.torque_components[joint]["total_with_external_contact"],
+                    result.torque_components[joint]["total"]
+                    + result.torque_components[joint]["external_contact"],
                     places=8,
                 )
 

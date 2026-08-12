@@ -5,7 +5,7 @@ Interface graphique 2D pour explorer un squat avec:
 - modele pied, jambe, cuisse, tronc/tete/bras et barre, en prise `front`, `back` ou `over-head`;
 - sujet homme ou femme enceinte de reference, 70 kg pour 1.70 m, inerties gauche/droite combinees en 2D;
 - charge exprimee en `%BW` (pour le sujet de 70 kg) avec 11 choix de `0` a `100 %BW`, longueurs discretes et wedge de 20 deg;
-- mouvement en trois phases reglables: excentrique et concentrique entre 2 et 4 s, isometrique entre 0 et 2 s;
+- mouvement en trois phases reglables: excentrique et concentrique entre 2 et 6 s, isometrique entre 0 et 2 s;
 - cinematique d'ordre 5 type Yeadon, issue du profil `6x^5 - 15x^4 + 10x^3`;
 - dynamique inverse analytique 2D de demarrage;
 - calcul de la reaction au sol, du centre de pression, du CoM et de sa projection;
@@ -14,24 +14,45 @@ Interface graphique 2D pour explorer un squat avec:
 - relation couple max-angle optionnelle;
 - images `refined` par sujet et prise de barre, avec retour `low quality`.
 
-Le code contient aussi un backend optionnel pour brancher `biobuddy` et `biorbd`. Si ces paquets ne sont pas installes, l'application reste executable avec le solveur analytique pur Python.
+Le code contient aussi un backend optionnel `biorbd`; la présence éventuelle de `biobuddy` est diagnostiquée mais n'est pas requise par les calculs actuels. Si `biorbd` n'est pas installé, l'application reste exécutable avec le solveur analytique pur Python.
 
 ## Utilisation pedagogique
 
-Le checkbox `activer` dans `Parcours didactique` affiche une consigne a la fois. Le controle ou la figure a regarder est surligne dans la couleur du mot cle de l'etape; les alertes biomecaniques rouges restent prioritaires:
+Le switch dans `Parcours didactique` affiche une consigne a la fois et pilote une révélation progressive. Le contrôle ou la figure à regarder est surligné dans la couleur du mot clé de l'étape:
 
 1. choisir `homme` ou `femme enceinte`;
 2. choisir la prise de barre;
 3. augmenter progressivement la charge, initialement a `0 %BW`;
-4. regler les trois durees de phase;
+4. choisir un preset temporel ou régler indépendamment les trois durées de phase;
 5. definir la position basse en glissant genou, hanche et epaules;
-6. observer l'animation, le CoM, le CoP et les alertes;
-7. parcourir cinematique, centre de masse puis couples;
-8. cliquer sur `Ajouter`;
-9. construire une deuxieme condition;
-10. selectionner plusieurs conditions dans le tableau pour les comparer.
+6. observer l'animation seule et formuler une hypothèse, sans valeur ni courbe révélée;
+7. passer en `CINÉMATIQUE`, choisir la vue synchronisée et le repère temporel, déplacer le curseur et lire l'inspecteur numérique;
+8. passer en `DYNAMIQUE` pour les forces, le CoP/ZMP, les couples et les capacités;
+9. cliquer sur `Ajouter`;
+10. sélectionner la référence, cliquer sur `Dupliquer`, changer un seul paramètre puis ajouter le nouvel essai;
+11. sélectionner deux conditions et lire l'onglet `Variables contrôlées` pour vérifier les différences.
 
 Les longueurs segmentaires, les couples max et les couples detailles sont des outils avances. `Sauver conditions` et `Charger conditions` ecrivent/lisent un fichier JSON comprenant les widgets et, si demande, les conditions ajoutees au tableau.
+
+Les six presets temporels sont `Référence` (4/2/4 s), `Lent` (6/2/6 s), `Rapide` (2/0,5/2 s), `Sans pause` (4/0/4 s), `Descente lente / remontée rapide` (6/1/2 s) et son inverse (2/1/6 s). Les trois contrôles numériques restent disponibles; une combinaison qui ne correspond à aucun preset est indiquée `Personnalisé`.
+
+La simulation utilise par défaut un pas temporel constant `Δt=0,05 s`. Le nombre de frames inclut les deux extrémités et s'adapte donc à la durée totale : `N = durée/0,05 + 1` (201 frames pour 10 s, 281 pour le preset lent de 14 s). La lecture avance à 20 images/s et respecte le temps physique.
+
+Le sélecteur à côté du curseur propose `LIBRE`, `OBSERVATION`, `CINÉMATIQUE` et `DYNAMIQUE`. `OBSERVATION` masque courbes, temps, phases, valeurs, alertes et grandeurs mécaniques. `CINÉMATIQUE` limite les courbes aux articulations et au CoM, avec le choix position/vitesse/accélération. `DYNAMIQUE` ajoute forces, CoP/ZMP, poids, bases d'appui, couples et capacité. Le parcours didactique impose ces états dans cet ordre; hors parcours, le sélecteur reste directement contrôlable.
+
+En mode `LIBRE`, le menu `Affichage` centralise les couches de la figure de droite. Il permet notamment d'activer les coordonnées articulaires au survol, les orientations segmentaires, les angles articulaires, l'anthropométrie utilisée, le CoM global ou segmentaire, le point d'appui CoP/ZMP, la GRF, le poids, les bases géométrique/fonctionnelle et le bilan d'équilibre. Changer un état de révélation ou une couche ne relance pas la simulation et ne remplace pas les choix libres mémorisés. La ligne sous le curseur donne la frame, le temps absolu, le pas temporel `Δt`, le temps normalisé et la phase, sauf en `OBSERVATION` où elle reste masquée.
+
+La courbe `cinématique synchronisée` affiche simultanément position, vitesse et accélération sur trois axes empilés partageant exactement la même abscisse. La source peut être les angles articulaires ou le CoM; les unités et les lignes de zéro sont indiquées séparément sur chaque axe. Cliquer ou glisser dans n'importe lequel des trois axes déplace le même curseur rouge, l'animation et l'onglet `Valeurs au curseur`. Cet onglet donne, pour chaque courbe visible et chaque condition, la valeur échantillonnée à six décimales, son unité, son temps réel sur la courbe et sa phase.
+
+Le menu `Phases` des résultats contrôle séparément les deux limites de phase et les noms `excentrique`, `isométrique` et `concentrique`. Masquer les noms masque aussi la phase dans l'inspecteur numérique, sans modifier les calculs ni les données exportées.
+
+Le repère temporel offre trois lectures distinctes : `absolu` de 0 à la durée totale, `centré` sur le milieu de la pause basse et `normalisé` de 0 à 100 %. Le mode normalisé affiche un avertissement, car il rend comparables les événements relatifs mais masque les différences de durée. L'ancien repère normalisé `−100…+100` est remplacé par la convention `0…100 %`.
+
+Le menu `Affichage` est le point central de toutes les sélections visuelles : courbes articulaires, composantes horizontale/verticale, axes, limites de couple, phases et couches de l'animation. Ces choix déclenchent uniquement un nouveau rendu; aucune simulation n'est relancée.
+
+Pour une comparaison contrôlée, sélectionner une condition puis cliquer sur `Dupliquer`. La condition est copiée dans l'éditeur sans créer immédiatement une nouvelle ligne. Après modification d'un paramètre et `Ajouter`, la colonne `modifications contrôlées` et l'onglet `Variables contrôlées` listent les différences scientifiques; les réglages purement visuels sont volontairement exclus.
+
+La couche `Anthropometrie utilisee` montre le mode, les longueurs et masses effectives. Lorsque `CoM segmentaires + barre` est active, le survol d'un CoM donne sa position, sa masse, sa fraction/son offset, son inertie et ses contributions ponderees `m*x` et `m*y`. La couche `Echantillons i-1 / i / i+1` affiche trois frames distinctes avec temps absolu, phase, CoM, angles articulaires et les deux pas temporels disponibles.
 
 Limites de pose imposees par l'interface:
 
@@ -41,7 +62,7 @@ Limites de pose imposees par l'interface:
 
 ## Hypotheses des nouvelles conditions
 
-La barre est un segment ponctuel ajoute au modele `.bioMod`; sa masse est `70 * Charge %BW / 100`. Dans l'interface, la charge prend 11 valeurs discretes: `0, 10, ..., 100 %BW`. Sa position locale par rapport aux epaules est modifiee selon la prise: en avant pour `front`, en arriere pour `back`, et au milieu des mains au-dessus des epaules pour `over-head`. Le CoM du segment regroupe `tronc-tete-bras` est aussi deplace pour representer le changement de posture des bras.
+La barre est un segment ponctuel ajoute au modele `.bioMod`; sa masse est `70 * Charge %BW / 100`. Dans l'interface, la charge prend 11 valeurs discretes: `0, 10, ..., 100 %BW`. Sa position locale par rapport aux epaules est modifiee selon la prise: en avant pour `front`, en arriere pour `back`, et au milieu des mains au-dessus des epaules pour `over-head`. Le CoM du segment regroupe `tronc-tete-bras` est aussi deplace pour representer le changement de posture des bras. Les trois prises modifient donc géométrie, CoM, dynamique, cache `.bioMod`, export et comparaison, mais ni la masse de barre ni l'inertie propre du tronc à sujet/morphotype identiques. La barre reste ponctuelle: son orientation, sa longueur et son inertie propre ne sont pas modélisées.
 
 La version `femme enceinte` est actuellement un scenario didactique initial, pas un modele clinique valide: elle conserve une masse corporelle totale de 70 kg pour permettre des comparaisons controlees, deplace le CoM du segment tronc de `+0.060 m` vers l'avant et multiplie son moment d'inertie par `1.18`. Ces deux coefficients sont centralises dans [anthropometry.py](src/squat_gui/anthropometry.py) et devront etre remplaces ou calibres a partir d'un jeu anthropometrique de grossesse choisi pour le cours.
 
@@ -57,7 +78,45 @@ La convention d'origine est importante dans ce GUI:
 
 Le profil `femme enceinte` conserve les parametres de membres inferieurs de la reference de base puis ajoute la modification didactique de grossesse au segment superieur. Le segment `tronc-tete-bras` n'est pas un segment anatomique isole de la table: il regroupe le reste du corps et la posture des bras autour de la barre. Sa position de CoM et son ajustement d'inertie restent donc des hypotheses pedagogiques explicites.
 
+Deux modes rendent les variations de longueur interprétables :
+
+- `longueur seule` isole la géométrie en conservant les masses et les inerties de référence; le facteur interne d'inertie compense exactement le changement de longueur;
+- `morphotype recalibre` est une sensibilité didactique à densité linéique constante: chaque fraction massique de référence est multipliée par l'échelle de longueur du segment, les quatre masses sont renormalisées à la masse corporelle, puis les inerties sont recalculées par `I = m(kL)^2`.
+
+Le second mode n'est pas une régression anthropométrique populationnelle. Le mode, la règle, les fractions massiques, masses, longueurs et inerties effectivement utilisées sont affichés et exportés.
+
 Le wedge fait tourner le pied de 20 deg en surelevant le talon dans la geometrie 2D et dans le `.bioMod` genere. La pose debout de reference applique simultanement `-20 deg` a la cheville, afin de conserver la jambe et le tronc verticaux hors de la position basse. Le contact reste represente sur le plan du sol horizontal; il s'agit donc d'une exploration du changement de configuration, et non d'un modele de contact complet du wedge.
+
+### Repere et conventions cinematiques
+
+- Le repere global est plan : `x` est horizontal vers l'avant, `y` vertical vers le haut; les coordonnees sont en metres.
+- Les orientations segmentaires absolues sont mesurees depuis l'axe global `+x`, dans le sens anti-horaire positif. Elles sont exportees pour le pied, la jambe, la cuisse et le tronc.
+- L'angle de cheville est la dorsiflexion signee de la jambe relativement au pied. Cette reconstruction tient compte du wedge.
+- L'angle de genou conserve la convention historique du modele : la flexion de squat est negative.
+- L'angle de hanche est positif lorsque le tronc est oriente vers l'avant relativement a la cuisse dans la convention du squat.
+- Les calculs utilisent les radians; le GUI et les exports pedagogiques utilisent les degres.
+
+Le CoM global est reconstruit sans approximation supplementaire depuis les points segmentaires affiches :
+
+```text
+x_COM = somme(m_i * x_i) / somme(m_i)
+y_COM = somme(m_i * y_i) / somme(m_i)
+```
+
+La barre est un point materiel dans le backend analytique. Sa masse contribue au CoM global; sa longueur, sa fraction de CoM et son inertie analytique sont nulles. Ses offsets d'attache relativement au tronc sont exportes separement.
+
+### Derivees du centre de masse
+
+Le backend analytique calcule les vitesses et accelerations de chaque CoM segmentaire par derivation de la geometrie, puis applique la meme ponderation massique que pour la position globale. La vitesse du CoM exportee n'est donc plus une valeur nulle de remplacement. Les tests comparent ces derivees analytiques aux differences centrees des positions et vitesses.
+
+Le panneau trois echantillons fournit les donnees pour refaire manuellement, a une frame interieure:
+
+```text
+v_i ≈ (x_(i+1) - x_(i-1)) / (t_(i+1) - t_(i-1))
+a_i ≈ (v_(i+1) - v_(i-1)) / (t_(i+1) - t_(i-1))
+```
+
+Aux premieres et dernieres frames, l'echantillon absent est indique comme indisponible plutot que dupliquer une frame. Le CSV conserve une ligne par frame avec le temps, `Δt` et toutes les coordonnees necessaires a ces calculs.
 
 ## Version locale "un clic" pour les etudiants
 
@@ -117,7 +176,7 @@ Distribuer le dossier complet `dist\Squat GUI` compresse en `.zip`. Il ne faut p
 
 ### Inclure ou non biorbd dans l'application
 
-Par defaut, les scripts creent un build simple qui n'embarque pas `biorbd`/`biobuddy`. C'est le choix recommande pour une premiere distribution etudiante: le fichier est plus leger et moins sensible aux bibliotheques natives.
+Par défaut, les scripts créent un build simple qui n'embarque pas `biorbd`. C'est le choix recommandé pour une première distribution étudiante : le fichier est plus léger et moins sensible aux bibliothèques natives.
 
 Pour produire un build complet qui tente d'embarquer les backends optionnels, activer explicitement:
 
@@ -144,6 +203,10 @@ Pour un deploiement etudiant, le plus prudent est de produire deux builds propre
 Important: le build complet doit etre fait depuis un environnement ou `import biorbd` et les fonctions utilisees par le GUI fonctionnent reellement. Si un paquet `biorbd` est present mais incompatible avec la version de Python, rester sur le build simple ou corriger l'environnement avant de construire.
 
 ### Verification minimale avant distribution
+
+La recette reproductible complète, y compris les validateurs d'archive avec profil
+utilisateur vierge, est décrite dans
+[`packaging/RECETTE_DISTRIBUTION.md`](packaging/RECETTE_DISTRIBUTION.md).
 
 Avant d'envoyer le `.zip`, tester:
 
@@ -656,9 +719,10 @@ python -m squat_gui run \
   --joint-angles-deg 22 -80 78 \
   --torque-preset sportifs \
   --backend analytical \
-  --frames 101 \
+  --frames 0 \
   --out exports/front_80bw.csv \
-  --summary exports/front_80bw_summary.json
+  --summary exports/front_80bw_summary.json \
+  --xlsx exports/front_80bw.xlsx
 ```
 
 Exemple avec biorbd obligatoire:
@@ -684,29 +748,44 @@ Arguments utiles:
 - `--load KG`: compatibilite avec les scripts historiques, prioritaire sur `%BW`;
 - `--wedge`: ajoute la talonnette de 20 deg;
 - `--shank`, `--thigh`, `--trunk`: variations de longueur en pourcentage;
-- `--duration-excentrique`, `--duration-concentrique`: durees entre 2 et 4 s;
+- `--anthropometry-mode "longueur seule"` ou `"morphotype recalibre"`;
+- `--duration-excentrique`, `--duration-concentrique`: durees entre 2 et 6 s;
 - `--duration-isometrique`: duree entre 0 et 2 s;
 - `--joint-angles-deg ANKLE KNEE HIP`: angles articulaires finaux en degres;
 - `--q-segment-deg SHANK THIGH TRUNK`: angles segmentaires finaux en degres, convention interne du modele;
 - `--torque-preset anderson` ou `--torque-preset sportifs`;
 - `--max-cheville`, `--max-genou`, `--max-hanche`: surcharge manuelle des couples max;
 - `--angle-adapt true/false`: active/desactive la relation couple-angle;
+- `--velocity-adapt true/false`: active/desactive la relation couple-vitesse;
 - `--frames`: nombre de frames exportees.
+- sans `--frames` (ou avec `--frames 0`), la CLI applique automatiquement `Δt=0,05 s`;
+- `--xlsx`: classeur Excel global optionnel, construit depuis les memes lignes que le CSV.
 
-Le CSV exporte contient une ligne par frame avec:
+Le CSV exporte utilise le schema versionne `1.4.0` et contient une ligne par frame avec:
 
-- temps, phase, backend;
+- frame, temps absolu, `Δt`, temps normalise, phase et backend;
 - parametres de condition;
+- coordonnees `x/y` en metres de la cheville, du genou, de la hanche, de l'epaule et du centre de la barre;
+- orientations absolues du pied, de la jambe, de la cuisse et du tronc;
+- table anthropometrique effective repetee par condition : mode/règle, longueurs, masses et fractions massiques, fractions/offsets de CoM, rayons de giration et inerties;
+- CoM de chaque segment et de la barre, avec les contributions `m*x` et `m*y` permettant de reconstruire le CoM global;
 - angles, vitesses et accelerations articulaires;
 - CoM position/vitesse/acceleration;
-- CoP, reaction au sol et moment dynamique;
+- poids, reaction au sol, residu du bilan des forces, point d'appui avec sa provenance, bases et marges d'equilibre;
 - couples articulaires;
-- couple max disponible;
-- effort normalise en pourcentage;
+- capacité active disponible et ses facteurs angle/vitesse, angle de capacité, vitesse signée, régime, domaine, modèle et source;
+- utilisation demande/capacité `U = |couple requis| / capacité disponible`, en ratio et en pourcentage;
 - puissance;
-- composantes `total`, `contact` et `inertiels_non_lineaires`, avec la convention `inertiels_non_lineaires = total - contact`.
+- décomposition du couple de dynamique inverse en `M(q)qddot`, termes dépendant de `qdot`, gravité et résidu de reconstruction;
+- effet signé du contact externe, séparé du total à pied fixé; les colonnes historiques `contact` et `inertial_nonlinear` restent exportées avec le statut `compatibilité legacy`.
 
-Le JSON de resume contient les pics par articulation, le nombre de frames ou le CoP sort du pied et le nombre de frames ou un couple depasse 100%.
+Le JSON de resume contient les pics par articulation, le nombre de frames ou le point d'appui sort des bases geometrique/fonctionnelle et un bloc `mechanical_feasibility`: `U` maximal, articulation limitante, frame, temps, phase, dépassement de 1 et éventuelles capacités actives nulles. Il s'agit d'une **faisabilité mécanique dans les hypothèses du modèle**, pas d'un verdict absolu sur la réussite humaine.
+
+Le bouton `Exporter Excel` du GUI regroupe la condition courante et toutes les conditions enregistrees. Le classeur contient les onglets `conditions`, `temps`, `coordonnees`, `orientations`, `cinematique_articulaire`, `anthropometrie`, `com_segmentaires`, `com_global`, `forces_equilibre`, `dynamique` et `definitions`. Les unites restent dans les en-tetes ou dans le dictionnaire; une cellule contient toujours une seule valeur numerique, sans unite concatenee.
+
+La generation `.xlsx` est autonome : elle utilise `@oai/artifact-tool` lorsqu'un runtime Node.js compatible est disponible, puis bascule automatiquement sur le writer Python `openpyxl` inclus dans l'application. Aucun runtime Node n'est donc requis dans le bundle étudiant. La variable `SQUAT_GUI_XLSX_WRITER` permet de forcer `auto` (défaut), `artifact-tool` ou `openpyxl`. Pour forcer Artifact Tool hors de Codex, définir aussi `SQUAT_GUI_NODE` vers l'exécutable Node et `SQUAT_GUI_NODE_MODULES` vers le dossier `node_modules` qui contient `@oai/artifact-tool`.
+
+Le bouton `Exporter MP4` produit une animation H.264 `900×720` à 20 fps depuis un renderer hors écran. Les couches actives dans le menu `Affichage` sont reprises dans la vidéo, y compris CoM, CoP/ZMP, GRF, poids, bases d'appui, bras de levier, anneaux de capacité et annotations scientifiques. Un fichier `<video>.mp4.json` conserve la cadence, les dimensions, la durée de la trajectoire, la durée encodée, le backend et l'état exact des couches. Installer les dépendances hors runtime complet avec `python -m pip install -e ".[video]"`.
 
 ### Exporter un lot de conditions
 
@@ -724,7 +803,8 @@ Puis lancer:
 ```bash
 python -m squat_gui batch conditions.csv \
   --out exports/batch_results.csv \
-  --summary exports/batch_summary.json
+  --summary exports/batch_summary.json \
+  --xlsx exports/batch_results.xlsx
 ```
 
 Le fichier `batch_results.csv` regroupe toutes les frames de toutes les conditions, avec une colonne `condition_id` pour filtrer les analyses.
@@ -744,18 +824,20 @@ Le backend `biorbd` est deja utilise, quand il est disponible, pour:
 - calculer `CoM(...)`, `CoMdot(...)`, `CoMddot(...)`;
 - calculer `CalcAngularMomentum(...)` pour le moment dynamique.
 
-La decomposition simplifiee des couples suit la convention dynamique:
+La décomposition canonique suit la convention du modèle à pied fixé:
 
 ```text
 total = inverse_dynamics(q, qdot, qddot)
-inertiels_non_lineaires = total - contact
+total = M(q) qddot + termes_dependant_de_qdot + gravite
 ```
 
-Dans le GUI, `total` vient de `biorbd_model.InverseDynamics(q, qdot, qddot)` quand `biorbd` est disponible. C'est ce `total` qui est utilise pour les courbes de couples articulaires, les puissances, les ratios d'effort et le tableau des conditions. Comme le pied est fixe a la base du `.bioMod`, cette definition est volontairement conservee pour ne pas annuler artificiellement les moments de maintien du squat.
+Dans le GUI, `total ID` vient de `biorbd_model.InverseDynamics(q, qdot, qddot)` quand `biorbd` est disponible. C'est ce total qui est utilisé pour les courbes de couples articulaires, les puissances, les ratios d'effort et le tableau des conditions. Comme le pied est fixé à la base du `.bioMod`, cette définition est volontairement conservée pour ne pas annuler artificiellement les moments de maintien du squat.
 
-Le terme `contact` est maintenant calcule avec `biorbd`: la reaction au sol est appliquee au ZMP dans un `ExternalForceSet`, sur le segment terminal de la chaine mobile, puis le GUI calcule la difference entre `InverseDynamics` sans et avec cette force. Cette difference reproduit l'effet du bras de levier de la reaction aux trois articulations. La courbe `inertiels_non_lineaires` est definie simplement comme `total - contact`; elle ne doit pas etre interpretee comme l'appel direct a `NonLinearEffect(...)` de `biorbd`.
+Pour biorbd, `M(q)qddot` est calculé explicitement par `massMatrix(q) @ qddot`. La gravité est obtenue par `InverseDynamics(q, 0, 0)`. Les termes dépendant de la vitesse sont isolés par `InverseDynamics(q, qdot, 0) - gravité`. Pour le backend analytique, les mêmes termes sont isolés en annulant séparément `qdot`, `qddot` et la gravité dans les équations segmentaires, puis projetés dans la convention cheville-genou-hanche. Le résidu `total - somme des trois termes` est exporté et testé à une tolérance stricte.
 
-Pour utiliser directement le centre de pression/ZMP depuis `biorbd`, il faut une version de `biorbd` qui expose `Model.CalcZeroMomentPoint(...)`. Une PR locale a ete preparee pour cela:
+Le moment de contact reste un diagnostic distinct. Sa colonne canonique `external_contact_effect_Nm` est signée comme une contribution additive; elle est l'opposé de l'ancienne colonne soustractive `contact_Nm`. Elle n'entre pas dans la reconstruction du total contraint à pied fixé. Le calcul biorbd par `ExternalForceSet` fournit aussi le total contrefactuel avec cette force externe, mais ce dernier n'est pas utilisé pour la puissance ni pour le ratio demande/capacité. La colonne `contact_source` indique explicitement `biorbd.ExternalForceSet` ou le fallback géométrique réellement employé. L'ancienne colonne `inertial_nonlinear_Nm = total - contact` est conservée uniquement pour lire les exports antérieurs et ne doit recevoir aucune interprétation physique.
+
+Pour utiliser directement le ZMP depuis `biorbd`, il faut une version de `biorbd` qui expose `Model.CalcZeroMomentPoint(...)`. Une PR locale a ete preparee pour cela:
 
 - branche: `/Users/mickaelbegon/Documents/GIT/biorbd`, `codex/calc-zero-moment-point`;
 - PR: <https://github.com/pyomeca/biorbd/pull/383>.
@@ -771,21 +853,39 @@ PYTHONPATH=src /Users/mickaelbegon/miniconda3/envs/vitpose-ekf/bin/python -c "fr
 
 3. relancer le GUI avec ce meme Python.
 
-Le GUI detecte automatiquement `CalcZeroMomentPoint`. Si la fonction existe, le centre de pression/ZMP est obtenu par `biorbd` avec la normale du sol `(0, 1, 0)` et un point du sol `(0, 0, 0)`. Si la fonction n'existe pas encore dans l'environnement installe, le GUI garde le calcul de fallback base sur le moment dynamique et la reaction verticale.
+Le GUI et l'export conservent la provenance exacte du point d'appui:
 
-Le calcul du ZMP et le critere d'acceptabilite sont distincts. Pour l'alerte d'equilibre, la zone d'appui fonctionnelle exclut les `15 %` posterieurs de la projection antéro-posterieure du pied : un ZMP place au bord du talon est donc signale en rouge meme s'il est encore sous la silhouette du pied. Avec le `wedge 20 deg`, la limite posterieure est rendue plus conservative et placee a la projection verticale de la cheville, afin de refuser un appui trop charge vers le talon sureleve. La limite anterieure reste l'extremite des orteils. Cette borne posterieure est tracee par un petit repere rouge dans les vues du GUI et exportee dans les CSV (`zmp_posterior_limit_m`, `zmp_in_support`).
+- backend analytique : `CoP`, obtenu par le bilan du moment de la resultante de contact;
+- biorbd avec `CalcZeroMomentPoint` : `ZMP`, obtenu directement avec la normale du sol `(0, 1, 0)` et un point du sol `(0, 0, 0)`;
+- biorbd sans cette fonction : `ZMP`, obtenu par le bilan dynamique de fallback.
 
-## Relation couple-angle max
+Les champs `support_point_label` et `support_point_source` evitent donc d'utiliser CoP et ZMP comme des synonymes silencieux.
 
-Le checkbox `max-angle` applique une modulation normalisee du couple maximal disponible selon l'angle articulaire:
+Le calcul du point et le critere d'acceptabilite sont distincts. La base geometrique est la projection talon-orteils. La zone fonctionnelle exclut les `15 %` posterieurs de cette projection : un point place au bord du talon reste dans la base geometrique mais est signale hors zone fonctionnelle. Avec le `wedge 20 deg`, la limite posterieure fonctionnelle est placee a la projection verticale de la cheville. Les deux intervalles, leurs marges anterieure/posterieure et l'appartenance du point sont affichables et exportes. Les anciens champs `zmp_*` et `cop_in_foot` restent presents pour compatibilite, avec `cop_in_foot` reserve desormais a la vraie base geometrique.
+
+Le repere de forces utilise `+x` vers l'avant et `+y` vers le haut. Le poids est le vecteur `(0, -m*g)`, avec `g=9,80665 m/s2`. Le bilan verifie a chaque frame:
 
 ```text
-max_angle = max_saisi * max(0.05, cos(C2 * (angle - C3)))
+GRF + poids = masse_totale * acceleration_COM
+```
+
+La ligne horizontale des courbes de GRF represente explicitement `m*g`; elle n'est plus estimee depuis la premiere valeur de GRF. La couche `Bilan forces et equilibre` affiche le residu numerique de l'identite, la provenance du CoP/ZMP, les deux bases et les marges signees.
+
+## Relations couple-angle et couple-vitesse
+
+Le checkbox `max-angle (Anderson)` applique la relation active couple-angle:
+
+```text
+facteur_angle = max(0, cos(C2 * (angle - C3)))
 ```
 
 Cette courbe utilise les coefficients actifs moyens 18-25 ans homme de Anderson, Madigan et Nussbaum, "Maximum voluntary joint torque as a function of joint angle and angular velocity: model development and application to the lower limb", Journal of Biomechanics, 2007, doi: `10.1016/j.jbiomech.2007.03.022`, <https://pubmed.ncbi.nlm.nih.gov/17485097/>.
 
-Les directions retenues sont celles utiles au squat: flexion plantaire cheville, extension genou et extension hanche. Les valeurs `C1` de l'article sont normalisees par poids du corps fois taille; elles servent a initialiser les couples max pour un homme de 70 kg et 1.70 m. Les valeurs `C2` et `C3` modulent ensuite le pic saisi par l'utilisateur selon l'angle. La vitesse angulaire et les couples passifs du modele complet d'Anderson ne sont pas encore utilises dans le GUI; le facteur excentrique reste celui demande dans l'interface.
+Les directions retenues sont celles utiles au squat: flexion plantaire cheville, extension genou et extension hanche. Anderson définit la flexion/dorsiflexion positive; seule la flexion de genou, historiquement négative dans Squat_GUI, est donc inversée avant l'évaluation. Le lobe actif vaut zéro hors de l'intervalle `C3 ± pi/(2*C2)`; aucun plancher physiologique arbitraire n'est appliqué.
+
+Le checkbox `max-vitesse (Anderson)` applique les paramètres `C4`, `C5` et `C6` de la même publication. La vitesse est exprimée en `rad/s`, positive en concentrique et négative en excentrique. Le régime est raccordé à la puissance affichée: `couple × vitesse articulaire > 0` est générateur/concentrique, `< 0` est absorbant/excentrique et une vitesse nulle est isométrique. La surface vaut 75 % du maximum isométrique à `C4` et 50 % à `C5`; la branche excentrique est celle de l'équation publiée, et non un facteur fixe lié au nom de la phase. Les couples passifs d'Anderson ne sont pas ajoutés: la capacité affichée reste une capacité **active**.
+
+La capacité utilisée est `max_saisi × facteur_angle × facteur_vitesse`. Le preset `Anderson actif x2` utilise `C1` pour initialiser l'amplitude; le preset `Sportifs` conserve son amplitude propre mais emprunte la forme angle-vitesse d'Anderson. Ce dernier cas est un hybride didactique explicitement traçable, pas une norme physiologique homogène.
 
 Le GUI propose deux jeux de couples max. Comme le modele 2D regroupe les cotes gauche et droit, les valeurs issues de tests unilateraux sont sommees sur les deux membres:
 
