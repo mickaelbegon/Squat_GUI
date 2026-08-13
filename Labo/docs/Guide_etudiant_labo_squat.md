@@ -51,7 +51,7 @@ Le tutoriel intégré suit une progression volontairement graduelle. Les résult
 
 1. Renseigner le sujet, la position de la barre, la charge et la posture basse.
 2. Pour une variation de longueur, choisir `longueur seule` afin d'isoler la géométrie, ou `morphotype recalibre` pour appliquer la sensibilité didactique documentée aux masses et inerties.
-3. Choisir un profil temporel : `Référence 4/2/4`, `Lent 6/2/6`, `Rapide 2/0,5/2`, `Sans pause 4/0/4`, `Descente lente / montée rapide 6/1/2` ou `Descente rapide / montée lente 2/1/6`.
+3. Choisir un profil temporel : le sélecteur affiche les durées sous la forme `descente | isométrique | montée`, par exemple `Référence — 4 | 2 | 4 s`, `Lent — 4 | 2 | 2 s`, `Rapide — 0,5 | 0,5 | 0,5 s`, `Sans pause — 4 | 0 | 4 s`, `Descente lente / montée rapide — 4 | 1 | 0,5 s` ou `Descente rapide / montée lente — 0,5 | 1 | 4 s`.
 4. Vérifier les durées de descente, de pause et de remontée. Le pas temporel est fixé à `Δt = 0,05 s`; une modification manuelle des durées active le profil `Personnalisé`.
 5. Lancer la simulation, puis démarrer l'animation.
 
@@ -133,7 +133,7 @@ Questions d’analyse :
 - Dans quels cas le ZMP sort-il de la zone d’appui, et pendant combien de frames?
 - La prise qui améliore l’équilibre réduit-elle nécessairement le ratio d’effort de toutes les articulations?
 
-Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le ZMP dans la zone d’appui, puis enregistrer la condition adaptée. La zone retenue exclut les 15 % postérieurs de la projection du pied : le bord du talon constitue une alerte, même si le point est encore sous la silhouette du pied. Avec le wedge, la limite postérieure est la projection verticale de la cheville pour écarter les appuis excessivement postérieurs sur le talon surélevé. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
+Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le ZMP dans la zone d’appui, puis enregistrer la condition adaptée. La base géométrique couvre toute la longueur projetée du pied, du talon aux orteils. La zone fonctionnelle retenue va de la projection de la cheville à la tête des métatarsiens, modélisée à 85 % du segment talon–orteils; les orteils distaux restent hors de la zone fonctionnelle. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
 
 Variables à extraire : `squat_com_x_m`, `squat_support_point_x_m`, `zmp_outside_support_frames`, excursion du point d’appui, pics de couples et ratios d’effort.
 
@@ -161,7 +161,7 @@ Lien littérature attendu : Pürzel et al. (2025), Schoenfeld (2010).
 
 ### Bloc 6 — Durée du mouvement
 
-Comparer `duration_slow` et `duration_fast` avec posture, charge et prise de barre constantes. Dans le GUI, reproduire cette comparaison avec les presets `Lent 6/2/6` et `Rapide 2/0,5/2`, puis utiliser le curseur synchronisé pour comparer les mêmes événements du mouvement.
+Comparer `duration_slow` et `duration_fast` avec posture, charge et prise de barre constantes. Dans le GUI, reproduire cette comparaison avec les presets `Lent 4/2/2` et `Rapide 0,5/0,5/0,5`, puis utiliser le curseur synchronisé pour comparer les mêmes événements du mouvement.
 
 Hypothèse : réduire la durée augmente les accélérations et peut modifier les parts `M(q)q̈` et dépendante de `q̇` dans le couple total.
 

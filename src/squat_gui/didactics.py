@@ -23,18 +23,60 @@ class TemporalPreset:
 
 
 CUSTOM_TEMPORAL_PRESET = "Personnalisé"
+# Discrete values exposed by the GUI and the CLI.  Keeping the options here
+# avoids having two slightly different timing scales in the student workflow.
+DYNAMIC_PHASE_DURATION_OPTIONS = (0.5, 1.0, 2.0, 4.0)
+ISOMETRIC_PHASE_DURATION_OPTIONS = (0.0, 0.5, 1.0, 2.0)
+
+
+def phase_duration_triplet(durations: PhaseDurations) -> str:
+    """Format descente | isométrique | montée for the GUI and documents."""
+    return " | ".join(
+        f"{value:g}"
+        for value in (
+            durations.excentrique,
+            durations.isometrique,
+            durations.concentrique,
+        )
+    )
+
+
+def temporal_preset_display(preset: TemporalPreset) -> str:
+    """Return a human-readable preset label with its three durations."""
+    return f"{preset.name} — {phase_duration_triplet(preset.durations)} s"
+
+
+def _nearest_duration_option(value: float, options: tuple[float, ...]) -> float:
+    """Map legacy/imported values to the nearest currently exposed option."""
+    return min(options, key=lambda option: (abs(option - value), -option))
+
+
+def bounded_phase_durations(durations: PhaseDurations) -> PhaseDurations:
+    """Keep imported GUI/CLI settings within the current discrete duration scale."""
+    return PhaseDurations(
+        _nearest_duration_option(
+            durations.excentrique, DYNAMIC_PHASE_DURATION_OPTIONS
+        ),
+        _nearest_duration_option(
+            durations.isometrique, ISOMETRIC_PHASE_DURATION_OPTIONS
+        ),
+        _nearest_duration_option(
+            durations.concentrique, DYNAMIC_PHASE_DURATION_OPTIONS
+        ),
+    )
+
 TEMPORAL_PRESETS = (
     TemporalPreset("Référence", PhaseDurations(4.0, 2.0, 4.0)),
-    TemporalPreset("Lent", PhaseDurations(6.0, 2.0, 6.0)),
-    TemporalPreset("Rapide", PhaseDurations(2.0, 0.5, 2.0)),
+    TemporalPreset("Lent", PhaseDurations(4.0, 2.0, 2.0)),
+    TemporalPreset("Rapide", PhaseDurations(0.5, 0.5, 0.5)),
     TemporalPreset("Sans pause", PhaseDurations(4.0, 0.0, 4.0)),
     TemporalPreset(
         "Descente lente / remontée rapide",
-        PhaseDurations(6.0, 1.0, 2.0),
+        PhaseDurations(4.0, 1.0, 0.5),
     ),
     TemporalPreset(
         "Descente rapide / remontée lente",
-        PhaseDurations(2.0, 1.0, 6.0),
+        PhaseDurations(0.5, 1.0, 4.0),
     ),
 )
 TEMPORAL_PRESETS_BY_NAME = {preset.name: preset for preset in TEMPORAL_PRESETS}

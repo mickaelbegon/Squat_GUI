@@ -3,7 +3,12 @@ from math import radians
 from unittest.mock import patch
 
 from squat_gui.anthropometry import Anthropometry
-from squat_gui.app import PLOT_CHOICES, SYNCHRONIZED_KINEMATICS_CHOICE, SquatGui
+from squat_gui.app import (
+    LOAD_PERCENT_OPTIONS,
+    PLOT_CHOICES,
+    SYNCHRONIZED_KINEMATICS_CHOICE,
+    SquatGui,
+)
 from squat_gui.didactics import RevealMode
 from squat_gui.dynamics import inverse_dynamics
 from squat_gui.kinematics import motion_state, zmp_support_limits
@@ -58,6 +63,28 @@ class FakeCursorTable:
 
 
 class PlotSeriesTests(unittest.TestCase):
+    def test_charge_popup_uses_discrete_percent_bw_steps(self):
+        self.assertEqual(LOAD_PERCENT_OPTIONS, tuple(range(0, 101, 10)))
+
+        gui = object.__new__(SquatGui)
+        gui.load_var = FakeVar(34.0)
+        gui.load_display_var = FakeVar("")
+        gui._sync_load_display()
+        self.assertEqual(gui.load_var.get(), 30.0)
+        self.assertEqual(gui.load_display_var.get(), "30 %BW")
+
+    def test_charge_popup_selection_updates_numeric_setting(self):
+        gui = object.__new__(SquatGui)
+        gui.load_var = FakeVar(0.0)
+        gui.load_display_var = FakeVar("60 %BW")
+        gui.parameter_changed = False
+        gui.on_parameter_changed = lambda: setattr(gui, "parameter_changed", True)
+
+        gui.on_load_menu_changed()
+
+        self.assertEqual(gui.load_var.get(), 60.0)
+        self.assertTrue(gui.parameter_changed)
+
     def test_main_plot_menu_groups_joint_kinematics(self):
         self.assertIn("cinematique articulaire", PLOT_CHOICES)
         self.assertNotIn("positions articulaires", PLOT_CHOICES)
@@ -243,7 +270,7 @@ class PlotSeriesTests(unittest.TestCase):
 
         self.assertEqual(gui.frame_var.get(), 150)
 
-    def test_saved_slow_preset_keeps_six_second_dynamic_phases(self):
+    def test_saved_legacy_six_second_dynamic_phases_are_capped_at_four(self):
         durations = SquatGui.phase_durations_from_settings(
             {
                 "duration_excentrique_s": 6.0,
@@ -252,8 +279,8 @@ class PlotSeriesTests(unittest.TestCase):
             }
         )
 
-        self.assertEqual(durations.excentrique, 6.0)
-        self.assertEqual(durations.concentrique, 6.0)
+        self.assertEqual(durations.excentrique, 4.0)
+        self.assertEqual(durations.concentrique, 4.0)
 
     def test_ground_reaction_series_uses_horizontal_vertical_components(self):
         gui = self.gui_without_tk()

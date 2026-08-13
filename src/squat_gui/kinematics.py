@@ -10,7 +10,10 @@ from .yeadon import QuinticBoundaryTrajectory
 
 
 Vector = tuple[float, float]
-ZMP_POSTERIOR_MARGIN_FRACTION = 0.15
+# The simplified foot model has no separate toe-joint.  The metatarsal head is
+# therefore represented by the anterior 85% point of the heel-to-toe segment;
+# the remaining 15% represents the distal toes beyond the functional forefoot.
+METATARSAL_HEAD_FRACTION = 0.85
 DEFAULT_SAMPLE_PERIOD_S = 0.05
 
 
@@ -175,21 +178,34 @@ def geometric_support_limits(pose: Pose) -> tuple[float, float]:
     return (min(pose.heel[0], pose.toe[0]), max(pose.heel[0], pose.toe[0]))
 
 
-def functional_support_limits(pose: Pose) -> tuple[float, float]:
-    """Return functional AP support limits on the horizontal support plane.
+def metatarsal_head_point(pose: Pose) -> Vector:
+    """Return the modelled head of the metatarsals on the foot segment.
 
-    The rear 15% of the projected foot is treated as a heel-edge safety
-    margin: a ZMP in this region is geometrically under the foot, but not an
-    acceptable postural-balance solution for the teaching model. With a heel
-    wedge, the posterior boundary is moved to the ankle projection to prevent
-    accepting a rear-loaded pose on the inclined support.
+    The raster foot and the analytical model share only heel/toe endpoints, so
+    the head is placed at a documented fraction of the segment rather than
+    inventing an additional anatomical landmark in the pose state.
     """
-    geometric_posterior, geometric_anterior = geometric_support_limits(pose)
-    projected_length = geometric_anterior - geometric_posterior
-    posterior = geometric_posterior + ZMP_POSTERIOR_MARGIN_FRACTION * projected_length
-    if pose.heel[1] > pose.toe[1] + 1e-9:
-        posterior = max(posterior, pose.ankle[0])
-    return posterior, geometric_anterior
+
+    return add(
+        pose.heel,
+        scale(sub(pose.toe, pose.heel), METATARSAL_HEAD_FRACTION),
+    )
+
+
+def functional_support_limits(pose: Pose) -> tuple[float, float]:
+    """Return the functional AP interval from ankle to metatarsal head.
+
+    The full projected heel-to-toe segment remains the geometric base.  The
+    functional teaching zone starts at the ankle projection and ends at the
+    modelled metatarsal head, leaving the distal toes outside the accepted
+    interval.  Bounds are sorted so the convention remains valid with a wedge.
+    """
+
+    metatarsal_head = metatarsal_head_point(pose)
+    return (
+        min(pose.ankle[0], metatarsal_head[0]),
+        max(pose.ankle[0], metatarsal_head[0]),
+    )
 
 
 def zmp_support_limits(pose: Pose) -> tuple[float, float]:

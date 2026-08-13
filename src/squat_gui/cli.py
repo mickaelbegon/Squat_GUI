@@ -13,6 +13,11 @@ from typing import Iterable
 from .anthropometry import ANTHROPOMETRY_MODES, Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache
 from .dynamics import force_balance, simulate, torque_presets
+from .didactics import (
+    DYNAMIC_PHASE_DURATION_OPTIONS,
+    ISOMETRIC_PHASE_DURATION_OPTIONS,
+    bounded_phase_durations,
+)
 from .export_schema import SCHEMA_VERSION, write_xlsx
 from .kinematics import (
     DEFAULT_SAMPLE_PERIOD_S,
@@ -206,10 +211,12 @@ def condition_from_row(
         row, "duration_isometrique_s", defaults.duration_isometrique
     )
     duration_concentrique_s = row_float(row, "duration_concentrique_s", legacy_duration)
-    durations = PhaseDurations(
-        duration_excentrique_s,
-        duration_isometrique_s,
-        duration_concentrique_s,
+    durations = bounded_phase_durations(
+        PhaseDurations(
+            duration_excentrique_s,
+            duration_isometrique_s,
+            duration_concentrique_s,
+        )
     )
     requested_frames = row_int(row, "frames", defaults.frames)
     frames = (
@@ -291,10 +298,12 @@ def condition_from_settings(
     q_values = tuple(float(value) for value in final_q_deg)
     if len(q_values) != 3:
         raise ValueError("Trois orientations segmentaires finales sont requises.")
-    durations = PhaseDurations(
-        float(settings.get("duration_excentrique_s", legacy_duration)),
-        float(settings.get("duration_isometrique_s", 2.0)),
-        float(settings.get("duration_concentrique_s", legacy_duration)),
+    durations = bounded_phase_durations(
+        PhaseDurations(
+            float(settings.get("duration_excentrique_s", legacy_duration)),
+            float(settings.get("duration_isometrique_s", 2.0)),
+            float(settings.get("duration_concentrique_s", legacy_duration)),
+        )
     )
     frame_count = int(frames or 0)
     if frame_count <= 0:
@@ -723,19 +732,19 @@ def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--duration-excentrique",
         type=float,
-        choices=(2.0, 2.5, 3.0, 3.5, 4.0),
+        choices=DYNAMIC_PHASE_DURATION_OPTIONS,
         default=4.0,
     )
     parser.add_argument(
         "--duration-isometrique",
         type=float,
-        choices=(0.0, 0.5, 1.0, 1.5, 2.0),
+        choices=ISOMETRIC_PHASE_DURATION_OPTIONS,
         default=2.0,
     )
     parser.add_argument(
         "--duration-concentrique",
         type=float,
-        choices=(2.0, 2.5, 3.0, 3.5, 4.0),
+        choices=DYNAMIC_PHASE_DURATION_OPTIONS,
         default=4.0,
     )
     parser.add_argument(

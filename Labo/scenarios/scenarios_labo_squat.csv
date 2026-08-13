@@ -15,5 +15,5 @@ stability_backward,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true
 load_30bw,homme,back,30,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
 load_60bw,homme,back,60,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
 load_100bw,homme,back,100,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
-duration_slow,homme,back,40,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
-duration_fast,homme,back,40,false,0,0,0,2.0,0.0,2.0,81,biorbd,anderson,true,true,22,-58,20,longueur seule
+duration_slow,homme,back,40,false,0,0,0,4.0,2.0,2.0,161,biorbd,anderson,true,true,22,-58,20,longueur seule
+duration_fast,homme,back,40,false,0,0,0,0.5,0.5,0.5,31,biorbd,anderson,true,true,22,-58,20,longueur seule

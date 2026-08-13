@@ -2,11 +2,16 @@ import unittest
 
 from squat_gui.didactics import (
     CUSTOM_TEMPORAL_PRESET,
+    DYNAMIC_PHASE_DURATION_OPTIONS,
+    ISOMETRIC_PHASE_DURATION_OPTIONS,
     TEMPORAL_PRESETS,
     RevealMode,
+    bounded_phase_durations,
     layers_for_reveal,
     matching_temporal_preset,
+    phase_duration_triplet,
     reveal_mode_for_step,
+    temporal_preset_display,
 )
 from squat_gui.kinematics import PhaseDurations
 from squat_gui.kinematics import DEFAULT_SAMPLE_PERIOD_S, frame_count_for_duration
@@ -23,6 +28,30 @@ class TemporalPresetTests(unittest.TestCase):
 
         self.assertEqual(reference.name, "Référence")
         self.assertEqual(reference.durations, PhaseDurations(4.0, 2.0, 4.0))
+        self.assertEqual(phase_duration_triplet(reference.durations), "4 | 2 | 4")
+        self.assertEqual(
+            temporal_preset_display(reference), "Référence — 4 | 2 | 4 s"
+        )
+
+    def test_presets_use_the_revised_discrete_duration_scale(self) -> None:
+        for preset in TEMPORAL_PRESETS:
+            with self.subTest(preset=preset.name):
+                self.assertIn(
+                    preset.durations.excentrique, DYNAMIC_PHASE_DURATION_OPTIONS
+                )
+                self.assertIn(
+                    preset.durations.concentrique, DYNAMIC_PHASE_DURATION_OPTIONS
+                )
+                self.assertIn(
+                    preset.durations.isometrique, ISOMETRIC_PHASE_DURATION_OPTIONS
+                )
+        self.assertNotIn(1.5, ISOMETRIC_PHASE_DURATION_OPTIONS)
+
+    def test_legacy_values_are_migrated_to_the_nearest_exposed_option(self) -> None:
+        self.assertEqual(
+            bounded_phase_durations(PhaseDurations(6.0, 1.5, 3.0)),
+            PhaseDurations(4.0, 2.0, 4.0),
+        )
 
     def test_custom_durations_are_identified(self) -> None:
         self.assertEqual(

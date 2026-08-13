@@ -4,8 +4,8 @@ Interface graphique 2D pour explorer un squat avec:
 
 - modele pied, jambe, cuisse, tronc/tete/bras et barre, en prise `front`, `back` ou `over-head`;
 - sujet homme ou femme enceinte de reference, 70 kg pour 1.70 m, inerties gauche/droite combinees en 2D;
-- charge exprimee en `%BW` (pour le sujet de 70 kg) avec 11 choix de `0` a `100 %BW`, longueurs discretes et wedge de 20 deg;
-- mouvement en trois phases reglables: excentrique et concentrique entre 2 et 6 s, isometrique entre 0 et 2 s;
+- charge exprimee en `%BW` (pour le sujet de 70 kg) avec un menu deroulant de 11 choix de `0` a `100 %BW` dans le GUI, longueurs discretes et wedge de 20 deg;
+- mouvement en trois phases reglables: descente et montee a `0,5`, `1`, `2` ou `4 s`, isometrique a `0`, `0,5`, `1` ou `2 s`;
 - cinematique d'ordre 5 type Yeadon, issue du profil `6x^5 - 15x^4 + 10x^3`;
 - dynamique inverse analytique 2D de demarrage;
 - calcul de la reaction au sol, du centre de pression, du CoM et de sa projection;
@@ -34,9 +34,11 @@ Le switch dans `Parcours didactique` affiche une consigne a la fois et pilote un
 
 Les longueurs segmentaires, les couples max et les couples detailles sont des outils avances. `Sauver conditions` et `Charger conditions` ecrivent/lisent un fichier JSON comprenant les widgets et, si demande, les conditions ajoutees au tableau.
 
-Les six presets temporels sont `Référence` (4/2/4 s), `Lent` (6/2/6 s), `Rapide` (2/0,5/2 s), `Sans pause` (4/0/4 s), `Descente lente / remontée rapide` (6/1/2 s) et son inverse (2/1/6 s). Les trois contrôles numériques restent disponibles; une combinaison qui ne correspond à aucun preset est indiquée `Personnalisé`.
+Les six presets temporels sont `Référence` (4/2/4 s), `Lent` (4/2/2 s), `Rapide` (0,5/0,5/0,5 s), `Sans pause` (4/0/4 s), `Descente lente / remontée rapide` (4/1/0,5 s) et son inverse (0,5/1/4 s). Le sélecteur affiche maintenant chaque triplet directement sous la forme `descente | isométrique | montée`, par exemple `4 | 2 | 4 s`. Les trois contrôles numériques restent disponibles; une combinaison qui ne correspond à aucun preset est indiquée `Personnalisé`.
 
-La simulation utilise par défaut un pas temporel constant `Δt=0,05 s`. Le nombre de frames inclut les deux extrémités et s'adapte donc à la durée totale : `N = durée/0,05 + 1` (201 frames pour 10 s, 281 pour le preset lent de 14 s). La lecture avance à 20 images/s et respecte le temps physique.
+Ces presets sont des conventions pédagogiques et non une cadence physiologique universelle. La littérature utilise des protocoles très différents : `2/0/2` comme tempo contrôlé/rapide à charge élevée, `4/0/2` comme variante plus lente, `4/1/4` dans un protocole de squat standardisé, ou encore `5/5/5` pour une tâche volontairement très lente. Le preset `Référence 4/2/4` doit donc être lu comme une référence lente et reproductible; une référence plus proche d'un squat contrôlé courant serait plutôt `2/0/2`.
+
+La simulation utilise par défaut un pas temporel constant `Δt=0,05 s`. Le nombre de frames inclut les deux extrémités et s'adapte donc à la durée totale : `N = durée/0,05 + 1` (201 frames pour 10 s, 161 pour le preset lent de 8 s). La lecture avance à 20 images/s et respecte le temps physique.
 
 Le sélecteur à côté du curseur propose `LIBRE`, `OBSERVATION`, `CINÉMATIQUE` et `DYNAMIQUE`. `OBSERVATION` masque courbes, temps, phases, valeurs, alertes et grandeurs mécaniques. `CINÉMATIQUE` limite les courbes aux articulations et au CoM, avec le choix position/vitesse/accélération. `DYNAMIQUE` ajoute forces, CoP/ZMP, poids, bases d'appui, couples et capacité. Le parcours didactique impose ces états dans cet ordre; hors parcours, le sélecteur reste directement contrôlable.
 
@@ -713,9 +715,9 @@ python -m squat_gui run \
   --subject-profile homme \
   --bar-position front \
   --load-percent-bw 80 \
-  --duration-excentrique 3 \
+  --duration-excentrique 2 \
   --duration-isometrique 2 \
-  --duration-concentrique 3 \
+  --duration-concentrique 2 \
   --joint-angles-deg 22 -80 78 \
   --torque-preset sportifs \
   --backend analytical \
@@ -749,8 +751,8 @@ Arguments utiles:
 - `--wedge`: ajoute la talonnette de 20 deg;
 - `--shank`, `--thigh`, `--trunk`: variations de longueur en pourcentage;
 - `--anthropometry-mode "longueur seule"` ou `"morphotype recalibre"`;
-- `--duration-excentrique`, `--duration-concentrique`: durees entre 2 et 6 s;
-- `--duration-isometrique`: duree entre 0 et 2 s;
+- `--duration-excentrique`, `--duration-concentrique`: choix `0.5`, `1`, `2` ou `4 s`;
+- `--duration-isometrique`: choix `0`, `0.5`, `1` ou `2 s` (1,5 s n'est plus proposé);
 - `--joint-angles-deg ANKLE KNEE HIP`: angles articulaires finaux en degres;
 - `--q-segment-deg SHANK THIGH TRUNK`: angles segmentaires finaux en degres, convention interne du modele;
 - `--torque-preset anderson` ou `--torque-preset sportifs`;
@@ -861,7 +863,7 @@ Le GUI et l'export conservent la provenance exacte du point d'appui:
 
 Les champs `support_point_label` et `support_point_source` evitent donc d'utiliser CoP et ZMP comme des synonymes silencieux.
 
-Le calcul du point et le critere d'acceptabilite sont distincts. La base geometrique est la projection talon-orteils. La zone fonctionnelle exclut les `15 %` posterieurs de cette projection : un point place au bord du talon reste dans la base geometrique mais est signale hors zone fonctionnelle. Avec le `wedge 20 deg`, la limite posterieure fonctionnelle est placee a la projection verticale de la cheville. Les deux intervalles, leurs marges anterieure/posterieure et l'appartenance du point sont affichables et exportes. Les anciens champs `zmp_*` et `cop_in_foot` restent presents pour compatibilite, avec `cop_in_foot` reserve desormais a la vraie base geometrique.
+Le calcul du point et le critere d'acceptabilite sont distincts. La base geometrique est toute la longueur projetée du pied, du talon aux orteils. La zone fonctionnelle va de la projection de la cheville à la tête des métatarsiens; le modèle place cette tête à `85 %` du segment talon–orteils, car il ne possède pas de joint métatarsien séparé. Les orteils distaux restent donc dans la base géométrique mais hors de la zone fonctionnelle. Les deux intervalles, leurs marges anterieure/posterieure et l'appartenance du point sont affichables et exportes. Les anciens champs `zmp_*` et `cop_in_foot` restent presents pour compatibilite, avec `cop_in_foot` reserve desormais a la vraie base geometrique.
 
 Le repere de forces utilise `+x` vers l'avant et `+y` vers le haut. Le poids est le vecteur `(0, -m*g)`, avec `g=9,80665 m/s2`. Le bilan verifie a chaque frame:
 

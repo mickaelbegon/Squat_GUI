@@ -5,7 +5,11 @@
 ### Interface et pédagogie
 
 - Parcours progressif Observation → Cinématique → Dynamique, avec révélation contrôlée.
+- Base géométrique d'appui alignée sur toute la longueur du pied; zone fonctionnelle
+  redéfinie de la cheville à la tête des métatarsiens.
 - Presets temporels, pas physique constant de 0,05 s et curseur synchronisé.
+- Échelle de durée harmonisée : descente/montée `0,5/1/2/4 s`; isométrique `0/0,5/1/2 s`, sans option `1,5 s`.
+- Le sélecteur temporel affiche désormais chaque preset directement sous la forme `descente | isométrique | montée`.
 - Comparaison de conditions, duplication contrôlée et inspecteur des variables modifiées.
 - Menu d’affichage unifié : CoM global/segmentaires, coordonnées articulaires au survol,
   orientations, angles, anthropométrie, appuis, forces et capacités.

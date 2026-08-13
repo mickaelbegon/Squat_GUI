@@ -32,12 +32,17 @@ from .dynamics import (
     torque_presets,
 )
 from .didactics import (
+    DYNAMIC_PHASE_DURATION_OPTIONS,
+    ISOMETRIC_PHASE_DURATION_OPTIONS,
     TEMPORAL_PRESETS,
     TEMPORAL_PRESETS_BY_NAME,
     RevealMode,
+    bounded_phase_durations,
     layers_for_reveal,
     matching_temporal_preset,
+    phase_duration_triplet,
     reveal_mode_for_step,
+    temporal_preset_display,
 )
 from .kinematics import (
     DEFAULT_SAMPLE_PERIOD_S,
@@ -91,6 +96,9 @@ PLOT_CHOICES = [
     DETAILED_PLOT_CHOICE,
     "puissances articulaires",
 ]
+# La charge est volontairement discrète dans le GUI : le modele accepte encore
+# un flottant cote CLI, mais l'exploration interactive reste sur des pas de 10 %BW.
+LOAD_PERCENT_OPTIONS = tuple(range(0, 101, 10))
 
 JOINT_COLORS = {
     "cheville": "#2e7d54",
@@ -146,6 +154,8 @@ class SquatGui(tk.Tk):
         self.subject_profile_var = tk.StringVar(value="homme")
         self.bar_position_var = tk.StringVar(value="back")
         self.load_var = tk.DoubleVar(value=0.0)
+        self.load_display_var = tk.StringVar(value="0 %BW")
+        self.load_var.trace_add("write", self._sync_load_display)
         self.shank_var = tk.DoubleVar(value=0.0)
         self.thigh_var = tk.DoubleVar(value=0.0)
         self.trunk_var = tk.DoubleVar(value=0.0)
@@ -154,6 +164,16 @@ class SquatGui(tk.Tk):
         self.isometric_duration_var = tk.DoubleVar(value=2.0)
         self.concentric_duration_var = tk.DoubleVar(value=4.0)
         self.temporal_preset_var = tk.StringVar(value="Référence")
+        reference_preset = TEMPORAL_PRESETS_BY_NAME["Référence"]
+        self.temporal_preset_display_var = tk.StringVar(
+            value=temporal_preset_display(reference_preset)
+        )
+        self.temporal_preset_details_var = tk.StringVar(
+            value=(
+                "descente | isométrique | montée (s) : "
+                f"{phase_duration_triplet(reference_preset.durations)}"
+            )
+        )
         self.wedge_var = tk.BooleanVar(value=False)
         self.frame_var = tk.IntVar(value=self.frame_count // 2)
         self.plot_choice = tk.StringVar(value=PLOT_CHOICES[0])
@@ -532,6 +552,7 @@ class SquatGui(tk.Tk):
         root.rowconfigure(2, weight=3, minsize=250)
 
         left = ttk.Frame(root)
+        self.left_panel = left
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         left.columnconfigure(0, weight=1)
         guide_box = ttk.LabelFrame(left, text="Parcours didactique")
@@ -605,6 +626,7 @@ class SquatGui(tk.Tk):
         identity.grid(row=0, column=0, columnspan=2, sticky="ew", padx=4, pady=3)
         identity.columnconfigure(0, weight=1)
         identity.columnconfigure(1, weight=1)
+        identity.columnconfigure(2, weight=1)
         ttk.Label(identity, text="Sujet").grid(row=0, column=0, sticky="w")
         ttk.Label(identity, text="Prise barre").grid(row=0, column=1, sticky="w")
         self.profile_menu = ttk.Combobox(
@@ -629,15 +651,23 @@ class SquatGui(tk.Tk):
         self.bar_menu.bind(
             "<<ComboboxSelected>>", lambda _event: self.on_parameter_changed()
         )
-        self.charge_box = self._add_scale(
-            self.parameter_box,
-            "Charge %BW (sujet 70 kg)",
-            self.load_var,
-            0,
-            100,
-            10,
-            1,
-            2,
+        self.charge_box = ttk.LabelFrame(
+            identity, text="Charge %BW (sujet 70 kg)"
+        )
+        self.charge_box.grid(
+            row=0, column=2, rowspan=2, sticky="nsew", padx=(6, 0), pady=(0, 0)
+        )
+        self.charge_box.columnconfigure(0, weight=1)
+        self.load_menu = ttk.Combobox(
+            self.charge_box,
+            textvariable=self.load_display_var,
+            values=tuple(f"{value:g} %BW" for value in LOAD_PERCENT_OPTIONS),
+            state="readonly",
+            width=10,
+        )
+        self.load_menu.grid(row=0, column=0, sticky="ew", padx=4, pady=3)
+        self.load_menu.bind(
+            "<<ComboboxSelected>>", lambda _event: self.on_load_menu_changed()
         )
         self.duration_box = ttk.LabelFrame(
             self.parameter_box, text="Durees des phases (s)"
@@ -648,13 +678,17 @@ class SquatGui(tk.Tk):
                 (
                     "excent.",
                     self.eccentric_duration_var,
-                    (2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0),
+                    DYNAMIC_PHASE_DURATION_OPTIONS,
                 ),
-                ("isomet.", self.isometric_duration_var, (0.0, 0.5, 1.0, 1.5, 2.0)),
+                (
+                    "isomet.",
+                    self.isometric_duration_var,
+                    ISOMETRIC_PHASE_DURATION_OPTIONS,
+                ),
                 (
                     "concent.",
                     self.concentric_duration_var,
-                    (2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 6.0),
+                    DYNAMIC_PHASE_DURATION_OPTIONS,
                 ),
             )
         ):
@@ -719,16 +753,21 @@ class SquatGui(tk.Tk):
         )
         self.temporal_preset_menu = ttk.Combobox(
             temporal_preset_box,
-            textvariable=self.temporal_preset_var,
-            values=[preset.name for preset in TEMPORAL_PRESETS],
+            textvariable=self.temporal_preset_display_var,
+            values=[temporal_preset_display(preset) for preset in TEMPORAL_PRESETS],
             state="readonly",
-            width=31,
+            width=48,
         )
         self.temporal_preset_menu.grid(row=0, column=1, sticky="ew")
         self.temporal_preset_menu.bind(
             "<<ComboboxSelected>>",
             lambda _event: self.apply_temporal_preset(),
         )
+        ttk.Label(
+            temporal_preset_box,
+            textvariable=self.temporal_preset_details_var,
+            foreground="#53645b",
+        ).grid(row=1, column=1, sticky="w", padx=(0, 6), pady=(1, 0))
         options = ttk.Frame(self.parameter_box)
         options.grid(row=4, column=0, columnspan=2, sticky="ew", padx=4, pady=(3, 4))
         ttk.Checkbutton(
@@ -782,8 +821,11 @@ class SquatGui(tk.Tk):
             command=self.redraw,
         ).grid(row=5, column=0, columnspan=3, sticky="w", padx=4)
 
-        self.plot_box = ttk.LabelFrame(left, text="Resultats")
-        self.plot_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
+        # Les controles de resultat occupent la ligne dediee a l'en-tete des
+        # courbes. Ils ne doivent pas etre enfermes dans le panneau vertical
+        # des parametres, dont la hauteur est contrainte par la fenetre.
+        self.plot_box = ttk.LabelFrame(root, text="Resultats")
+        self.plot_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
         for col in range(4):
             self.plot_box.columnconfigure(col, weight=1)
         self.plot_menu = ttk.Combobox(
@@ -1211,6 +1253,25 @@ class SquatGui(tk.Tk):
         sync_label()
         return box
 
+    def _sync_load_display(self, *_args: object) -> None:
+        """Keep the readable popup value aligned with the numeric setting."""
+        if hasattr(self, "load_display_var"):
+            value = self.load_var.get()
+            snapped = min(LOAD_PERCENT_OPTIONS, key=lambda option: abs(option - value))
+            if abs(snapped - value) > 1e-6:
+                self.load_var.set(float(snapped))
+            self.load_display_var.set(f"{snapped:g} %BW")
+
+    def on_load_menu_changed(self) -> None:
+        """Apply a discrete popup selection without changing the data model."""
+        text = self.load_display_var.get().split()[0]
+        try:
+            self.load_var.set(float(text))
+        except (TypeError, ValueError):
+            self._sync_load_display()
+            return
+        self.on_parameter_changed()
+
     def update_didactic_focus(self) -> None:
         if not hasattr(self, "profile_menu"):
             return
@@ -1485,29 +1546,23 @@ class SquatGui(tk.Tk):
         }
 
     def phase_durations(self) -> PhaseDurations:
-        return PhaseDurations(
-            max(2.0, min(6.0, self.eccentric_duration_var.get())),
-            max(0.0, min(2.0, self.isometric_duration_var.get())),
-            max(2.0, min(6.0, self.concentric_duration_var.get())),
+        return bounded_phase_durations(
+            PhaseDurations(
+                self.eccentric_duration_var.get(),
+                self.isometric_duration_var.get(),
+                self.concentric_duration_var.get(),
+            )
         )
 
     @staticmethod
     def phase_durations_from_settings(settings: dict[str, object]) -> PhaseDurations:
         legacy_duration = float(settings.get("duration_phase_s", 4.0))
-        return PhaseDurations(
-            max(
-                2.0,
-                min(
-                    6.0, float(settings.get("duration_excentrique_s", legacy_duration))
-                ),
-            ),
-            max(0.0, min(2.0, float(settings.get("duration_isometrique_s", 2.0)))),
-            max(
-                2.0,
-                min(
-                    6.0, float(settings.get("duration_concentrique_s", legacy_duration))
-                ),
-            ),
+        return bounded_phase_durations(
+            PhaseDurations(
+                float(settings.get("duration_excentrique_s", legacy_duration)),
+                float(settings.get("duration_isometrique_s", 2.0)),
+                float(settings.get("duration_concentrique_s", legacy_duration)),
+            )
         )
 
     def total_motion_duration(self) -> float:
@@ -1597,9 +1652,23 @@ class SquatGui(tk.Tk):
         self.on_parameter_changed()
 
     def apply_temporal_preset(self) -> None:
-        preset = TEMPORAL_PRESETS_BY_NAME.get(self.temporal_preset_var.get())
+        selected = self.temporal_preset_display_var.get()
+        preset = next(
+            (
+                candidate
+                for candidate in TEMPORAL_PRESETS
+                if temporal_preset_display(candidate) == selected
+            ),
+            TEMPORAL_PRESETS_BY_NAME.get(self.temporal_preset_var.get()),
+        )
         if preset is None:
             return
+        self.temporal_preset_var.set(preset.name)
+        self.temporal_preset_display_var.set(temporal_preset_display(preset))
+        self.temporal_preset_details_var.set(
+            "descente | isométrique | montée (s) : "
+            f"{phase_duration_triplet(preset.durations)}"
+        )
         durations = preset.durations
         self.eccentric_duration_var.set(durations.excentrique)
         self.isometric_duration_var.set(durations.isometrique)
@@ -1612,7 +1681,23 @@ class SquatGui(tk.Tk):
             self.isometric_duration_var.get(),
             self.concentric_duration_var.get(),
         )
-        self.temporal_preset_var.set(matching_temporal_preset(durations))
+        preset_name = matching_temporal_preset(durations)
+        self.temporal_preset_var.set(preset_name)
+        preset = TEMPORAL_PRESETS_BY_NAME.get(preset_name)
+        if preset is None:
+            self.temporal_preset_display_var.set(
+                f"{preset_name} — {phase_duration_triplet(durations)} s"
+            )
+            self.temporal_preset_details_var.set(
+                "descente | isométrique | montée (s) : "
+                f"{phase_duration_triplet(durations)}"
+            )
+        else:
+            self.temporal_preset_display_var.set(temporal_preset_display(preset))
+            self.temporal_preset_details_var.set(
+                "descente | isométrique | montée (s) : "
+                f"{phase_duration_triplet(preset.durations)}"
+            )
         self.on_parameter_changed()
 
     def on_parameter_changed(self) -> None:
@@ -1778,6 +1863,26 @@ class SquatGui(tk.Tk):
                     )
                 )
             )
+            preset = TEMPORAL_PRESETS_BY_NAME.get(self.temporal_preset_var.get())
+            if preset is None:
+                loaded_durations = PhaseDurations(
+                    self.eccentric_duration_var.get(),
+                    self.isometric_duration_var.get(),
+                    self.concentric_duration_var.get(),
+                )
+                self.temporal_preset_display_var.set(
+                    f"Personnalisé — {phase_duration_triplet(loaded_durations)} s"
+                )
+                self.temporal_preset_details_var.set(
+                    "descente | isométrique | montée (s) : "
+                    f"{phase_duration_triplet(loaded_durations)}"
+                )
+            else:
+                self.temporal_preset_display_var.set(temporal_preset_display(preset))
+                self.temporal_preset_details_var.set(
+                    "descente | isométrique | montée (s) : "
+                    f"{phase_duration_triplet(preset.durations)}"
+                )
             self.wedge_var.set(bool(settings.get("wedge_20_deg", False)))
             self.torque_preset_var.set(
                 str(settings.get("torque_preset", self.torque_preset_var.get()))

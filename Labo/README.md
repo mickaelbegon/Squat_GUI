@@ -26,6 +26,8 @@ python scripts/analyse_squat_results.py --results results_labo_squat/results.csv
 
 Les scenarios publics demandent le backend `biorbd`, afin que les couples de dynamique inverse et le CoP/ZMP soient ceux du modele utilise dans le GUI.
 
+Les deux scenarios de durée suivent les presets GUI révisés : `duration_slow` vaut `4/2/2 s` (161 frames) et `duration_fast` `0,5/0,5/0,5 s` (31 frames). Les phases de descente et de montée utilisent uniquement `0,5`, `1`, `2` ou `4 s`; la pause isométrique ne propose plus `1,5 s`.
+
 Pour lancer seulement le volet d'equilibre postural:
 
 ```bash
@@ -44,4 +46,4 @@ Le fichier `results_labo_squat/results.csv` contient toutes les frames, y compri
 
 Le CSV public donne uniquement les conditions de depart; il ne contient ni la posture corrigee ni les reponses numeriques.
 
-Dans le GUI, la zone d'appui fonctionnelle du ZMP exclut les 15 % posterieurs du pied projete au sol. Cette marge de talon evite d'accepter une posture dont le ZMP est encore sous la silhouette du pied, mais pratiquement au bord posterieur de l'appui. Avec le wedge, la limite posterieure devient la projection verticale de la cheville afin de signaler les strategies trop chargees vers le talon sureleve.
+Dans le GUI, la base géométrique du ZMP couvre toute la longueur projetée du pied, du talon aux orteils. La zone fonctionnelle va de la projection de la cheville à la tête des métatarsiens; le modèle place cette tête à 85 % du segment talon–orteils, les orteils distaux restant hors de la zone fonctionnelle. Cette convention explicite évite de confondre la longueur anatomique du pied avec la zone d'appui fonctionnelle.

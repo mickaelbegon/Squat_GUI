@@ -54,6 +54,17 @@ Winter, D. A. (2009). Biomechanics and Motor Control of Human Movement (4th ed.)
 
 Utilisation dans le laboratoire : les masses, centres de masse et rayons de giration du pied, de la jambe et de la cuisse reposent sur les paramètres Dempster/Winter combinés gauche-droite. Comme la jambe du modèle est orientée de la cheville vers le genou et la cuisse du genou vers la hanche, les positions publiées depuis l'articulation proximale sont inversées avant utilisation (`1 - 0.433 = 0.567`). Le segment supérieur `tronc-tête-bras` reste une agrégation didactique adaptée à la prise de barre et au scénario de grossesse.
 
+## Cadence et durée des phases
+
+Il n'existe pas une durée « normale » unique pour un squat : la profondeur, la charge, l'intention (contrôle, force ou puissance) et la consigne de pause changent fortement le tempo. Les protocoles publiés illustrent cette dispersion :
+
+- `2/0/2` est utilisé comme tempo rapide/contrôlé à 80 % de 1RM, alors que `6/0/2` est utilisé comme variante excentrique lente dans un protocole de back squat ([Gepfert et al., 2021](https://pmc.ncbi.nlm.nih.gov/articles/PMC8304738/));
+- des comparaisons d'entraînement opposent `2/0/2` à `4/0/2`, sans pause isométrique ([Krzyszkowski et al., 2022](https://pmc.ncbi.nlm.nih.gov/articles/PMC8919893/));
+- un protocole de squat standardisé récent impose `4 s` de descente, `1 s` de maintien et `4 s` de montée ([Jeong & Chung, 2024](https://pubmed.ncbi.nlm.nih.gov/39465741/));
+- une tâche expérimentale de contrôle moteur impose `5 s` pour chacune des trois périodes, mais les auteurs précisent que les `15 s` par répétition sont plus lents qu'un squat courant ([Kenville et al., 2020](https://www.nature.com/articles/s41598-020-61909-z)).
+
+Conséquence pédagogique : `Référence 4 | 2 | 4 s` est conservée comme condition lente, symétrique et facilement reproductible, pas comme une norme biomécanique. Pour une référence plus proche d'un squat contrôlé courant, tester `2 | 0 | 2 s` en gardant la même posture et la même charge.
+
 ## Utilisation pour le volet équilibre postural
 
 Le bloc `balance_*` n'impose pas une solution de posture. Il demande d'observer d'abord une pose basse identique pour isoler l'effet de la prise de barre, de la longueur de cuisse et du profil de sujet sur le CoM et le CoP/ZMP, puis de proposer une adaptation. Les résultats doivent être interprétés en s'appuyant sur :

@@ -186,6 +186,11 @@ class ObservableTests(unittest.TestCase):
         self.assertLess(margins.functional_posterior_margin_m, 0.0)
         self.assertGreater(margins.functional_anterior_margin_m, 0.0)
 
+        metatarsal_point = pose.heel[0] + 0.85 * geometric_length
+        forefoot = support_margins(pose, metatarsal_point)
+        self.assertTrue(forefoot.in_functional_base)
+        self.assertAlmostEqual(forefoot.functional_anterior_margin_m, 0.0)
+
     def test_wedge_support_margins_use_ankle_as_functional_posterior_limit(self) -> None:
         pose = pose_from_angles(Anthropometry(wedge_angle_deg=20.0), (0.0, 0.0, 0.0))
 

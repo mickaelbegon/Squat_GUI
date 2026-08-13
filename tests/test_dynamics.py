@@ -278,15 +278,18 @@ class DynamicsTests(unittest.TestCase):
         self.assertNotEqual(biomod_cache_key(flat), biomod_cache_key(wedge))
         self.assertIn("0.939693", biomod_text(wedge))
 
-    def test_functional_zmp_support_excludes_posterior_heel_margin(self) -> None:
+    def test_functional_zmp_support_runs_from_ankle_to_metatarsal_head(self) -> None:
         pose = pose_from_angles(Anthropometry(), (0.0, 0.0, 0.0))
         posterior, anterior = zmp_support_limits(pose)
 
+        self.assertAlmostEqual(posterior, pose.ankle[0])
         self.assertAlmostEqual(
-            posterior, pose.heel[0] + 0.15 * (pose.toe[0] - pose.heel[0])
+            anterior, pose.heel[0] + 0.85 * (pose.toe[0] - pose.heel[0])
         )
         self.assertFalse(
-            zmp_in_support(pose, pose.heel[0] + 0.10 * (pose.toe[0] - pose.heel[0]))
+            zmp_in_support(
+                pose, pose.heel[0] + 0.10 * (pose.toe[0] - pose.heel[0])
+            )
         )
         self.assertTrue(zmp_in_support(pose, posterior))
         self.assertTrue(zmp_in_support(pose, anterior))
