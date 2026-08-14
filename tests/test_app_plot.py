@@ -64,25 +64,38 @@ class FakeCursorTable:
 
 class PlotSeriesTests(unittest.TestCase):
     def test_charge_popup_uses_discrete_percent_bw_steps(self):
-        self.assertEqual(LOAD_PERCENT_OPTIONS, tuple(range(0, 101, 10)))
+        self.assertEqual(LOAD_PERCENT_OPTIONS, (0.0, 25.0, 50.0, 75.0, 100.0))
 
         gui = object.__new__(SquatGui)
         gui.load_var = FakeVar(34.0)
         gui.load_display_var = FakeVar("")
         gui._sync_load_display()
-        self.assertEqual(gui.load_var.get(), 30.0)
-        self.assertEqual(gui.load_display_var.get(), "30 %BW")
+        self.assertEqual(gui.load_var.get(), 25.0)
+        self.assertEqual(gui.load_display_var.get(), "25 %BW")
 
     def test_charge_popup_selection_updates_numeric_setting(self):
         gui = object.__new__(SquatGui)
         gui.load_var = FakeVar(0.0)
-        gui.load_display_var = FakeVar("60 %BW")
+        gui.load_display_var = FakeVar("75 %BW")
         gui.parameter_changed = False
         gui.on_parameter_changed = lambda: setattr(gui, "parameter_changed", True)
 
         gui.on_load_menu_changed()
 
-        self.assertEqual(gui.load_var.get(), 60.0)
+        self.assertEqual(gui.load_var.get(), 75.0)
+        self.assertTrue(gui.parameter_changed)
+
+    def test_manual_duration_change_clears_the_temporal_preset(self):
+        gui = object.__new__(SquatGui)
+        gui.temporal_preset_var = FakeVar("Rapide")
+        gui.temporal_preset_display_var = FakeVar("Rapide — 1 | 0.5 | 1 s")
+        gui.parameter_changed = False
+        gui.on_parameter_changed = lambda: setattr(gui, "parameter_changed", True)
+
+        gui.on_duration_changed()
+
+        self.assertEqual(gui.temporal_preset_var.get(), "")
+        self.assertEqual(gui.temporal_preset_display_var.get(), "")
         self.assertTrue(gui.parameter_changed)
 
     def test_main_plot_menu_groups_joint_kinematics(self):

@@ -39,8 +39,6 @@ from .didactics import (
     RevealMode,
     bounded_phase_durations,
     layers_for_reveal,
-    matching_temporal_preset,
-    phase_duration_triplet,
     reveal_mode_for_step,
     temporal_preset_display,
 )
@@ -96,9 +94,10 @@ PLOT_CHOICES = [
     DETAILED_PLOT_CHOICE,
     "puissances articulaires",
 ]
-# La charge est volontairement discrète dans le GUI : le modele accepte encore
-# un flottant cote CLI, mais l'exploration interactive reste sur des pas de 10 %BW.
-LOAD_PERCENT_OPTIONS = tuple(range(0, 101, 10))
+# La charge est volontairement discrète dans le GUI : cinq niveaux couvrent
+# l'absence de barre, une progression intermédiaire et la charge maximale.
+# Le modèle accepte encore un flottant côté CLI pour les protocoles avancés.
+LOAD_PERCENT_OPTIONS = (0.0, 25.0, 50.0, 75.0, 100.0)
 
 JOINT_COLORS = {
     "cheville": "#2e7d54",
@@ -163,17 +162,10 @@ class SquatGui(tk.Tk):
         self.eccentric_duration_var = tk.DoubleVar(value=4.0)
         self.isometric_duration_var = tk.DoubleVar(value=2.0)
         self.concentric_duration_var = tk.DoubleVar(value=4.0)
-        self.temporal_preset_var = tk.StringVar(value="Référence")
-        reference_preset = TEMPORAL_PRESETS_BY_NAME["Référence"]
-        self.temporal_preset_display_var = tk.StringVar(
-            value=temporal_preset_display(reference_preset)
-        )
-        self.temporal_preset_details_var = tk.StringVar(
-            value=(
-                "descente | isométrique | montée (s) : "
-                f"{phase_duration_triplet(reference_preset.durations)}"
-            )
-        )
+        # Un preset est une action explicite : les trois durées choisies à la
+        # main ne doivent pas être étiquetées automatiquement.
+        self.temporal_preset_var = tk.StringVar(value="")
+        self.temporal_preset_display_var = tk.StringVar(value="")
         self.wedge_var = tk.BooleanVar(value=False)
         self.frame_var = tk.IntVar(value=self.frame_count // 2)
         self.plot_choice = tk.StringVar(value=PLOT_CHOICES[0])
@@ -250,150 +242,71 @@ class SquatGui(tk.Tk):
         self._build_layout()
         self.recompute()
 
-    def _build_display_menu(self, parent: tk.Misc) -> ttk.Menubutton:
-        button = ttk.Menubutton(parent, text="Affichage")
+    def _build_display_menu(
+        self, parent: tk.Misc, *, scope: str
+    ) -> ttk.Menubutton:
+        """Build a display menu scoped to the upper or lower figures."""
+        if scope not in {"upper", "lower"}:
+            raise ValueError(f"Portée d'affichage inconnue: {scope}")
+        label = "Affichage haut" if scope == "upper" else "Affichage bas"
+        button = ttk.Menubutton(parent, text=label)
         display_menu = tk.Menu(button, tearoff=False)
-        display_menu.add_command(label="COURBES", state="disabled")
-        for name, variable in self.show_vars.items():
+
+        def add_section(title: str) -> None:
+            display_menu.add_command(label=title, state="disabled")
+
+        def add_check(label: str, variable: tk.Variable) -> None:
             display_menu.add_checkbutton(
-                label=f"Courbe — {name}",
-                variable=variable,
-                command=self.on_display_changed,
+                label=label, variable=variable, command=self.on_display_changed
             )
-        for name, variable in self.com_component_vars.items():
-            display_menu.add_checkbutton(
-                label=f"Composante — {name}",
-                variable=variable,
-                command=self.on_display_changed,
-            )
-        display_menu.add_separator()
-        display_menu.add_command(label="DÉCOMPOSITION DYNAMIQUE", state="disabled")
-        for name, variable in self.torque_component_vars.items():
-            display_menu.add_checkbutton(
-                label=name,
-                variable=variable,
-                command=self.on_display_changed,
-            )
-        display_menu.add_checkbutton(
-            label="Courbes sur 3 axes",
-            variable=self.subplot_mode_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Limites de couple",
-            variable=self.show_torque_bounds_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_separator()
-        display_menu.add_command(label="ANIMATION ET REPÈRES", state="disabled")
-        display_menu.add_checkbutton(
-            label="Coordonnées articulaires (survol)",
-            variable=self.show_joint_coordinates_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Orientations segmentaires",
-            variable=self.show_segment_orientations_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Angles articulaires",
-            variable=self.show_joint_angles_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Anthropométrie utilisée",
-            variable=self.show_anthropometry_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Échantillons i−1 / i / i+1",
-            variable=self.show_neighbor_samples_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_separator()
-        display_menu.add_checkbutton(
-            label="Limites des phases",
-            variable=self.show_phase_limits_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Noms des phases",
-            variable=self.show_phase_names_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_separator()
-        display_menu.add_checkbutton(
-            label="CoM global",
-            variable=self.show_global_com_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Projection du CoM",
-            variable=self.show_com_projection_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="CoM segmentaires + barre",
-            variable=self.show_segment_com_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Point d'appui (CoP ou ZMP)",
-            variable=self.show_cop_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="GRF", variable=self.show_grf_var, command=self.on_display_changed
-        )
-        display_menu.add_checkbutton(
-            label="Poids",
-            variable=self.show_weight_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Base géométrique projetée",
-            variable=self.show_geometric_base_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Zone fonctionnelle d'appui",
-            variable=self.show_support_limits_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Bilan forces et équilibre",
-            variable=self.show_force_balance_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_separator()
-        display_menu.add_checkbutton(
-            label="Bras de levier GRF",
-            variable=self.show_moment_arms_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Anneaux demande/capacité",
-            variable=self.show_capacity_rings_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Marqueurs articulaires",
-            variable=self.show_joint_markers_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Centres des sprites",
-            variable=self.show_sprite_centers_var,
-            command=self.on_display_changed,
-        )
-        display_menu.add_checkbutton(
-            label="Sprites basse qualité",
-            variable=self.low_quality_sprites_var,
-            command=self.on_display_changed,
-        )
+
+        if scope == "lower":
+            add_section("COURBES")
+            for name, variable in self.show_vars.items():
+                add_check(f"Courbe — {name}", variable)
+            for name, variable in self.com_component_vars.items():
+                add_check(f"Composante — {name}", variable)
+            display_menu.add_separator()
+            add_section("DÉCOMPOSITION DYNAMIQUE")
+            for name, variable in self.torque_component_vars.items():
+                add_check(name, variable)
+            add_check("Courbes sur 3 axes", self.subplot_mode_var)
+            add_check("Limites de couple", self.show_torque_bounds_var)
+            display_menu.add_separator()
+            add_section("PHASES")
+            add_check("Limites des phases", self.show_phase_limits_var)
+            add_check("Noms des phases", self.show_phase_names_var)
+        else:
+            add_section("ANIMATION ET REPÈRES")
+            add_check("Coordonnées articulaires (survol)", self.show_joint_coordinates_var)
+            add_check("Orientations segmentaires", self.show_segment_orientations_var)
+            add_check("Angles articulaires", self.show_joint_angles_var)
+            add_check("Anthropométrie utilisée", self.show_anthropometry_var)
+            add_check("Échantillons i−1 / i / i+1", self.show_neighbor_samples_var)
+            display_menu.add_separator()
+            add_section("CoM ET APPUI")
+            add_check("CoM global", self.show_global_com_var)
+            add_check("Projection du CoM", self.show_com_projection_var)
+            add_check("CoM segmentaires + barre", self.show_segment_com_var)
+            add_check("Point d'appui (CoP ou ZMP)", self.show_cop_var)
+            add_check("GRF", self.show_grf_var)
+            add_check("Poids", self.show_weight_var)
+            add_check("Base géométrique projetée", self.show_geometric_base_var)
+            add_check("Zone fonctionnelle d'appui", self.show_support_limits_var)
+            add_check("Bilan forces et équilibre", self.show_force_balance_var)
+            display_menu.add_separator()
+            add_section("ANNOTATIONS DYNAMIQUES")
+            add_check("Bras de levier GRF", self.show_moment_arms_var)
+            add_check("Anneaux demande/capacité", self.show_capacity_rings_var)
+            add_check("Marqueurs articulaires", self.show_joint_markers_var)
+            add_check("Centres des sprites", self.show_sprite_centers_var)
+            add_check("Sprites basse qualité", self.low_quality_sprites_var)
+
         button.configure(menu=display_menu)
-        self.display_menu = display_menu
+        if scope == "upper":
+            self.display_menu_upper = display_menu
+        else:
+            self.display_menu_lower = display_menu
         return button
 
     def on_display_changed(self) -> None:
@@ -437,9 +350,9 @@ class SquatGui(tk.Tk):
         self._last_reveal_mode = target
         if hasattr(self, "plot_menu"):
             self.update_plot_choices()
-            self.display_menu_button.state(
-                ["!disabled"] if target is RevealMode.FREE else ["disabled"]
-            )
+            state = ["!disabled"] if target is RevealMode.FREE else ["disabled"]
+            self.display_menu_upper_button.state(state)
+            self.display_menu_lower_button.state(state)
 
     def on_reveal_mode_changed(self) -> None:
         self.set_reveal_mode(self.reveal_mode_var.get())
@@ -553,8 +466,9 @@ class SquatGui(tk.Tk):
 
         left = ttk.Frame(root)
         self.left_panel = left
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        left.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=(0, 8))
         left.columnconfigure(0, weight=1)
+        left.rowconfigure(4, weight=1)
         guide_box = ttk.LabelFrame(left, text="Parcours didactique")
         guide_box.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         guide_box.columnconfigure(1, weight=1)
@@ -622,40 +536,49 @@ class SquatGui(tk.Tk):
         self.parameter_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         self.parameter_box.columnconfigure(0, weight=1)
         self.parameter_box.columnconfigure(1, weight=1)
-        identity = ttk.Frame(self.parameter_box)
-        identity.grid(row=0, column=0, columnspan=2, sticky="ew", padx=4, pady=3)
-        identity.columnconfigure(0, weight=1)
-        identity.columnconfigure(1, weight=1)
-        identity.columnconfigure(2, weight=1)
-        ttk.Label(identity, text="Sujet").grid(row=0, column=0, sticky="w")
-        ttk.Label(identity, text="Prise barre").grid(row=0, column=1, sticky="w")
+        self.identity_box = ttk.Frame(self.parameter_box)
+        self.identity_box.grid(
+            row=0, column=0, sticky="nsew", padx=(4, 2), pady=3
+        )
+        for column in range(2):
+            self.identity_box.columnconfigure(column, weight=1)
+        ttk.Label(self.identity_box, text="Sujet").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Label(self.identity_box, text="Prise barre").grid(
+            row=0, column=1, sticky="w"
+        )
         self.profile_menu = ttk.Combobox(
-            identity,
+            self.identity_box,
             textvariable=self.subject_profile_var,
             values=SUBJECT_PROFILES,
             state="readonly",
-            width=14,
+            width=9,
         )
         self.profile_menu.grid(row=1, column=0, sticky="ew", padx=(0, 3))
         self.profile_menu.bind(
             "<<ComboboxSelected>>", lambda _event: self.on_parameter_changed()
         )
         self.bar_menu = ttk.Combobox(
-            identity,
+            self.identity_box,
             textvariable=self.bar_position_var,
             values=BAR_POSITIONS,
             state="readonly",
-            width=12,
+            width=9,
         )
         self.bar_menu.grid(row=1, column=1, sticky="ew", padx=(3, 0))
         self.bar_menu.bind(
             "<<ComboboxSelected>>", lambda _event: self.on_parameter_changed()
         )
         self.charge_box = ttk.LabelFrame(
-            identity, text="Charge %BW (sujet 70 kg)"
+            self.parameter_box, text="Charge %BW (sujet 70 kg)"
         )
         self.charge_box.grid(
-            row=0, column=2, rowspan=2, sticky="nsew", padx=(6, 0), pady=(0, 0)
+            row=0,
+            column=1,
+            sticky="nsew",
+            padx=(2, 4),
+            pady=3,
         )
         self.charge_box.columnconfigure(0, weight=1)
         self.load_menu = ttk.Combobox(
@@ -670,9 +593,11 @@ class SquatGui(tk.Tk):
             "<<ComboboxSelected>>", lambda _event: self.on_load_menu_changed()
         )
         self.duration_box = ttk.LabelFrame(
-            self.parameter_box, text="Durees des phases (s)"
+            self.parameter_box, text="Durée des phases (s)"
         )
-        self.duration_box.grid(row=2, column=0, sticky="ew", padx=(4, 2), pady=3)
+        self.duration_box.grid(
+            row=1, column=0, sticky="nsew", padx=(4, 2), pady=3
+        )
         for column, (label, variable, values) in enumerate(
             (
                 (
@@ -705,8 +630,39 @@ class SquatGui(tk.Tk):
             duration.bind(
                 "<<ComboboxSelected>>", lambda _event: self.on_duration_changed()
             )
+        self.temporal_preset_label = ttk.Label(
+            self.duration_box,
+            text="Preset temporel (Descente | Iso | Montée)",
+        )
+        self.temporal_preset_label.grid(
+            row=2, column=0, columnspan=3, sticky="w", padx=2
+        )
+        self.temporal_preset_menu = ttk.Combobox(
+            self.duration_box,
+            textvariable=self.temporal_preset_display_var,
+            values=(
+                "",
+                *(temporal_preset_display(preset) for preset in TEMPORAL_PRESETS),
+            ),
+            state="readonly",
+            width=30,
+        )
+        self.temporal_preset_menu.grid(
+            row=3,
+            column=0,
+            columnspan=3,
+            sticky="ew",
+            padx=2,
+            pady=(0, 3),
+        )
+        self.temporal_preset_menu.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self.apply_temporal_preset(),
+        )
         self.lengths_box = ttk.LabelFrame(self.parameter_box, text="Longueurs (%)")
-        self.lengths_box.grid(row=2, column=1, sticky="ew", padx=(2, 4), pady=3)
+        self.lengths_box.grid(
+            row=1, column=1, sticky="nsew", padx=(2, 4), pady=3
+        )
         for column, (label, variable) in enumerate(
             (
                 ("tibia", self.shank_var),
@@ -727,7 +683,8 @@ class SquatGui(tk.Tk):
             length_menu.bind(
                 "<<ComboboxSelected>>", lambda _event: self.on_parameter_changed()
             )
-        ttk.Label(self.lengths_box, text="mode").grid(
+        self.anthropometry_mode_label = ttk.Label(self.lengths_box, text="mode")
+        self.anthropometry_mode_label.grid(
             row=2, column=0, columnspan=3, sticky="w", padx=2
         )
         self.anthropometry_mode_menu = ttk.Combobox(
@@ -743,41 +700,18 @@ class SquatGui(tk.Tk):
         self.anthropometry_mode_menu.bind(
             "<<ComboboxSelected>>", lambda _event: self.on_parameter_changed()
         )
-        temporal_preset_box = ttk.Frame(self.parameter_box)
-        temporal_preset_box.grid(
-            row=3, column=0, columnspan=2, sticky="ew", padx=4, pady=(3, 1)
+        self.parameter_options = ttk.Frame(self.parameter_box)
+        self.parameter_options.grid(
+            row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(3, 4)
         )
-        temporal_preset_box.columnconfigure(1, weight=1)
-        ttk.Label(temporal_preset_box, text="Preset temporel").grid(
-            row=0, column=0, sticky="w", padx=(0, 6)
-        )
-        self.temporal_preset_menu = ttk.Combobox(
-            temporal_preset_box,
-            textvariable=self.temporal_preset_display_var,
-            values=[temporal_preset_display(preset) for preset in TEMPORAL_PRESETS],
-            state="readonly",
-            width=48,
-        )
-        self.temporal_preset_menu.grid(row=0, column=1, sticky="ew")
-        self.temporal_preset_menu.bind(
-            "<<ComboboxSelected>>",
-            lambda _event: self.apply_temporal_preset(),
-        )
-        ttk.Label(
-            temporal_preset_box,
-            textvariable=self.temporal_preset_details_var,
-            foreground="#53645b",
-        ).grid(row=1, column=1, sticky="w", padx=(0, 6), pady=(1, 0))
-        options = ttk.Frame(self.parameter_box)
-        options.grid(row=4, column=0, columnspan=2, sticky="ew", padx=4, pady=(3, 4))
         ttk.Checkbutton(
-            options,
+            self.parameter_options,
             text="wedge 20 deg",
             variable=self.wedge_var,
             command=self.on_parameter_changed,
         ).pack(side="left")
         ttk.Checkbutton(
-            options,
+            self.parameter_options,
             text="CoM segments + barre",
             variable=self.show_segment_com_var,
             command=self.redraw,
@@ -785,47 +719,57 @@ class SquatGui(tk.Tk):
 
         self.torque_box = ttk.LabelFrame(left, text="Couples max")
         self.torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
-        for col in range(3):
+        for col in range(4):
             self.torque_box.columnconfigure(col, weight=1)
-        for col, joint in enumerate(("cheville", "genou", "hanche")):
-            ttk.Label(self.torque_box, text=joint).grid(row=0, column=col, padx=4)
-            entry = ttk.Entry(
-                self.torque_box, textvariable=self.max_torque_vars[joint], width=7
-            )
-            entry.grid(row=1, column=col, sticky="ew", padx=4)
-            entry.bind("<FocusOut>", lambda _event: self.on_parameter_changed())
-            entry.bind("<Return>", lambda _event: self.on_parameter_changed())
-        ttk.OptionMenu(
+        self.torque_box.columnconfigure(0, weight=0)
+        self.torque_preset_menu = ttk.OptionMenu(
             self.torque_box,
             self.torque_preset_var,
             self.torque_preset_var.get(),
             *torque_presets(70.0, 1.70),
             command=lambda _value: self.apply_torque_preset(),
-        ).grid(row=2, column=0, columnspan=3, sticky="ew", padx=4, pady=(4, 0))
+        )
+        self.torque_preset_menu.grid(
+            row=0, column=0, rowspan=2, sticky="nsew", padx=4, pady=(3, 0)
+        )
+        for col, joint in enumerate(("cheville", "genou", "hanche")):
+            ttk.Label(self.torque_box, text=joint).grid(row=0, column=col + 1, padx=4)
+            entry = ttk.Entry(
+                self.torque_box, textvariable=self.max_torque_vars[joint], width=7
+            )
+            entry.grid(row=1, column=col + 1, sticky="ew", padx=4)
+            entry.bind("<FocusOut>", lambda _event: self.on_parameter_changed())
+            entry.bind("<Return>", lambda _event: self.on_parameter_changed())
+        torque_checks = ttk.Frame(self.torque_box)
+        torque_checks.grid(
+            row=2, column=0, columnspan=4, sticky="ew", padx=4, pady=(4, 0)
+        )
+        for col in range(3):
+            torque_checks.columnconfigure(col, weight=1)
         ttk.Checkbutton(
-            self.torque_box,
+            torque_checks,
             text="max-angle (Anderson)",
             variable=self.angle_adapt_var,
             command=self.on_parameter_changed,
-        ).grid(row=3, column=0, columnspan=3, sticky="w", padx=4)
+        ).grid(row=0, column=0, sticky="w", padx=(0, 4))
         ttk.Checkbutton(
-            self.torque_box,
+            torque_checks,
             text="max-vitesse (Anderson)",
             variable=self.velocity_adapt_var,
             command=self.on_parameter_changed,
-        ).grid(row=4, column=0, columnspan=3, sticky="w", padx=4)
+        ).grid(row=0, column=1, sticky="w", padx=4)
         ttk.Checkbutton(
-            self.torque_box,
+            torque_checks,
             text="afficher les limites",
             variable=self.show_torque_bounds_var,
             command=self.redraw,
-        ).grid(row=5, column=0, columnspan=3, sticky="w", padx=4)
+        ).grid(row=0, column=2, sticky="w", padx=(4, 0))
 
         # Les controles de resultat occupent la ligne dediee a l'en-tete des
         # courbes. Ils ne doivent pas etre enfermes dans le panneau vertical
         # des parametres, dont la hauteur est contrainte par la fenetre.
-        self.plot_box = ttk.LabelFrame(root, text="Resultats")
-        self.plot_box.grid(row=1, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
+        self.plot_box = ttk.LabelFrame(left, text="Resultats")
+        self.plot_box.grid(row=3, column=0, sticky="ew", pady=(0, 8))
         for col in range(4):
             self.plot_box.columnconfigure(col, weight=1)
         self.plot_menu = ttk.Combobox(
@@ -905,9 +849,9 @@ class SquatGui(tk.Tk):
         self.phase_menu_button.configure(menu=phase_menu)
         self.phase_menu_button.grid(row=1, column=3, sticky="ew", padx=4)
         self.table_box = ttk.LabelFrame(
-            root, text="Conditions enregistrees", width=420, height=250
+            left, text="Conditions enregistrees", width=420, height=250
         )
-        self.table_box.grid(row=2, column=0, sticky="nsew", padx=(0, 8), pady=(8, 0))
+        self.table_box.grid(row=4, column=0, sticky="nsew")
         self.table_box.grid_propagate(False)
         self.table_box.rowconfigure(1, weight=1)
         self.table_box.columnconfigure(0, weight=1)
@@ -1100,20 +1044,24 @@ class SquatGui(tk.Tk):
         self.differences_table.configure(yscrollcommand=difference_scroll.set)
         self.file_box = ttk.Frame(self.table_box)
         self.file_box.grid(row=2, column=0, sticky="ew", padx=4, pady=(0, 4))
-        self.file_box.columnconfigure(0, weight=1)
-        self.file_box.columnconfigure(1, weight=1)
-        ttk.Button(
-            self.file_box, text="Sauver conditions", command=self.save_json
-        ).grid(row=0, column=0, sticky="ew", padx=(0, 3))
-        ttk.Button(
-            self.file_box, text="Charger conditions", command=self.load_json
-        ).grid(row=0, column=1, sticky="ew", padx=(3, 0))
-        ttk.Button(
-            self.file_box, text="Exporter Excel", command=self.export_excel
-        ).grid(row=1, column=0, sticky="ew", padx=(0, 3), pady=(4, 0))
-        ttk.Button(self.file_box, text="Exporter MP4", command=self.export_video).grid(
-            row=1, column=1, sticky="ew", padx=(3, 0), pady=(4, 0)
+        for col in range(4):
+            self.file_box.columnconfigure(col, weight=1)
+        self.save_conditions_button = ttk.Button(
+            self.file_box, text="💾 Sauver", command=self.save_json
         )
+        self.save_conditions_button.grid(row=0, column=0, sticky="ew", padx=(0, 3))
+        self.load_conditions_button = ttk.Button(
+            self.file_box, text="📂 Charger", command=self.load_json
+        )
+        self.load_conditions_button.grid(row=0, column=1, sticky="ew", padx=3)
+        self.export_excel_button = ttk.Button(
+            self.file_box, text="▦ Excel", command=self.export_excel
+        )
+        self.export_excel_button.grid(row=0, column=2, sticky="ew", padx=3)
+        self.export_mp4_button = ttk.Button(
+            self.file_box, text="▶ MP4", command=self.export_video
+        )
+        self.export_mp4_button.grid(row=0, column=3, sticky="ew", padx=(3, 0))
         self.table_notebook.bind("<<NotebookTabChanged>>", self.on_table_tab_changed)
 
         self.pose_canvas = tk.Canvas(
@@ -1126,6 +1074,7 @@ class SquatGui(tk.Tk):
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
 
         right = ttk.Frame(root)
+        self.animation_panel = right
         right.grid(row=0, column=2, sticky="nsew")
         right.rowconfigure(0, weight=1)
         right.columnconfigure(0, weight=1)
@@ -1136,28 +1085,33 @@ class SquatGui(tk.Tk):
         self.animation_canvas.bind("<Configure>", self.schedule_redraw)
         self.animation_canvas.bind("<Motion>", self.on_animation_motion)
         self.animation_canvas.bind("<Leave>", self.clear_animation_tooltip)
-
-        plot_header = ttk.Frame(root)
-        plot_header.grid(row=1, column=1, sticky="ew", padx=(0, 8), pady=(8, 0))
-        ttk.Label(
-            plot_header,
-            textvariable=self.plot_title_var,
-            font=("Helvetica", 11, "bold"),
-        ).pack(anchor="w")
-        ttk.Label(
-            plot_header,
-            textvariable=self.time_mode_notice_var,
-            foreground="#6b5541",
-            font=("Helvetica", 8),
-        ).pack(anchor="w")
+        self.display_menu_upper_button = self._build_display_menu(
+            right, scope="upper"
+        )
+        self.display_menu_upper_button.place(relx=1.0, x=-8, y=8, anchor="ne")
 
         playback = ttk.Frame(root)
-        playback.grid(row=1, column=2, sticky="ew", pady=(8, 0))
-        playback.columnconfigure(1, weight=1)
+        self.playback_panel = playback
+        playback.grid(
+            row=1, column=1, columnspan=2, sticky="ew", pady=(2, 0)
+        )
+        playback.columnconfigure(2, weight=1)
+        self.reveal_mode_menu = ttk.Combobox(
+            playback,
+            textvariable=self.reveal_mode_var,
+            values=[mode.value for mode in RevealMode],
+            state="readonly",
+            width=13,
+        )
+        self.reveal_mode_menu.grid(row=0, column=0, padx=(0, 8))
+        self.reveal_mode_menu.bind(
+            "<<ComboboxSelected>>",
+            lambda _event: self.on_reveal_mode_changed(),
+        )
         self.play_button = ttk.Button(
             playback, text="▶", command=self.toggle_play, width=4
         )
-        self.play_button.grid(row=0, column=0, padx=(0, 8))
+        self.play_button.grid(row=0, column=1, padx=(0, 8))
         self.frame_scale = ttk.Scale(
             playback,
             variable=self.frame_var,
@@ -1166,19 +1120,7 @@ class SquatGui(tk.Tk):
             orient="horizontal",
             command=lambda _value: self.redraw(),
         )
-        self.frame_scale.grid(row=0, column=1, sticky="ew")
-        self.reveal_mode_menu = ttk.Combobox(
-            playback,
-            textvariable=self.reveal_mode_var,
-            values=[mode.value for mode in RevealMode],
-            state="readonly",
-            width=13,
-        )
-        self.reveal_mode_menu.grid(row=0, column=2, padx=(8, 0))
-        self.reveal_mode_menu.bind(
-            "<<ComboboxSelected>>",
-            lambda _event: self.on_reveal_mode_changed(),
-        )
+        self.frame_scale.grid(row=0, column=2, sticky="ew")
         self.time_mode_menu = ttk.Combobox(
             playback,
             textvariable=self.time_mode_var,
@@ -1191,25 +1133,25 @@ class SquatGui(tk.Tk):
             "<<ComboboxSelected>>",
             lambda _event: self.on_time_mode_changed(),
         )
-        self.display_menu_button = self._build_display_menu(playback)
-        self.display_menu_button.grid(row=0, column=4, padx=(8, 0))
-        ttk.Label(
-            playback, textvariable=self.frame_info_var, font=("Helvetica", 9)
-        ).grid(
-            row=1,
-            column=0,
-            columnspan=5,
-            sticky="w",
-            pady=(3, 0),
-        )
-
+        plot_panel = ttk.Frame(root)
+        self.plot_panel = plot_panel
+        plot_panel.grid(row=2, column=1, columnspan=2, sticky="nsew", pady=(2, 0))
+        plot_panel.rowconfigure(0, weight=1)
+        plot_panel.columnconfigure(0, weight=1)
         self.plot_canvas = tk.Canvas(
-            root, bg="#ffffff", highlightthickness=1, highlightbackground="#c9d1c7"
+            plot_panel,
+            bg="#ffffff",
+            highlightthickness=1,
+            highlightbackground="#c9d1c7",
         )
-        self.plot_canvas.grid(row=2, column=1, columnspan=2, sticky="nsew", pady=(8, 0))
+        self.plot_canvas.grid(row=0, column=0, sticky="nsew")
         self.plot_canvas.bind("<Configure>", self.schedule_redraw)
         self.plot_canvas.bind("<Button-1>", self.on_plot_cursor_event)
         self.plot_canvas.bind("<B1-Motion>", self.on_plot_cursor_event)
+        self.display_menu_lower_button = self._build_display_menu(
+            plot_panel, scope="lower"
+        )
+        self.display_menu_lower_button.place(relx=1.0, x=-8, y=8, anchor="ne")
 
         ttk.Label(root, textvariable=self.status_var).grid(
             row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0)
@@ -1653,6 +1595,9 @@ class SquatGui(tk.Tk):
 
     def apply_temporal_preset(self) -> None:
         selected = self.temporal_preset_display_var.get()
+        if not selected:
+            self.temporal_preset_var.set("")
+            return
         preset = next(
             (
                 candidate
@@ -1665,10 +1610,6 @@ class SquatGui(tk.Tk):
             return
         self.temporal_preset_var.set(preset.name)
         self.temporal_preset_display_var.set(temporal_preset_display(preset))
-        self.temporal_preset_details_var.set(
-            "descente | isométrique | montée (s) : "
-            f"{phase_duration_triplet(preset.durations)}"
-        )
         durations = preset.durations
         self.eccentric_duration_var.set(durations.excentrique)
         self.isometric_duration_var.set(durations.isometrique)
@@ -1676,28 +1617,8 @@ class SquatGui(tk.Tk):
         self.on_parameter_changed()
 
     def on_duration_changed(self) -> None:
-        durations = PhaseDurations(
-            self.eccentric_duration_var.get(),
-            self.isometric_duration_var.get(),
-            self.concentric_duration_var.get(),
-        )
-        preset_name = matching_temporal_preset(durations)
-        self.temporal_preset_var.set(preset_name)
-        preset = TEMPORAL_PRESETS_BY_NAME.get(preset_name)
-        if preset is None:
-            self.temporal_preset_display_var.set(
-                f"{preset_name} — {phase_duration_triplet(durations)} s"
-            )
-            self.temporal_preset_details_var.set(
-                "descente | isométrique | montée (s) : "
-                f"{phase_duration_triplet(durations)}"
-            )
-        else:
-            self.temporal_preset_display_var.set(temporal_preset_display(preset))
-            self.temporal_preset_details_var.set(
-                "descente | isométrique | montée (s) : "
-                f"{phase_duration_triplet(preset.durations)}"
-            )
+        self.temporal_preset_var.set("")
+        self.temporal_preset_display_var.set("")
         self.on_parameter_changed()
 
     def on_parameter_changed(self) -> None:
@@ -1763,7 +1684,7 @@ class SquatGui(tk.Tk):
             "duration_excentrique_s": self.eccentric_duration_var.get(),
             "duration_isometrique_s": self.isometric_duration_var.get(),
             "duration_concentrique_s": self.concentric_duration_var.get(),
-            "temporal_preset": matching_temporal_preset(self.phase_durations()),
+            "temporal_preset": self.temporal_preset_var.get(),
             "wedge_20_deg": self.wedge_var.get(),
             "frame": self.frame_var.get(),
             "plot_choice": self.plot_choice.get(),
@@ -1854,35 +1775,12 @@ class SquatGui(tk.Tk):
             self.concentric_duration_var.set(
                 float(settings.get("duration_concentrique_s", legacy_duration))
             )
-            self.temporal_preset_var.set(
-                matching_temporal_preset(
-                    PhaseDurations(
-                        self.eccentric_duration_var.get(),
-                        self.isometric_duration_var.get(),
-                        self.concentric_duration_var.get(),
-                    )
-                )
+            loaded_preset = str(settings.get("temporal_preset", ""))
+            preset = TEMPORAL_PRESETS_BY_NAME.get(loaded_preset)
+            self.temporal_preset_var.set(preset.name if preset is not None else "")
+            self.temporal_preset_display_var.set(
+                temporal_preset_display(preset) if preset is not None else ""
             )
-            preset = TEMPORAL_PRESETS_BY_NAME.get(self.temporal_preset_var.get())
-            if preset is None:
-                loaded_durations = PhaseDurations(
-                    self.eccentric_duration_var.get(),
-                    self.isometric_duration_var.get(),
-                    self.concentric_duration_var.get(),
-                )
-                self.temporal_preset_display_var.set(
-                    f"Personnalisé — {phase_duration_triplet(loaded_durations)} s"
-                )
-                self.temporal_preset_details_var.set(
-                    "descente | isométrique | montée (s) : "
-                    f"{phase_duration_triplet(loaded_durations)}"
-                )
-            else:
-                self.temporal_preset_display_var.set(temporal_preset_display(preset))
-                self.temporal_preset_details_var.set(
-                    "descente | isométrique | montée (s) : "
-                    f"{phase_duration_triplet(preset.durations)}"
-                )
             self.wedge_var.set(bool(settings.get("wedge_20_deg", False)))
             self.torque_preset_var.set(
                 str(settings.get("torque_preset", self.torque_preset_var.get()))
@@ -2204,18 +2102,10 @@ class SquatGui(tk.Tk):
         self.redraw()
 
     def on_table_tab_changed(self, _event: tk.Event | None = None) -> None:
-        if not hasattr(self, "table_notebook"):
-            return
-        selected_tab = self.table_notebook.select()
-        cursor_visible = selected_tab == str(self.cursor_tab)
-        analysis_visible = cursor_visible or selected_tab == str(self.differences_tab)
-        if cursor_visible:
-            self.table_buttons.grid_remove()
-        else:
+        """Keep condition actions in a stable position across all tabs."""
+        if hasattr(self, "table_buttons"):
             self.table_buttons.grid()
-        if analysis_visible:
-            self.file_box.grid_remove()
-        else:
+        if hasattr(self, "file_box"):
             self.file_box.grid()
 
     def update_condition_buttons(self) -> None:

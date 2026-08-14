@@ -7,6 +7,7 @@ runner with Tk available they exercise the real widget positions after layout.
 import os
 import tkinter as tk
 import unittest
+from tkinter import ttk
 
 from squat_gui.app import SquatGui
 
@@ -58,6 +59,12 @@ class GuiLayoutTests(unittest.TestCase):
         )
 
     def test_results_and_conditions_keep_distinct_vertical_slots(self):
+        self.assertIs(self.app.plot_box.master, self.app.left_panel)
+        self.assertIs(self.app.table_box.master, self.app.left_panel)
+        torque_bottom = (
+            self.app.torque_box.winfo_rooty() + self.app.torque_box.winfo_height()
+        )
+        self.assertLessEqual(torque_bottom, self.app.plot_box.winfo_rooty())
         plot_bottom = self.app.plot_box.winfo_rooty() + self.app.plot_box.winfo_height()
         conditions_top = self.app.table_box.winfo_rooty()
         self.assertLessEqual(plot_bottom, conditions_top)
@@ -75,6 +82,96 @@ class GuiLayoutTests(unittest.TestCase):
             if widget.winfo_ismapped():
                 self.assert_inside(widget, self.app.plot_box)
 
+    def test_display_menu_is_overlaid_on_the_animation_panel(self):
+        self.assertIs(
+            self.app.display_menu_upper_button.master, self.app.animation_panel
+        )
+        self.assertIs(self.app.display_menu_lower_button.master, self.app.plot_panel)
+        for button in (
+            self.app.display_menu_upper_button,
+            self.app.display_menu_lower_button,
+        ):
+            self.assertEqual(button.place_info().get("anchor"), "ne")
+            self.assertEqual(button.place_info().get("relx"), "1.0")
+
+    def test_playback_is_compact_below_the_pose_with_a_wide_slider(self):
+        self.assertEqual(self.app.playback_panel.grid_info()["column"], 1)
+        self.assertEqual(self.app.playback_panel.grid_info()["columnspan"], 2)
+        self.assertEqual(self.app.reveal_mode_menu.grid_info()["column"], 0)
+        self.assertEqual(self.app.frame_scale.grid_info()["column"], 2)
+        self.assertLess(
+            self.app.reveal_mode_menu.winfo_rootx(),
+            self.app.frame_scale.winfo_rootx(),
+        )
+        self.assertGreater(
+            self.app.frame_scale.winfo_width(), self.app.reveal_mode_menu.winfo_width()
+        )
+        playback_bottom = (
+            self.app.playback_panel.winfo_rooty()
+            + self.app.playback_panel.winfo_height()
+        )
+        self.assertLessEqual(playback_bottom, self.app.plot_panel.winfo_rooty())
+
+    def test_temporal_preset_starts_empty(self):
+        self.assertEqual(self.app.temporal_preset_var.get(), "")
+        self.assertEqual(self.app.temporal_preset_display_var.get(), "")
+
+    def test_torque_preset_and_checks_use_the_compact_grid(self):
+        self.assertIs(self.app.torque_preset_menu.master, self.app.torque_box)
+        self.assertEqual(self.app.torque_preset_menu.grid_info()["rowspan"], 2)
+        torque_checks = next(
+            child
+            for child in self.app.torque_box.winfo_children()
+            if isinstance(child, ttk.Frame)
+        )
+        check_rows = {
+            child.grid_info().get("row")
+            for child in torque_checks.winfo_children()
+            if child.winfo_manager() == "grid"
+        }
+        self.assertEqual(check_rows, {0})
+
+    def test_file_actions_share_one_icon_row(self):
+        buttons = (
+            self.app.save_conditions_button,
+            self.app.load_conditions_button,
+            self.app.export_excel_button,
+            self.app.export_mp4_button,
+        )
+        self.assertEqual({button.grid_info().get("row") for button in buttons}, {0})
+        self.assertEqual(
+            {button.grid_info().get("column") for button in buttons}, {0, 1, 2, 3}
+        )
+        self.assertTrue(all(button.cget("text")[0] in "💾📂▦▶" for button in buttons))
+
+    def test_parameter_columns_share_the_same_grid_lines(self):
+        self.assertEqual(
+            self.app.duration_box.grid_info()["row"],
+            self.app.lengths_box.grid_info()["row"],
+        )
+        self.assertEqual(
+            self.app.duration_box.winfo_rooty(), self.app.lengths_box.winfo_rooty()
+        )
+        self.assertEqual(
+            self.app.duration_box.winfo_height(), self.app.lengths_box.winfo_height()
+        )
+        self.assertIs(self.app.temporal_preset_menu.master, self.app.duration_box)
+        self.assertEqual(
+            self.app.temporal_preset_label.grid_info()["row"],
+            self.app.anthropometry_mode_label.grid_info()["row"],
+        )
+
+    def test_charge_starts_on_the_lengths_column(self):
+        self.assertEqual(self.app.profile_menu.grid_info()["column"], 0)
+        self.assertEqual(self.app.bar_menu.grid_info()["column"], 1)
+        self.assertIs(self.app.charge_box.master, self.app.parameter_box)
+        self.assertEqual(self.app.charge_box.grid_info()["column"], 1)
+        self.assertAlmostEqual(
+            self.app.charge_box.winfo_rootx(),
+            self.app.lengths_box.winfo_rootx(),
+            delta=2,
+        )
+
     def test_parameter_controls_fit_inside_the_left_panel(self):
         self.assertGreater(self.app.left_panel.winfo_height(), 0)
         for widget in self.app.left_panel.winfo_children():
@@ -90,6 +187,19 @@ class GuiLayoutTests(unittest.TestCase):
             self.app.file_box,
         ):
             self.assert_inside(widget, self.app.table_box)
+
+    def test_condition_actions_stay_visible_on_every_tab(self):
+        for tab in (
+            self.app.conditions_tab,
+            self.app.cursor_tab,
+            self.app.differences_tab,
+        ):
+            with self.subTest(tab=str(tab)):
+                self.app.table_notebook.select(tab)
+                self.app.on_table_tab_changed()
+                self.app.update_idletasks()
+                self.assertTrue(self.app.table_buttons.winfo_ismapped())
+                self.assertTrue(self.app.file_box.winfo_ismapped())
 
     def test_layout_remains_non_overlapping_after_window_resize(self):
         try:

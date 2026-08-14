@@ -8,11 +8,14 @@
 - Base géométrique d'appui alignée sur toute la longueur du pied; zone fonctionnelle
   redéfinie de la cheville à la tête des métatarsiens.
 - Presets temporels, pas physique constant de 0,05 s et curseur synchronisé.
+- Cinq profils temporels compacts (`Ref 2/1/2`, `Lent 4/2/4`, `Rapide 1/0,5/1`,
+  `Lent/Rapide 4/1/1`, `Rapide/Lent 1/1/4`) affichés directement dans le menu.
 - Échelle de durée harmonisée : descente/montée `0,5/1/2/4 s`; isométrique `0/0,5/1/2 s`, sans option `1,5 s`.
 - Le sélecteur temporel affiche désormais chaque preset directement sous la forme `descente | isométrique | montée`.
 - Comparaison de conditions, duplication contrôlée et inspecteur des variables modifiées.
 - Menu d’affichage unifié : CoM global/segmentaires, coordonnées articulaires au survol,
   orientations, angles, anthropométrie, appuis, forces et capacités.
+- Bouton `Affichage` superposé en haut à droite de l’animation et bloc des couples max condensé.
 - Tutoriel intégré et guide étudiant mis à jour jusqu’aux fonctionnalités F01–F41.
 
 ### Calculs et traçabilité scientifique

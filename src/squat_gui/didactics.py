@@ -66,18 +66,11 @@ def bounded_phase_durations(durations: PhaseDurations) -> PhaseDurations:
     )
 
 TEMPORAL_PRESETS = (
-    TemporalPreset("Référence", PhaseDurations(4.0, 2.0, 4.0)),
-    TemporalPreset("Lent", PhaseDurations(4.0, 2.0, 2.0)),
-    TemporalPreset("Rapide", PhaseDurations(0.5, 0.5, 0.5)),
-    TemporalPreset("Sans pause", PhaseDurations(4.0, 0.0, 4.0)),
-    TemporalPreset(
-        "Descente lente / remontée rapide",
-        PhaseDurations(4.0, 1.0, 0.5),
-    ),
-    TemporalPreset(
-        "Descente rapide / remontée lente",
-        PhaseDurations(0.5, 1.0, 4.0),
-    ),
+    TemporalPreset("Ref", PhaseDurations(2.0, 1.0, 2.0)),
+    TemporalPreset("Lent", PhaseDurations(4.0, 2.0, 4.0)),
+    TemporalPreset("Rapide", PhaseDurations(1.0, 0.5, 1.0)),
+    TemporalPreset("Lent/Rapide", PhaseDurations(4.0, 1.0, 1.0)),
+    TemporalPreset("Rapide/Lent", PhaseDurations(1.0, 1.0, 4.0)),
 )
 TEMPORAL_PRESETS_BY_NAME = {preset.name: preset for preset in TEMPORAL_PRESETS}
 

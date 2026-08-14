@@ -18,19 +18,29 @@ from squat_gui.kinematics import DEFAULT_SAMPLE_PERIOD_S, frame_count_for_durati
 
 
 class TemporalPresetTests(unittest.TestCase):
-    def test_six_named_presets_are_distinct(self) -> None:
-        self.assertEqual(len(TEMPORAL_PRESETS), 6)
-        self.assertEqual(len({preset.name for preset in TEMPORAL_PRESETS}), 6)
-        self.assertEqual(len({preset.durations for preset in TEMPORAL_PRESETS}), 6)
+    def test_five_named_presets_are_distinct(self) -> None:
+        self.assertEqual(len(TEMPORAL_PRESETS), 5)
+        self.assertEqual(len({preset.name for preset in TEMPORAL_PRESETS}), 5)
+        self.assertEqual(len({preset.durations for preset in TEMPORAL_PRESETS}), 5)
 
     def test_reference_preserves_the_validated_default(self) -> None:
         reference = TEMPORAL_PRESETS[0]
 
-        self.assertEqual(reference.name, "Référence")
-        self.assertEqual(reference.durations, PhaseDurations(4.0, 2.0, 4.0))
-        self.assertEqual(phase_duration_triplet(reference.durations), "4 | 2 | 4")
+        self.assertEqual(reference.name, "Ref")
+        self.assertEqual(reference.durations, PhaseDurations(2.0, 1.0, 2.0))
+        self.assertEqual(phase_duration_triplet(reference.durations), "2 | 1 | 2")
+        self.assertEqual(temporal_preset_display(reference), "Ref — 2 | 1 | 2 s")
+
+    def test_presets_match_the_validated_triplets(self) -> None:
         self.assertEqual(
-            temporal_preset_display(reference), "Référence — 4 | 2 | 4 s"
+            [(preset.name, preset.durations) for preset in TEMPORAL_PRESETS],
+            [
+                ("Ref", PhaseDurations(2.0, 1.0, 2.0)),
+                ("Lent", PhaseDurations(4.0, 2.0, 4.0)),
+                ("Rapide", PhaseDurations(1.0, 0.5, 1.0)),
+                ("Lent/Rapide", PhaseDurations(4.0, 1.0, 1.0)),
+                ("Rapide/Lent", PhaseDurations(1.0, 1.0, 4.0)),
+            ],
         )
 
     def test_presets_use_the_revised_discrete_duration_scale(self) -> None:
