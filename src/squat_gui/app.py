@@ -23,7 +23,7 @@ from .anthropometry import (
     scale_from_percent,
 )
 from .backend import BiorbdModelCache, detect_optional_backends
-from .cli import condition_from_settings, simulate_condition
+from .cli import condition_from_settings, simulate_condition, write_csv, write_json
 from .comparison import difference_summary, parameter_differences
 from .dynamics import (
     GRAVITY,
@@ -1067,6 +1067,14 @@ class SquatGui(tk.Tk):
             self.file_box, text="▶ MP4", command=self.export_video
         )
         self.export_mp4_button.grid(row=0, column=3, sticky="ew", padx=(3, 0))
+        self.export_csv_button = ttk.Button(
+            self.file_box,
+            text="⇩ CSV + résumé",
+            command=self.export_csv_results,
+        )
+        self.export_csv_button.grid(
+            row=1, column=0, columnspan=4, sticky="ew", pady=(4, 0)
+        )
         self.table_notebook.bind("<<NotebookTabChanged>>", self.on_table_tab_changed)
 
         self.pose_canvas = tk.Canvas(
@@ -2030,6 +2038,79 @@ class SquatGui(tk.Tk):
             return None
         self.status_var.set(f"classeur Excel écrit: {output}")
         return output
+
+    def export_csv_results(
+        self, path: str | Path | None = None
+    ) -> tuple[Path, Path] | None:
+        """Export frame-by-frame results and one JSON summary from the GUI."""
+        interactive = path is None
+        if path is None:
+            selected = filedialog.asksaveasfilename(
+                title="Exporter les résultats détaillés",
+                defaultextension=".csv",
+                filetypes=(
+                    ("Données CSV", "*.csv"),
+                    ("Tous les fichiers", "*.*"),
+                ),
+            )
+            if not selected:
+                return None
+            path = selected
+
+        exports = [
+            (
+                "condition_courante",
+                self.current_settings(),
+                [degrees(value) for value in self.final_q],
+                self.results[0].backend if self.results else "analytical",
+            )
+        ]
+        exports.extend(
+            (
+                f"condition_{condition['label']}",
+                dict(condition["settings"]),
+                list(condition["final_q_deg"]),
+                (
+                    condition["results"][0].backend
+                    if condition["results"]
+                    else "analytical"
+                ),
+            )
+            for condition in self.saved_conditions.values()
+        )
+        rows: list[dict[str, object]] = []
+        summaries: list[dict[str, object]] = []
+        output = Path(path)
+        summary_output = output.with_name(f"{output.stem}_summary.json")
+        try:
+            for condition_id, settings, final_q_deg, backend in exports:
+                condition = condition_from_settings(
+                    settings,
+                    final_q_deg,
+                    condition_id,
+                    backend=backend,
+                )
+                condition_rows, summary = simulate_condition(condition)
+                rows.extend(condition_rows)
+                summaries.append(summary)
+            write_csv(output, rows)
+            write_json(
+                summary_output,
+                {
+                    "version": 1,
+                    "csv": output.name,
+                    "conditions": summaries,
+                },
+            )
+        except (OSError, RuntimeError, ValueError) as error:
+            self.status_var.set(f"échec export CSV: {error}")
+            if interactive:
+                messagebox.showerror("Export CSV", str(error), parent=self)
+            return None
+        self.status_var.set(
+            f"CSV et résumé écrits: {output.name} · {summary_output.name}"
+        )
+        return output, summary_output
 
     def export_video(self, path: str | Path | None = None) -> Path | None:
         interactive = path is None

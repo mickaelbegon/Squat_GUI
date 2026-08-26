@@ -1,5 +1,8 @@
+import json
+import tempfile
 import unittest
 from math import radians
+from pathlib import Path
 from unittest.mock import patch
 
 from squat_gui.anthropometry import Anthropometry
@@ -83,6 +86,32 @@ class FakeCursorTable:
 
 
 class PlotSeriesTests(unittest.TestCase):
+    def test_csv_export_writes_time_series_and_summary_without_cli(self):
+        gui = self.gui_without_tk()
+        gui.current_settings = lambda: {
+            "subject_profile": "homme",
+            "bar_position": "back",
+        }
+        gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        gui.saved_conditions = {}
+        gui.status_var = FakeVar("")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            csv_path = Path(temporary) / "resultats.csv"
+            exported = gui.export_csv_results(csv_path)
+
+            self.assertIsNotNone(exported)
+            assert exported is not None
+            output, summary_path = exported
+            self.assertTrue(output.exists())
+            self.assertIn("zmp_in_support", output.read_text(encoding="utf-8").splitlines()[0])
+            payload = json.loads(summary_path.read_text(encoding="utf-8"))
+            self.assertEqual(payload["csv"], "resultats.csv")
+            self.assertEqual(len(payload["conditions"]), 1)
+            self.assertIn(
+                "zmp_outside_support_frames", payload["conditions"][0]
+            )
+
     def test_bar_trajectory_stops_at_the_lowest_bar_position(self):
         gui = object.__new__(SquatGui)
         canvas = RecordingCanvas()

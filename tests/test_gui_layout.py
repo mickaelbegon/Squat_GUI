@@ -142,6 +142,8 @@ class GuiLayoutTests(unittest.TestCase):
         self.assertEqual(
             {button.grid_info().get("column") for button in buttons}, {0, 1, 2, 3}
         )
+        self.assertEqual(self.app.export_csv_button.grid_info().get("row"), 1)
+        self.assertEqual(self.app.export_csv_button.grid_info().get("columnspan"), 4)
         self.assertTrue(all(button.cget("text")[0] in "💾📂▦▶" for button in buttons))
 
     def test_parameter_columns_share_the_same_grid_lines(self):
