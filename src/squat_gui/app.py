@@ -133,6 +133,7 @@ class SquatGui(tk.Tk):
         super().__init__()
         self.title("Squat 2D - dynamique inverse")
         self.geometry("1480x920")
+        self.minsize(1024, 700)
         self.configure(bg="#f2f4f1")
 
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
@@ -462,18 +463,44 @@ class SquatGui(tk.Tk):
         self._configure_didactic_styles(style)
 
         root = ttk.Frame(self, padding=10)
+        self.root_layout = root
         root.pack(fill="both", expand=True)
-        root.columnconfigure(0, weight=0, minsize=420)
+        root.columnconfigure(0, weight=0, minsize=360)
         root.columnconfigure(1, weight=1)
         root.columnconfigure(2, weight=1)
         root.rowconfigure(0, weight=1, minsize=420)
         root.rowconfigure(2, weight=3, minsize=250)
 
-        left = ttk.Frame(root)
+        self.left_scroll_host = ttk.Frame(root)
+        self.left_scroll_host.grid(
+            row=0, column=0, rowspan=3, sticky="nsew", padx=(0, 8)
+        )
+        self.left_scroll_host.rowconfigure(0, weight=1)
+        self.left_scroll_host.columnconfigure(0, weight=1)
+        self.left_scroll_canvas = tk.Canvas(
+            self.left_scroll_host,
+            width=420,
+            bg="#f2f4f1",
+            highlightthickness=0,
+        )
+        self.left_scroll_canvas.grid(row=0, column=0, sticky="nsew")
+        self.left_scrollbar = ttk.Scrollbar(
+            self.left_scroll_host,
+            orient="vertical",
+            command=self.left_scroll_canvas.yview,
+        )
+        self.left_scrollbar.grid(row=0, column=1, sticky="ns")
+        self.left_scroll_canvas.configure(yscrollcommand=self.left_scrollbar.set)
+
+        left = ttk.Frame(self.left_scroll_canvas)
         self.left_panel = left
-        left.grid(row=0, column=0, rowspan=3, sticky="nsew", padx=(0, 8))
+        self.left_scroll_window = self.left_scroll_canvas.create_window(
+            0, 0, anchor="nw", window=left
+        )
+        left.bind("<Configure>", self._update_left_scroll_region)
+        self.left_scroll_canvas.bind("<Configure>", self._resize_left_contents)
+        self.left_scroll_canvas.bind("<MouseWheel>", self._scroll_left_panel)
         left.columnconfigure(0, weight=1)
-        left.rowconfigure(4, weight=1)
         guide_box = ttk.LabelFrame(left, text="Parcours didactique")
         guide_box.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         guide_box.columnconfigure(1, weight=1)
@@ -1166,10 +1193,36 @@ class SquatGui(tk.Tk):
         )
         self.display_menu_lower_button.place(relx=1.0, x=-8, y=8, anchor="ne")
 
-        ttk.Label(root, textvariable=self.status_var).grid(
+        self.status_label = ttk.Label(
+            root,
+            textvariable=self.status_var,
+            justify="left",
+            anchor="w",
+        )
+        self.status_label.grid(
             row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0)
         )
+        root.bind("<Configure>", self._resize_status_text)
         self.update_didactic_guide()
+
+    def _update_left_scroll_region(self, _event: tk.Event | None = None) -> None:
+        self.left_scroll_canvas.configure(
+            scrollregion=self.left_scroll_canvas.bbox("all")
+        )
+
+    def _resize_left_contents(self, event: tk.Event) -> None:
+        self.left_scroll_canvas.itemconfigure(
+            self.left_scroll_window, width=max(1, event.width)
+        )
+        self._update_left_scroll_region()
+
+    def _scroll_left_panel(self, event: tk.Event) -> str:
+        delta = -1 if event.delta > 0 else 1
+        self.left_scroll_canvas.yview_scroll(delta, "units")
+        return "break"
+
+    def _resize_status_text(self, event: tk.Event) -> None:
+        self.status_label.configure(wraplength=max(300, event.width - 20))
 
     def _add_scale(
         self,

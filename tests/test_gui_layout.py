@@ -41,7 +41,7 @@ class GuiLayoutTests(unittest.TestCase):
             raise unittest.SkipTest("aucune session graphique disponible")
         try:
             cls.app = SquatGui()
-            cls.app.update_idletasks()
+            cls.app.update()
         except tk.TclError as exc:
             raise unittest.SkipTest(f"Tkinter sans affichage: {exc}") from exc
 
@@ -92,7 +92,7 @@ class GuiLayoutTests(unittest.TestCase):
             self.app.display_menu_lower_button,
         ):
             self.assertEqual(button.place_info().get("anchor"), "ne")
-            self.assertEqual(button.place_info().get("relx"), "1.0")
+            self.assertEqual(float(button.place_info().get("relx", 0.0)), 1.0)
 
     def test_playback_is_compact_below_the_pose_with_a_wide_slider(self):
         self.assertEqual(self.app.playback_panel.grid_info()["column"], 1)
@@ -179,6 +179,25 @@ class GuiLayoutTests(unittest.TestCase):
         for widget in self.app.left_panel.winfo_children():
             if widget.winfo_ismapped():
                 self.assert_inside(widget, self.app.left_panel)
+
+    def test_left_controls_are_scrollable_on_a_small_screen(self):
+        try:
+            self.app.geometry("1024x700")
+            self.app.update()
+            scroll_region = tuple(
+                int(float(value))
+                for value in self.app.left_scroll_canvas.cget("scrollregion").split()
+            )
+            self.assertEqual(len(scroll_region), 4)
+            self.assertGreater(
+                scroll_region[3] - scroll_region[1],
+                self.app.left_scroll_canvas.winfo_height(),
+            )
+            self.assertTrue(self.app.left_scrollbar.winfo_ismapped())
+            self.assertGreater(int(self.app.status_label.cget("wraplength")), 0)
+        finally:
+            self.app.geometry("1480x920")
+            self.app.update()
 
     def test_conditions_controls_fit_inside_the_conditions_frame(self):
         self.assertGreaterEqual(self.app.table_box.winfo_width(), 420)
