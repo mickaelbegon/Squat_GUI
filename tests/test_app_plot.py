@@ -37,6 +37,7 @@ class RecordingCanvas:
         self.texts = []
         self.lines = []
         self.rectangles = []
+        self.ovals = []
 
     def create_line(self, *args, **kwargs):
         self.lines.append((args, kwargs))
@@ -48,6 +49,10 @@ class RecordingCanvas:
     def create_rectangle(self, *args, **kwargs):
         self.rectangles.append((args, kwargs))
         return len(self.rectangles)
+
+    def create_oval(self, *args, **kwargs):
+        self.ovals.append((args, kwargs))
+        return len(self.ovals)
 
     def bbox(self, _item):
         return (16, 62, 500, 104)
@@ -78,6 +83,22 @@ class FakeCursorTable:
 
 
 class PlotSeriesTests(unittest.TestCase):
+    def test_bar_trajectory_stops_at_the_lowest_bar_position(self):
+        gui = object.__new__(SquatGui)
+        canvas = RecordingCanvas()
+        gui.world_to_canvas = lambda _canvas, point, _bounds: point
+        states = self.gui_without_tk().states
+
+        gui.draw_bar_trajectory(canvas, states, (-1.0, 1.0, -1.0, 2.0), 0.0, "#123456")
+
+        self.assertEqual(len(canvas.lines), 1)
+        self.assertEqual(len(canvas.ovals), 2)
+        line_coordinates = canvas.lines[0][0]
+        bottom_index = min(range(len(states)), key=lambda index: states[index].pose.bar[1])
+        self.assertEqual(len(line_coordinates), 2 * (bottom_index + 1))
+        self.assertEqual(canvas.texts[-2][1]["text"], "haut")
+        self.assertEqual(canvas.texts[-1][1]["text"], "bas")
+
     def test_alert_banner_wraps_each_alert_on_its_own_line(self):
         canvas = RecordingCanvas()
 

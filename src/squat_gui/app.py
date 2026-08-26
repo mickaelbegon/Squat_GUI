@@ -214,6 +214,7 @@ class SquatGui(tk.Tk):
         self.show_joint_angles_var = tk.BooleanVar(value=False)
         self.show_anthropometry_var = tk.BooleanVar(value=False)
         self.show_neighbor_samples_var = tk.BooleanVar(value=False)
+        self.show_bar_trajectory_var = tk.BooleanVar(value=False)
         self.show_moment_arms_var = tk.BooleanVar(value=True)
         self.show_capacity_rings_var = tk.BooleanVar(value=True)
         self.show_joint_markers_var = tk.BooleanVar(value=True)
@@ -286,6 +287,7 @@ class SquatGui(tk.Tk):
             add_check("Angles articulaires", self.show_joint_angles_var)
             add_check("Anthropométrie utilisée", self.show_anthropometry_var)
             add_check("Échantillons i−1 / i / i+1", self.show_neighbor_samples_var)
+            add_check("Trajectoire de la barre", self.show_bar_trajectory_var)
             display_menu.add_separator()
             add_section("CoM ET APPUI")
             add_check("CoM global", self.show_global_com_var)
@@ -1724,6 +1726,7 @@ class SquatGui(tk.Tk):
                 "joint_angles": self.show_joint_angles_var.get(),
                 "anthropometry": self.show_anthropometry_var.get(),
                 "neighbor_samples": self.show_neighbor_samples_var.get(),
+                "bar_trajectory": self.show_bar_trajectory_var.get(),
                 "moment_arms": self.show_moment_arms_var.get(),
                 "capacity_rings": self.show_capacity_rings_var.get(),
                 "joint_markers": self.show_joint_markers_var.get(),
@@ -1841,6 +1844,7 @@ class SquatGui(tk.Tk):
                 "joint_angles": self.show_joint_angles_var,
                 "anthropometry": self.show_anthropometry_var,
                 "neighbor_samples": self.show_neighbor_samples_var,
+                "bar_trajectory": self.show_bar_trajectory_var,
                 "moment_arms": self.show_moment_arms_var,
                 "capacity_rings": self.show_capacity_rings_var,
                 "joint_markers": self.show_joint_markers_var,
@@ -2877,6 +2881,17 @@ class SquatGui(tk.Tk):
                 refined_sprites=bool(item["refined_sprites"]),
                 layers=layers,
             )
+            if (
+                self.reveal_mode() is RevealMode.FREE
+                and self.show_bar_trajectory_var.get()
+            ):
+                self.draw_bar_trajectory(
+                    canvas,
+                    item["states"],  # type: ignore[arg-type]
+                    bounds,
+                    float(index),
+                    str(item["color"]),
+                )
             self.register_animation_hover_targets(
                 canvas,
                 state,
@@ -2961,6 +2976,57 @@ class SquatGui(tk.Tk):
             self.draw_neighbor_samples_overlay(canvas, self.states, frame)
         if layers.alerts:
             self.draw_alert_banner(canvas, alerts, 126)
+
+    def draw_bar_trajectory(
+        self,
+        canvas: tk.Canvas,
+        states: list[MotionState],
+        bounds: tuple[float, float, float, float],
+        x_offset: float,
+        color: str,
+    ) -> None:
+        """Draw the actual bar path from standing to the lowest bar position."""
+        if len(states) < 2:
+            return
+        bottom_index = min(range(len(states)), key=lambda index: states[index].pose.bar[1])
+        extreme_states = states[: bottom_index + 1]
+        if len(extreme_states) < 2:
+            return
+        points = [
+            self.world_to_canvas(
+                canvas,
+                (state.pose.bar[0] + x_offset, state.pose.bar[1]),
+                bounds,
+            )
+            for state in extreme_states
+        ]
+        coordinates = [coordinate for point in points for coordinate in point]
+        canvas.create_line(
+            *coordinates,
+            fill=color,
+            width=3,
+            dash=(7, 4),
+            smooth=True,
+        )
+        for point, label in ((points[0], "haut"), (points[-1], "bas")):
+            x, y = point
+            canvas.create_oval(
+                x - 5,
+                y - 5,
+                x + 5,
+                y + 5,
+                fill=CANVAS_BG,
+                outline=color,
+                width=2,
+            )
+            canvas.create_text(
+                x + 8,
+                y,
+                text=label,
+                anchor="w",
+                fill=color,
+                font=("Helvetica", 9, "bold"),
+            )
 
     def register_animation_hover_targets(
         self,
