@@ -38,6 +38,7 @@ def draw_segment(
     scale: float,
     world_to_canvas: Callable[[Vector], Vector],
     draw_joints: bool = False,
+    minimum_world_y: float | None = None,
 ) -> None:
     style = segment.get("style", {})
     facecolor = style.get("facecolor", "#f1c7a1")
@@ -50,7 +51,10 @@ def draw_segment(
             continue
         points: list[float] = []
         for local in vertices:
-            x, y = world_to_canvas(transform_point(local, origin, angle, scale))
+            world_x, world_y = transform_point(local, origin, angle, scale)
+            if minimum_world_y is not None:
+                world_y = max(minimum_world_y, world_y)
+            x, y = world_to_canvas((world_x, world_y))
             points.extend([x, y])
         if path.get("closed", False):
             canvas.create_polygon(points, fill=facecolor, outline=edgecolor, width=linewidth, joinstyle="round")

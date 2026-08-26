@@ -279,6 +279,16 @@ def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector, refined: bool
     return PhotoImage(image), anchor
 
 
+def clip_sprite_at_canvas_floor(image, anchor: Vector, distal_px: Vector, floor_canvas_y: float):
+    """Crop pixels below a horizontal floor without moving the joint anchor."""
+
+    image_top = distal_px[1] - anchor[1]
+    visible_height = max(1, min(image.height, int(floor_canvas_y - image_top) + 1))
+    if visible_height == image.height:
+        return image, anchor
+    return image.crop((0, 0, image.width, visible_height)), anchor
+
+
 def draw_sprite_segment(
     canvas,
     name: str,
@@ -287,6 +297,7 @@ def draw_sprite_segment(
     world_to_canvas: Callable[[Vector], Vector],
     refined: bool = False,
     trunk_variant: tuple[str, str] | None = None,
+    floor_world_y: float | None = None,
 ) -> bool:
     if not pillow_available():
         return False
@@ -294,7 +305,15 @@ def draw_sprite_segment(
     distal_px = world_to_canvas(distal_world)
     proximal_px = world_to_canvas(proximal_world)
     target_vector = (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1])
-    image, anchor = transformed_sprite(spec, target_vector, refined)
+    image, anchor = transformed_sprite_image(spec, target_vector, refined)
+    if floor_world_y is not None:
+        floor_canvas_y = world_to_canvas((distal_world[0], floor_world_y))[1]
+        image, anchor = clip_sprite_at_canvas_floor(
+            image, anchor, distal_px, floor_canvas_y
+        )
+    from PIL.ImageTk import PhotoImage
+
+    image = PhotoImage(image)
     canvas.create_image(distal_px[0] - anchor[0], distal_px[1] - anchor[1], image=image, anchor="nw")
     if not hasattr(canvas, "_sprite_images"):
         canvas._sprite_images = []

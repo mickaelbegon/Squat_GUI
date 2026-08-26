@@ -105,6 +105,27 @@ class RasterSegmentAnchorTest(unittest.TestCase):
         self.assertGreater(thigh.size[0], 85)
         self.assertGreater(foot.size[0], 130)
 
+    def test_foot_sprite_is_clipped_at_floor_without_moving_ankle_anchor(self):
+        for refined in (False, True):
+            with self.subTest(refined=refined):
+                image, anchor = raster_segments.transformed_sprite_image(
+                    raster_segments.sprite_spec("foot", refined=refined),
+                    (100.0, 30.0),
+                    refined=refined,
+                )
+                distal_px = (50.0, 70.0)
+                floor_y = 100.0
+
+                clipped, clipped_anchor = raster_segments.clip_sprite_at_canvas_floor(
+                    image, anchor, distal_px, floor_y
+                )
+
+                self.assertEqual(clipped_anchor, anchor)
+                self.assertLessEqual(
+                    distal_px[1] - clipped_anchor[1] + clipped.getbbox()[3],
+                    floor_y + 1.0,
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

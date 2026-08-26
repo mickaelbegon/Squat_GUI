@@ -2545,7 +2545,15 @@ class SquatGui(tk.Tk):
         if not raster_drawn:
             segments = load_segments()
             foot_scale = render_anthro.foot.length / 1.07
-            draw_segment(canvas, segments["foot"], pose.ankle, 0.0, foot_scale, mapper)
+            draw_segment(
+                canvas,
+                segments["foot"],
+                pose.ankle,
+                -render_anthro.wedge_angle,
+                foot_scale,
+                mapper,
+                minimum_world_y=0.0,
+            )
             draw_segment(
                 canvas,
                 segments["shank"],
@@ -2853,6 +2861,8 @@ class SquatGui(tk.Tk):
                         pose.toe,
                         mapper,
                         refined,
+                        None,
+                        0.0,
                     ),
                     draw_sprite_segment(
                         canvas,
