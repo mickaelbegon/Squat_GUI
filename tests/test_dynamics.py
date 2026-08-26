@@ -22,6 +22,8 @@ from squat_gui.dynamics import (
 from squat_gui.kinematics import (
     MotionState,
     PhaseDurations,
+    balanced_standing_angles,
+    functional_support_limits,
     motion_state,
     pose_from_angles,
     zmp_in_support,
@@ -235,9 +237,53 @@ class DynamicsTests(unittest.TestCase):
         self.assertEqual(states[0].phase, "excentrique")
         self.assertEqual(states[2].phase, "excentrique")
         self.assertEqual(states[3].phase, "concentrique")
-        self.assertAlmostEqual(states[0].q[0], 0.0)
+        self.assertEqual(states[0].q, balanced_standing_angles(anthro))
         self.assertAlmostEqual(states[2].q[0], math.radians(20.0))
-        self.assertAlmostEqual(states[-1].q[0], 0.0)
+        for observed, expected in zip(states[-1].q, balanced_standing_angles(anthro)):
+            self.assertAlmostEqual(observed, expected)
+
+    def test_balanced_standing_cop_is_strictly_inside_functional_support(self) -> None:
+        for subject in ("homme", "femme enceinte"):
+            for bar_position in ("front", "back", "over-head"):
+                for load_kg in (0.0, 70.0, 140.0):
+                    for wedge_deg in (0.0, 20.0):
+                        with self.subTest(
+                            subject=subject,
+                            bar_position=bar_position,
+                            load_kg=load_kg,
+                            wedge_deg=wedge_deg,
+                        ):
+                            anthro = Anthropometry(
+                                subject_profile=subject,
+                                bar_position=bar_position,
+                                bar_mass=load_kg,
+                                wedge_angle_deg=wedge_deg,
+                            )
+                            q = balanced_standing_angles(anthro)
+                            state = MotionState(
+                                0.0,
+                                q,
+                                (0.0, 0.0, 0.0),
+                                (0.0, 0.0, 0.0),
+                                pose_from_angles(anthro, q),
+                                "excentrique",
+                            )
+                            result = inverse_dynamics(
+                                anthro,
+                                state,
+                                {
+                                    "cheville": 180.0,
+                                    "genou": 220.0,
+                                    "hanche": 260.0,
+                                },
+                                False,
+                            )
+                            posterior, anterior = functional_support_limits(state.pose)
+
+                            self.assertLess(posterior, result.cop_x)
+                            self.assertLess(result.cop_x, anterior)
+                            self.assertAlmostEqual(q[0], q[1])
+                            self.assertAlmostEqual(q[1], q[2])
 
     def test_motion_supports_an_isometric_squat_phase(self) -> None:
         anthro = Anthropometry()
@@ -263,17 +309,17 @@ class DynamicsTests(unittest.TestCase):
     def test_wedge_is_in_geometry_and_biomod_cache_identity(self) -> None:
         flat = Anthropometry()
         wedge = Anthropometry(wedge_angle_deg=20.0)
-        flat_pose = pose_from_angles(flat, (0.0, 0.0, 0.0))
         wedge_state = motion_state(
             wedge, (0.0, 0.0, 0.0), PhaseDurations(2.0, 2.0, 2.0), 0.0
         )
         wedge_pose = wedge_state.pose
 
         self.assertGreater(wedge_pose.heel[1], wedge_pose.toe[1])
-        self.assertAlmostEqual(wedge_state.q[0], math.radians(-20.0))
-        self.assertAlmostEqual(
-            wedge_pose.knee[0] - wedge_pose.ankle[0],
-            flat_pose.knee[0] - flat_pose.ankle[0],
+        self.assertEqual(wedge_state.q, balanced_standing_angles(wedge))
+        self.assertAlmostEqual(wedge_state.q[0], wedge_state.q[1])
+        self.assertAlmostEqual(wedge_state.q[1], wedge_state.q[2])
+        self.assertLess(
+            abs(wedge_state.q[0] + wedge.wedge_angle), math.radians(12.0)
         )
         self.assertNotEqual(biomod_cache_key(flat), biomod_cache_key(wedge))
         self.assertIn("0.939693", biomod_text(wedge))

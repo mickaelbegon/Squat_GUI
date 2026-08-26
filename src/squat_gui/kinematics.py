@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import atan2, cos, pi, sin
+from math import atan2, cos, pi, radians, sin
 
 from .anthropometry import Anthropometry
 from .yeadon import QuinticBoundaryTrajectory
@@ -313,6 +313,51 @@ def pose_from_angles(anthro: Anthropometry, q: tuple[float, float, float]) -> Po
     return Pose(heel, toe, ankle, knee, hip, shoulder, bar, com, segment_coms)
 
 
+def balanced_standing_angles(
+    anthro: Anthropometry,
+    target_fraction: float = 0.5,
+    max_lean_deg: float = 12.0,
+) -> tuple[float, float, float]:
+    """Return an extended standing posture whose static CoP is safely supported.
+
+    All three absolute segment orientations share the same small lean, keeping
+    the knee and hip extended.  At rest the analytical CoP equals the global
+    centre-of-mass projection, so centring that projection in the functional
+    support interval provides a stable upright endpoint for every squat.
+    """
+
+    neutral_q = tuple(-anthro.wedge_angle for _ in range(3))
+    neutral_pose = pose_from_angles(anthro, neutral_q)
+    posterior, anterior = functional_support_limits(neutral_pose)
+    fraction = min(0.9, max(0.1, target_fraction))
+    target_x = posterior + fraction * (anterior - posterior)
+
+    lower_lean = -radians(max_lean_deg)
+    upper_lean = radians(max_lean_deg)
+
+    def posture(lean: float) -> tuple[tuple[float, float, float], float]:
+        q = tuple(lean - anthro.wedge_angle for _ in range(3))
+        return q, pose_from_angles(anthro, q).com[0] - target_x
+
+    lower_q, lower_error = posture(lower_lean)
+    upper_q, upper_error = posture(upper_lean)
+    if lower_error >= 0.0:
+        return lower_q
+    if upper_error <= 0.0:
+        return upper_q
+
+    for _ in range(48):
+        midpoint = (lower_lean + upper_lean) / 2.0
+        midpoint_q, midpoint_error = posture(midpoint)
+        if abs(midpoint_error) <= 1e-10:
+            return midpoint_q
+        if midpoint_error < 0.0:
+            lower_lean = midpoint
+        else:
+            upper_lean = midpoint
+    return posture((lower_lean + upper_lean) / 2.0)[0]
+
+
 def com_velocities(
     anthro: Anthropometry,
     q: tuple[float, float, float],
@@ -420,7 +465,7 @@ def motion_state(
     time: float,
 ) -> MotionState:
     durations = phase_durations(duration)
-    standing_q = tuple(-anthro.wedge_angle for _angle in final_q)
+    standing_q = balanced_standing_angles(anthro)
     eccentric_end = durations.excentrique
     isometric_end = eccentric_end + durations.isometrique
     if time <= eccentric_end:

@@ -6,7 +6,11 @@ from pathlib import Path
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.backend import BiorbdModelCache, detect_optional_backends
 from squat_gui.dynamics import _contact_moments, simulate
-from squat_gui.kinematics import PhaseDurations, motion_state
+from squat_gui.kinematics import (
+    PhaseDurations,
+    balanced_standing_angles,
+    motion_state,
+)
 
 
 @unittest.skipUnless(
@@ -58,7 +62,7 @@ class BiorbdBackendTests(unittest.TestCase):
                 BiorbdModelCache(Path(tmpdir)),
             )
 
-            self.assertAlmostEqual(math.degrees(states[0].q[0]), -20.0)
+            self.assertEqual(states[0].q, balanced_standing_angles(anthro))
             self.assertGreater(states[0].pose.heel[1], states[0].pose.toe[1])
             self.assertAlmostEqual(results[0].com[0], expected.pose.com[0], places=5)
             self.assertAlmostEqual(results[0].com[1], expected.pose.com[1], places=5)
