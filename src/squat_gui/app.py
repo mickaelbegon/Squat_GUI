@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from time import perf_counter
 
 os.environ.setdefault("LANG", "en_US.UTF-8")
 os.environ.setdefault("LC_ALL", "en_US.UTF-8")
@@ -137,6 +138,8 @@ class SquatGui(tk.Tk):
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
         self.frame_count = frame_count_for_duration(PhaseDurations())
         self.playing = False
+        self._play_started_at: float | None = None
+        self._play_start_time_s = 0.0
         self.drag_target: str | None = None
         self._redraw_pending = False
         self._suspend_selection_clear = False
@@ -2339,7 +2342,7 @@ class SquatGui(tk.Tk):
     def draw_alert_banner(self, canvas: tk.Canvas, alerts: list[str], y: int) -> None:
         if not alerts:
             return
-        text = "Probleme biomecanique: " + " | ".join(alerts)
+        text = "Problèmes biomécaniques :\n" + "\n".join(f"• {alert}" for alert in alerts)
         item = canvas.create_text(
             16,
             y,
@@ -2347,6 +2350,7 @@ class SquatGui(tk.Tk):
             anchor="nw",
             fill="#8a1f17",
             font=("Helvetica", 10, "bold"),
+            width=max(120, canvas.winfo_width() - 32),
         )
         bbox = canvas.bbox(item)
         if bbox is not None:
@@ -2841,15 +2845,13 @@ class SquatGui(tk.Tk):
             }
             for dataset in datasets
         ]
-        alerts = (
-            [
-                alert
-                for item in sampled
-                for alert in self.biomechanical_alerts(item["state"], item["result"], include_com=False)  # type: ignore[arg-type]
-            ]
-            if layers.alerts
-            else []
-        )
+        alerts: list[str] = []
+        if layers.alerts:
+            for item in sampled:
+                condition_alerts = self.biomechanical_alerts(
+                    item["state"], item["result"], include_com=False  # type: ignore[arg-type]
+                )
+                alerts.extend(f"{item['label']} : {alert}" for alert in condition_alerts)
         self.configure_alert_canvas(canvas, alerts)
         bounds = self.scene_bounds(
             extra_x=max(0, len(sampled) - 1),
@@ -2857,6 +2859,13 @@ class SquatGui(tk.Tk):
         )
         for index, item in enumerate(sampled):
             state = item["state"]  # type: ignore[assignment]
+            condition_alerts = (
+                self.biomechanical_alerts(
+                    state, item["result"], include_com=False  # type: ignore[arg-type]
+                )
+                if layers.alerts
+                else []
+            )
             self.draw_skeleton(
                 canvas,
                 state,  # type: ignore[arg-type]
@@ -2903,6 +2912,15 @@ class SquatGui(tk.Tk):
                     fill=color,
                     font=("Helvetica", 10, "bold"),
                 )
+                if condition_alerts:
+                    canvas.create_text(
+                        label_point[0] + 36,
+                        label_point[1],
+                        text="⚠",
+                        anchor="n",
+                        fill=ALERT_BORDER,
+                        font=("Helvetica", 12, "bold"),
+                    )
         state = sampled[0]["state"]  # type: ignore[assignment]
         result = sampled[0]["result"]  # type: ignore[assignment]
         title = (
@@ -4824,12 +4842,27 @@ class SquatGui(tk.Tk):
         self.playing = not self.playing
         self.play_button.configure(text="⏸" if self.playing else "▶")
         if self.playing:
-            self.after(round(1000 * DEFAULT_SAMPLE_PERIOD_S), self.step_animation)
+            self._play_started_at = perf_counter()
+            self._play_start_time_s = self.frame_var.get() * DEFAULT_SAMPLE_PERIOD_S
+            self.step_animation()
+        else:
+            self._play_started_at = None
 
     def step_animation(self) -> None:
         if not self.playing:
             return
-        self.frame_var.set((self.frame_var.get() + 1) % self.frame_count)
+        duration_s = max(
+            DEFAULT_SAMPLE_PERIOD_S,
+            (self.frame_count - 1) * DEFAULT_SAMPLE_PERIOD_S,
+        )
+        started_at = (
+            self._play_started_at
+            if self._play_started_at is not None
+            else perf_counter()
+        )
+        elapsed_s = perf_counter() - started_at
+        target_time_s = (self._play_start_time_s + elapsed_s) % duration_s
+        self.frame_var.set(round(target_time_s / DEFAULT_SAMPLE_PERIOD_S))
         self.redraw()
         self.after(round(1000 * DEFAULT_SAMPLE_PERIOD_S), self.step_animation)
 

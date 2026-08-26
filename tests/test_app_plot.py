@@ -36,12 +36,27 @@ class RecordingCanvas:
     def __init__(self):
         self.texts = []
         self.lines = []
+        self.rectangles = []
 
     def create_line(self, *args, **kwargs):
         self.lines.append((args, kwargs))
 
     def create_text(self, *args, **kwargs):
         self.texts.append((args, kwargs))
+        return len(self.texts)
+
+    def create_rectangle(self, *args, **kwargs):
+        self.rectangles.append((args, kwargs))
+        return len(self.rectangles)
+
+    def bbox(self, _item):
+        return (16, 62, 500, 104)
+
+    def tag_lower(self, _item, _below):
+        pass
+
+    def winfo_width(self):
+        return 320
 
 
 class FakeCursorTable:
@@ -63,6 +78,42 @@ class FakeCursorTable:
 
 
 class PlotSeriesTests(unittest.TestCase):
+    def test_alert_banner_wraps_each_alert_on_its_own_line(self):
+        canvas = RecordingCanvas()
+
+        SquatGui.draw_alert_banner(
+            object.__new__(SquatGui),
+            canvas,
+            [
+                "Condition 1 : CoP hors zone fonctionnelle d'appui",
+                "Condition 2 : faisabilité mécanique U > 1",
+            ],
+            62,
+        )
+
+        _args, options = canvas.texts[0]
+        self.assertIn("\n• Condition 1", options["text"])
+        self.assertIn("\n• Condition 2", options["text"])
+        self.assertEqual(options["width"], 288)
+        self.assertEqual(len(canvas.rectangles), 1)
+
+    def test_animation_uses_elapsed_wall_time_and_skips_late_frames(self):
+        gui = object.__new__(SquatGui)
+        gui.playing = True
+        gui.frame_count = 201
+        gui.frame_var = FakeVar(20)
+        gui._play_started_at = 100.0
+        gui._play_start_time_s = 1.0
+        gui.redraw = lambda: None
+        scheduled = []
+        gui.after = lambda delay, callback: scheduled.append((delay, callback))
+
+        with patch("squat_gui.app.perf_counter", return_value=102.05):
+            gui.step_animation()
+
+        self.assertEqual(gui.frame_var.get(), 61)
+        self.assertEqual(scheduled[0][0], 50)
+
     def test_charge_popup_uses_discrete_percent_bw_steps(self):
         self.assertEqual(LOAD_PERCENT_OPTIONS, (0.0, 25.0, 50.0, 75.0, 100.0))
 
