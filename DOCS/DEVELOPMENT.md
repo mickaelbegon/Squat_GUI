@@ -55,7 +55,7 @@ python -m squat_gui run \
   --joint-angles-deg 22 -80 78 \
   --backend analytical \
   --out exports/front_50bw.csv \
-  --summary exports/front_50bw_summary.json
+  --xlsx exports/front_50bw.xlsx
 ```
 
 Pour un lot, utiliser :
@@ -63,7 +63,6 @@ Pour un lot, utiliser :
 ```bash
 python -m squat_gui batch conditions.csv \
   --out exports/batch_results.csv \
-  --summary exports/batch_summary.json \
   --xlsx exports/batch_results.xlsx
 ```
 
@@ -71,11 +70,16 @@ python -m squat_gui batch conditions.csv \
 échoue explicitement si le backend demandé est indisponible. `--frames 0` utilise
 le pas temporel par défaut de 0,05 s.
 
-Le CSV contient une ligne par frame : paramètres, temps, coordonnées,
-orientations, cinématique, CoM, forces, appuis, couples, capacités, puissances et
-décomposition dynamique. Le résumé JSON contient les pics, sorties de base
-d'appui et la faisabilité mécanique dans les hypothèses du modèle. L'export Excel
-regroupe les mêmes informations en feuilles thématiques.
+Le CSV utilise par défaut le contrat `standard` : une ligne par frame avec les
+paramètres de condition, la cinématique articulaire, les moments et puissances,
+le CoM, le CoP/ZMP et la GRF verticale. `--csv-mode full` conserve l'ancien
+niveau diagnostique avec les coordonnées segmentaires et les termes
+intermédiaires. L'export Excel place en premier l'onglet `synthese`, qui fournit
+une ligne par condition avec les pics, moments normalisés, position au squat,
+excursion du CoP/ZMP, sorties de la base d'appui et faisabilité mécanique. Les
+autres feuilles conservent les séries et diagnostics détaillés. Le JSON reste
+disponible avec `--summary chemin.json`, mais n'est plus requis pour l'analyse
+étudiante.
 
 ## Builds locaux
 

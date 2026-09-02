@@ -7,6 +7,7 @@ from io import StringIO
 from pathlib import Path
 
 from squat_gui.cli import main
+from squat_gui.export_schema import SCHEMA_VERSION, STANDARD_CSV_COLUMNS
 
 
 class CliExportTests(unittest.TestCase):
@@ -25,6 +26,8 @@ class CliExportTests(unittest.TestCase):
                         "analytical",
                         "--frames",
                         "5",
+                        "--csv-mode",
+                        "full",
                         "--out",
                         str(out),
                         "--summary",
@@ -39,7 +42,7 @@ class CliExportTests(unittest.TestCase):
 
             self.assertEqual(len(rows), 5)
             self.assertEqual(rows[0]["condition_id"], "demo")
-            self.assertEqual(rows[0]["schema_version"], "1.4.0")
+            self.assertEqual(rows[0]["schema_version"], SCHEMA_VERSION)
             self.assertIn("cheville_effort_percent", rows[0])
             self.assertIn("cheville_utilization_ratio", rows[0])
             self.assertIn("cheville_capacity_velocity_factor", rows[0])
@@ -119,6 +122,37 @@ class CliExportTests(unittest.TestCase):
             self.assertEqual(payload["condition"]["condition_id"], "demo")
             self.assertEqual(rows[0]["bar_position"], "back")
             self.assertEqual(rows[0]["load_percent_bw"], "0.0")
+
+    def test_run_uses_stable_standard_csv_by_default(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "standard.csv"
+
+            with redirect_stdout(StringIO()):
+                code = main(
+                    [
+                        "run",
+                        "--backend",
+                        "analytical",
+                        "--frames",
+                        "3",
+                        "--out",
+                        str(out),
+                        "--summary",
+                        "",
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            with out.open(newline="", encoding="utf-8") as handle:
+                reader = csv.DictReader(handle)
+                rows = list(reader)
+            self.assertEqual(tuple(reader.fieldnames or ()), STANDARD_CSV_COLUMNS)
+            self.assertEqual(len(rows), 3)
+            self.assertEqual(rows[0]["frames"], "3")
+            self.assertIn("cheville_torque_body_mass_normalized_Nm_kg", rows[0])
+            self.assertIn("grf_y_N", rows[0])
+            self.assertNotIn("cheville_mass_acceleration_Nm", rows[0])
+            self.assertNotIn("foot_weighted_com_x_kg_m", rows[0])
 
     def test_batch_exports_multiple_conditions(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

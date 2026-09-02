@@ -9,6 +9,9 @@ from zipfile import ZipFile
 from squat_gui.cli import Condition, simulate_condition
 from squat_gui.export_schema import (
     SCHEMA_VERSION,
+    STANDARD_CSV_COLUMNS,
+    SUMMARY_COLUMNS,
+    csv_export_rows,
     missing_dictionary_columns,
     workbook_tables,
     write_xlsx,
@@ -48,6 +51,7 @@ class ExportSchemaTests(unittest.TestCase):
         self.assertEqual(
             set(tables),
             {
+                "synthese",
                 "conditions",
                 "temps",
                 "coordonnees",
@@ -66,21 +70,63 @@ class ExportSchemaTests(unittest.TestCase):
         self.assertTrue(
             all(row[0] == SCHEMA_VERSION for row in tables["temps"]["rows"])
         )
-        csv_definitions = {
+        csv_standard_definitions = {
             row[2]: row
             for row in tables["definitions"]["rows"]
-            if row[1] == "csv_large"
+            if row[1] == "csv_standard"
         }
-        self.assertEqual(set(csv_definitions), set(rows[0]))
-        self.assertEqual(csv_definitions["zmp_in_support"][6], "compatibilité legacy")
+        csv_full_definitions = {
+            row[2]: row
+            for row in tables["definitions"]["rows"]
+            if row[1] == "csv_full"
+        }
+        self.assertEqual(tuple(csv_standard_definitions), STANDARD_CSV_COLUMNS)
+        self.assertEqual(set(csv_full_definitions), set(rows[0]))
         self.assertEqual(
-            csv_definitions["cheville_contact_Nm"][6],
+            csv_full_definitions["zmp_in_support"][6], "compatibilité legacy"
+        )
+        self.assertEqual(
+            csv_full_definitions["cheville_contact_Nm"][6],
             "compatibilité legacy",
         )
         self.assertEqual(
-            csv_definitions["cheville_mass_acceleration_Nm"][6],
+            csv_full_definitions["cheville_mass_acceleration_Nm"][6],
             "canonique",
         )
+
+    def test_standard_csv_contract_is_explicit_and_full_mode_is_compatible(self) -> None:
+        rows = self.rows()
+        standard = csv_export_rows(rows)
+        complete = csv_export_rows(rows, mode="full")
+
+        self.assertEqual(tuple(standard[0]), STANDARD_CSV_COLUMNS)
+        self.assertEqual(standard[0]["schema_version"], SCHEMA_VERSION)
+        self.assertEqual(standard[0]["frames"], 3)
+        self.assertIn("cheville_torque_body_mass_normalized_Nm_kg", standard[0])
+        self.assertIn("support_point_in_functional_base", standard[0])
+        self.assertNotIn("cheville_mass_acceleration_Nm", standard[0])
+        self.assertNotIn("foot_weighted_com_x_kg_m", standard[0])
+        self.assertIn("cheville_mass_acceleration_Nm", complete[0])
+        self.assertIn("foot_weighted_com_x_kg_m", complete[0])
+
+    def test_excel_summary_contains_requested_student_metrics(self) -> None:
+        rows = self.rows()
+        table = workbook_tables(rows)["synthese"]
+        self.assertEqual(tuple(table["columns"]), SUMMARY_COLUMNS)
+        self.assertEqual(len(table["rows"]), 1)
+        summary = dict(zip(table["columns"], table["rows"][0]))
+
+        support_values = [float(row["support_point_x_m"]) for row in rows]
+        self.assertEqual(summary["frames"], len(rows))
+        self.assertAlmostEqual(
+            float(summary["zmp_excursion_m"]),
+            max(support_values) - min(support_values),
+        )
+        self.assertAlmostEqual(
+            float(summary["cheville_peak_abs_torque_Nm"]),
+            max(abs(float(row["cheville_torque_Nm"])) for row in rows),
+        )
+        self.assertIn(summary["limiting_joint"], ("cheville", "genou", "hanche"))
 
     def test_global_com_is_the_sum_of_exported_segment_contributions(self) -> None:
         segments = ("foot", "shank", "thigh", "trunk", "bar")
@@ -118,7 +164,7 @@ class ExportSchemaTests(unittest.TestCase):
                     self.skipTest(f"Runtime Artifact Tool indisponible: {error}")
             self.assertEqual(report["writer"], "artifact-tool")
             self.assertEqual(report["formulaErrors"], [])
-            self.assertEqual(len(report["sheets"]), 11)
+            self.assertEqual(len(report["sheets"]), 12)
             self.assertTrue(
                 all((previews / f"{name}.png").exists() for name in report["sheets"])
             )
@@ -136,13 +182,15 @@ class ExportSchemaTests(unittest.TestCase):
                 report = write_xlsx(output, self.rows())
             self.assertEqual(report["writer"], "openpyxl")
             self.assertEqual(report["formulaErrors"], [])
-            self.assertEqual(len(report["sheets"]), 11)
+            self.assertEqual(len(report["sheets"]), 12)
 
             from openpyxl import load_workbook
 
             workbook = load_workbook(output, read_only=False, data_only=False)
             try:
                 self.assertEqual(workbook.sheetnames, report["sheets"])
+                self.assertEqual(workbook.sheetnames[0], "synthese")
+                self.assertEqual(workbook["synthese"].freeze_panes, "C2")
                 self.assertEqual(workbook["temps"].freeze_panes, "C2")
                 self.assertEqual(workbook["anthropometrie"].freeze_panes, "D2")
                 self.assertEqual(

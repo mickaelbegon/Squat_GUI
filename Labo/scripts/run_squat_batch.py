@@ -37,7 +37,7 @@ def main() -> int:
 
     conditions = filter_conditions(args.conditions, args.only)
     result_csv = args.out / "results.csv"
-    summary_json = args.out / "summary.json"
+    result_workbook = args.out / "results.xlsx"
     command = [
         sys.executable,
         "-m",
@@ -46,8 +46,8 @@ def main() -> int:
         str(conditions),
         "--out",
         str(result_csv),
-        "--summary",
-        str(summary_json),
+        "--xlsx",
+        str(result_workbook),
     ]
     print(" ".join(command))
     if args.dry_run:

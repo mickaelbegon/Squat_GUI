@@ -18,7 +18,7 @@ from .didactics import (
     ISOMETRIC_PHASE_DURATION_OPTIONS,
     bounded_phase_durations,
 )
-from .export_schema import SCHEMA_VERSION, write_xlsx
+from .export_schema import SCHEMA_VERSION, csv_export_rows, write_xlsx
 from .kinematics import (
     DEFAULT_SAMPLE_PERIOD_S,
     PhaseDurations,
@@ -406,6 +406,7 @@ def simulate_condition(
             "duration_isometrique_s": condition.duration_isometrique_s,
             "duration_concentrique_s": condition.duration_concentrique_s,
             "total_duration_s": condition.total_duration_s,
+            "frames": condition.frames,
             "torque_preset": condition.torque_preset,
             "angle_adapt": condition.angle_adapt,
             "velocity_adapt": condition.velocity_adapt,
@@ -492,6 +493,9 @@ def simulate_condition(
             row[f"{joint}_velocity_deg_s"] = joint_velocities[joint]
             row[f"{joint}_acceleration_deg_s2"] = joint_accelerations[joint]
             row[f"{joint}_torque_Nm"] = result.torques[joint]
+            row[f"{joint}_torque_body_mass_normalized_Nm_kg"] = (
+                result.torques[joint] / anthro.body_mass
+            )
             row[f"{joint}_max_available_Nm"] = capacity.available_torque_Nm
             row[f"{joint}_capacity_base_torque_Nm"] = capacity.base_torque_Nm
             row[f"{joint}_capacity_angle_rad"] = capacity.angle_rad
@@ -632,13 +636,16 @@ def condition_summary(
     }
 
 
-def write_csv(path: Path, rows: list[dict[str, object]]) -> None:
+def write_csv(
+    path: Path, rows: list[dict[str, object]], *, mode: str = "standard"
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = list(rows[0]) if rows else []
+    exported_rows = csv_export_rows(rows, mode=mode)
+    fieldnames = list(exported_rows[0]) if exported_rows else []
     with path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
         writer.writeheader()
-        writer.writerows(rows)
+        writer.writerows(exported_rows)
 
 
 def write_json(path: Path, payload: object) -> None:
@@ -649,7 +656,7 @@ def write_json(path: Path, payload: object) -> None:
 def run_condition(args: argparse.Namespace) -> int:
     condition = condition_from_args(args)
     rows, summary = simulate_condition(condition)
-    write_csv(Path(args.out), rows)
+    write_csv(Path(args.out), rows, mode=args.csv_mode)
     if args.summary:
         write_json(Path(args.summary), summary)
     if args.xlsx:
@@ -677,7 +684,7 @@ def run_batch(args: argparse.Namespace) -> int:
         rows, summary = simulate_condition(condition)
         all_rows.extend(rows)
         summaries.append(summary)
-    write_csv(Path(args.out), all_rows)
+    write_csv(Path(args.out), all_rows, mode=args.csv_mode)
     if args.summary:
         write_json(Path(args.summary), {"conditions": summaries})
     if args.xlsx:
@@ -780,6 +787,18 @@ def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def add_export_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--csv-mode",
+        choices=("standard", "full"),
+        default="standard",
+        help=(
+            "standard exporte les variables biomécaniques essentielles; "
+            "full conserve toutes les colonnes diagnostiques."
+        ),
+    )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Exporter rapidement des simulations de squat 2D."
@@ -788,8 +807,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_parser = subparsers.add_parser("run", help="Exporter une condition unique.")
     add_condition_arguments(run_parser)
+    add_export_arguments(run_parser)
     run_parser.add_argument("--out", default="exports/squat_results.csv")
-    run_parser.add_argument("--summary", default="exports/squat_summary.json")
+    run_parser.add_argument(
+        "--summary",
+        default="",
+        help="Résumé JSON optionnel (les métriques étudiantes sont aussi dans Excel).",
+    )
     run_parser.add_argument(
         "--xlsx", default="", help="Classeur Excel global optionnel."
     )
@@ -799,9 +823,14 @@ def build_parser() -> argparse.ArgumentParser:
         "batch", help="Exporter un lot de conditions depuis un CSV."
     )
     add_condition_arguments(batch_parser)
+    add_export_arguments(batch_parser)
     batch_parser.add_argument("conditions", help="CSV de conditions.")
     batch_parser.add_argument("--out", default="exports/squat_batch_results.csv")
-    batch_parser.add_argument("--summary", default="exports/squat_batch_summary.json")
+    batch_parser.add_argument(
+        "--summary",
+        default="",
+        help="Résumé JSON optionnel (les métriques étudiantes sont aussi dans Excel).",
+    )
     batch_parser.add_argument(
         "--xlsx", default="", help="Classeur Excel global optionnel."
     )

@@ -14,7 +14,7 @@ import subprocess
 import tempfile
 from typing import Iterable, Mapping, Sequence
 
-SCHEMA_VERSION = "1.4.0"
+SCHEMA_VERSION = "2.0.0"
 SEGMENTS = ("foot", "shank", "thigh", "trunk", "bar")
 JOINTS = ("cheville", "genou", "hanche")
 POINTS = ("heel", "toe", "ankle", "knee", "hip", "shoulder", "bar")
@@ -50,6 +50,7 @@ CONDITION_COLUMNS = (
     "duration_isometrique_s",
     "duration_concentrique_s",
     "total_duration_s",
+    "frames",
     "torque_preset",
     "angle_adapt",
     "velocity_adapt",
@@ -152,6 +153,7 @@ DYNAMIC_COLUMNS = (
         for joint in JOINTS
         for quantity in (
             "torque_Nm",
+            "torque_body_mass_normalized_Nm_kg",
             "max_available_Nm",
             "capacity_base_torque_Nm",
             "capacity_angle_rad",
@@ -181,8 +183,119 @@ DYNAMIC_COLUMNS = (
     )
 )
 
+# Stable, student-facing CSV contract.  The complete in-memory row remains the
+# source for the diagnostic Excel sheets and for the opt-in ``full`` CSV mode.
+STANDARD_CSV_COLUMNS = (
+    "schema_version",
+    "condition_id",
+    "subject_profile",
+    "bar_position",
+    "load_percent_bw",
+    "wedge_20_deg",
+    "shank_percent",
+    "thigh_percent",
+    "trunk_percent",
+    "duration_excentrique_s",
+    "duration_isometrique_s",
+    "duration_concentrique_s",
+    "frames",
+    "backend",
+    "torque_preset",
+    "angle_adapt",
+    "velocity_adapt",
+    "anthropometry_mode",
+    "frame",
+    "time_s",
+    "delta_time_s",
+    "normalized_time_percent",
+    "phase",
+    "q_shank_deg",
+    "q_thigh_deg",
+    "q_trunk_deg",
+) + tuple(
+    f"{joint}_{quantity}"
+    for joint in JOINTS
+    for quantity in (
+        "angle_deg",
+        "velocity_deg_s",
+        "acceleration_deg_s2",
+        "torque_Nm",
+        "torque_body_mass_normalized_Nm_kg",
+        "inverse_dynamics_total_Nm",
+        "external_contact_effect_Nm",
+        "inertial_nonlinear_Nm",
+        "power_W",
+        "utilization_ratio",
+        "utilization_percent",
+    )
+) + (
+    "com_x_m",
+    "com_y_m",
+    "support_point_x_m",
+    "support_point_label",
+    "support_point_source",
+    "functional_support_posterior_m",
+    "functional_support_anterior_m",
+    "support_point_in_geometric_base",
+    "support_point_in_functional_base",
+    "grf_y_N",
+)
+
+SUMMARY_COLUMNS = (
+    "schema_version",
+    "condition_id",
+    "subject_profile",
+    "bar_position",
+    "load_percent_bw",
+    "wedge_20_deg",
+    "shank_percent",
+    "thigh_percent",
+    "trunk_percent",
+    "duration_excentrique_s",
+    "duration_isometrique_s",
+    "duration_concentrique_s",
+    "frames",
+    "backend",
+    "torque_preset",
+    "angle_adapt",
+    "velocity_adapt",
+    "anthropometry_mode",
+    "squat_com_x_m",
+    "squat_cop_x_m",
+    "support_point_label",
+    "zmp_x_min_m",
+    "zmp_x_max_m",
+    "zmp_excursion_m",
+    "zmp_outside_support_frames",
+    "zmp_outside_support_percent",
+    "cop_outside_foot_frames",
+    "cop_outside_foot_percent",
+    "over_limit_frames",
+    "peak_grf_y_N",
+) + tuple(
+    f"{joint}_{quantity}"
+    for joint in JOINTS
+    for quantity in (
+        "peak_abs_torque_Nm",
+        "peak_abs_torque_body_mass_normalized_Nm_kg",
+        "peak_abs_power_W",
+        "peak_utilization_ratio",
+        "peak_utilization_percent",
+    )
+) + (
+    "maximum_utilization_ratio",
+    "maximum_utilization_percent",
+    "limiting_joint",
+    "limiting_frame",
+    "limiting_time_s",
+    "limiting_phase",
+    "exceeds_capacity",
+    "undefined_capacity_events",
+)
+
 TABLE_COLUMNS = OrderedDict(
     (
+        ("synthese", SUMMARY_COLUMNS),
         ("conditions", CONDITION_COLUMNS),
         ("temps", TIME_COLUMNS),
         ("coordonnees", COORDINATE_COLUMNS),
@@ -206,10 +319,58 @@ DESCRIPTION_OVERRIDES = {
     "normalized_time_percent": "Temps normalisé sur la durée totale du mouvement.",
     "phase": "Phase du mouvement: excentrique, isométrique ou concentrique.",
     "backend": "Backend ayant effectivement produit les résultats.",
+    "frames": "Nombre total d'échantillons de la condition.",
     "support_point_label": "Nature du point d'appui exporté: CoP ou ZMP.",
     "support_point_source": "Méthode exacte utilisée pour calculer le point d'appui.",
     "contact_source": "Méthode effectivement utilisée pour calculer le diagnostic de contact externe.",
     "support_point_x_m": "Abscisse du CoP ou ZMP sur le plan du sol.",
+    "torque_body_mass_normalized_Nm_kg": (
+        "Moment articulaire divisé par la masse corporelle du sujet."
+    ),
+    "squat_com_x_m": (
+        "Abscisse moyenne du CoM pendant la phase isométrique; à défaut, "
+        "valeur à la hauteur minimale du CoM."
+    ),
+    "squat_cop_x_m": (
+        "Abscisse moyenne du point d'appui CoP/ZMP pendant la phase "
+        "isométrique; à défaut, valeur à la hauteur minimale du CoM."
+    ),
+    "zmp_x_min_m": "Abscisse minimale du point d'appui CoP/ZMP sur la trajectoire.",
+    "zmp_x_max_m": "Abscisse maximale du point d'appui CoP/ZMP sur la trajectoire.",
+    "zmp_excursion_m": "Étendue max-min du point d'appui CoP/ZMP sur la trajectoire.",
+    "zmp_outside_support_frames": (
+        "Nombre de frames où le point d'appui sort de la base fonctionnelle."
+    ),
+    "zmp_outside_support_percent": (
+        "Pourcentage de frames où le point d'appui sort de la base fonctionnelle."
+    ),
+    "cop_outside_foot_frames": (
+        "Nombre de frames où le point d'appui sort de la base géométrique du pied."
+    ),
+    "cop_outside_foot_percent": (
+        "Pourcentage de frames où le point d'appui sort de la base géométrique du pied."
+    ),
+    "over_limit_frames": (
+        "Nombre de frames où au moins une demande articulaire dépasse la capacité active."
+    ),
+    "peak_grf_y_N": "Valeur absolue maximale de la force de réaction verticale.",
+    "peak_abs_torque_Nm": "Valeur absolue maximale du moment articulaire.",
+    "peak_abs_torque_body_mass_normalized_Nm_kg": (
+        "Valeur absolue maximale du moment articulaire normalisé par la masse corporelle."
+    ),
+    "peak_abs_power_W": "Valeur absolue maximale de la puissance articulaire.",
+    "peak_utilization_ratio": "Valeur maximale du ratio demande/capacité U.",
+    "peak_utilization_percent": "Valeur maximale de U exprimée en pourcentage.",
+    "maximum_utilization_ratio": "Maximum de U parmi toutes les articulations et frames.",
+    "maximum_utilization_percent": "Maximum de U exprimé en pourcentage.",
+    "limiting_joint": "Articulation associée au maximum de U.",
+    "limiting_frame": "Frame associée au maximum de U.",
+    "limiting_time_s": "Temps associé au maximum de U.",
+    "limiting_phase": "Phase associée au maximum de U.",
+    "exceeds_capacity": "Vrai si une demande articulaire dépasse la capacité active.",
+    "undefined_capacity_events": (
+        "Nombre de demandes non nulles pour lesquelles la capacité active est nulle ou indéfinie."
+    ),
     "weight_magnitude_N": "Norme du poids total, calculée comme masse totale multipliée par g.",
     "dynamic_moment_z_Nm": "Dérivée du moment cinétique autour de l'axe z global.",
     "max_available_Nm": (
@@ -288,6 +449,7 @@ def _unit(column: str) -> str:
     suffixes = (
         ("_kg_m2", "kg·m²"),
         ("_kg_m", "kg·m"),
+        ("_Nm_kg", "N·m/kg"),
         ("_deg_s2", "deg/s²"),
         ("_rad_s", "rad/s"),
         ("_rad", "rad"),
@@ -382,6 +544,186 @@ def add_schema_version(rows: Iterable[Mapping[str, object]]) -> list[dict[str, o
     return versioned
 
 
+def csv_export_rows(
+    rows: Sequence[Mapping[str, object]], *, mode: str = "standard"
+) -> list[dict[str, object]]:
+    """Return rows following the stable CSV contract selected by ``mode``.
+
+    ``standard`` is the concise student-facing contract. ``full`` preserves the
+    complete diagnostic row, including legacy compatibility columns.
+    """
+    if mode not in {"standard", "full"}:
+        raise ValueError("Le mode CSV doit valoir standard ou full.")
+    versioned = add_schema_version(rows)
+    if mode == "full":
+        return versioned
+    return [
+        {column: row.get(column) for column in STANDARD_CSV_COLUMNS}
+        for row in versioned
+    ]
+
+
+def _number(row: Mapping[str, object], column: str) -> float:
+    value = row.get(column)
+    if value is None:
+        raise ValueError(f"Valeur numérique absente: {column}")
+    return float(value)
+
+
+def _mean(rows: Sequence[Mapping[str, object]], column: str) -> float:
+    return sum(_number(row, column) for row in rows) / len(rows)
+
+
+def _condition_groups(
+    rows: Sequence[Mapping[str, object]],
+) -> OrderedDict[object, list[Mapping[str, object]]]:
+    groups: OrderedDict[object, list[Mapping[str, object]]] = OrderedDict()
+    for row in rows:
+        groups.setdefault(row.get("condition_id"), []).append(row)
+    return groups
+
+
+def _condition_summary_rows(
+    rows: Sequence[Mapping[str, object]],
+) -> list[dict[str, object]]:
+    """Build one Excel-ready summary row per simulated condition."""
+    summaries: list[dict[str, object]] = []
+    for condition_rows in _condition_groups(rows).values():
+        first = condition_rows[0]
+        frame_count = len(condition_rows)
+        squat_rows = [row for row in condition_rows if row.get("phase") == "isometrique"]
+        if not squat_rows:
+            squat_rows = [min(condition_rows, key=lambda row: _number(row, "com_y_m"))]
+
+        support_values = [_number(row, "support_point_x_m") for row in condition_rows]
+        outside_functional = sum(
+            1
+            for row in condition_rows
+            if not bool(row.get("support_point_in_functional_base"))
+        )
+        outside_geometric = sum(
+            1
+            for row in condition_rows
+            if not bool(row.get("support_point_in_geometric_base"))
+        )
+        over_limit = sum(
+            1
+            for row in condition_rows
+            if any(
+                bool(row.get(f"{joint}_utilization_exceeds_capacity"))
+                for joint in JOINTS
+            )
+        )
+
+        summary: dict[str, object] = {
+            column: first.get(column) for column in SUMMARY_COLUMNS[:18]
+        }
+        summary.update(
+            {
+                "schema_version": SCHEMA_VERSION,
+                "frames": frame_count,
+                "squat_com_x_m": _mean(squat_rows, "com_x_m"),
+                "squat_cop_x_m": _mean(squat_rows, "support_point_x_m"),
+                "support_point_label": first.get("support_point_label"),
+                "zmp_x_min_m": min(support_values),
+                "zmp_x_max_m": max(support_values),
+                "zmp_excursion_m": max(support_values) - min(support_values),
+                "zmp_outside_support_frames": outside_functional,
+                "zmp_outside_support_percent": (
+                    100.0 * outside_functional / frame_count
+                ),
+                "cop_outside_foot_frames": outside_geometric,
+                "cop_outside_foot_percent": (
+                    100.0 * outside_geometric / frame_count
+                ),
+                "over_limit_frames": over_limit,
+                "peak_grf_y_N": max(
+                    abs(_number(row, "grf_y_N")) for row in condition_rows
+                ),
+            }
+        )
+
+        undefined_events: list[tuple[Mapping[str, object], str]] = []
+        defined_events: list[tuple[float, Mapping[str, object], str]] = []
+        for joint in JOINTS:
+            utilizations = [
+                float(row[f"{joint}_utilization_ratio"])
+                for row in condition_rows
+                if row.get(f"{joint}_utilization_ratio") is not None
+            ]
+            for row in condition_rows:
+                ratio = row.get(f"{joint}_utilization_ratio")
+                torque = _number(row, f"{joint}_torque_Nm")
+                if ratio is None and abs(torque) > 0.0:
+                    undefined_events.append((row, joint))
+                elif ratio is not None:
+                    defined_events.append((float(ratio), row, joint))
+            summary.update(
+                {
+                    f"{joint}_peak_abs_torque_Nm": max(
+                        abs(_number(row, f"{joint}_torque_Nm"))
+                        for row in condition_rows
+                    ),
+                    f"{joint}_peak_abs_torque_body_mass_normalized_Nm_kg": max(
+                        abs(
+                            _number(
+                                row,
+                                f"{joint}_torque_body_mass_normalized_Nm_kg",
+                            )
+                        )
+                        for row in condition_rows
+                    ),
+                    f"{joint}_peak_abs_power_W": max(
+                        abs(_number(row, f"{joint}_power_W"))
+                        for row in condition_rows
+                    ),
+                    f"{joint}_peak_utilization_ratio": (
+                        max(utilizations) if utilizations else None
+                    ),
+                    f"{joint}_peak_utilization_percent": (
+                        100.0 * max(utilizations) if utilizations else None
+                    ),
+                }
+            )
+
+        if undefined_events:
+            limiting_row, limiting_joint = undefined_events[0]
+            maximum_ratio: float | None = None
+            exceeds_capacity = True
+        elif defined_events:
+            maximum_ratio, limiting_row, limiting_joint = max(
+                defined_events, key=lambda item: item[0]
+            )
+            exceeds_capacity = maximum_ratio > 1.0
+        else:
+            maximum_ratio = None
+            limiting_row = None
+            limiting_joint = None
+            exceeds_capacity = False
+        summary.update(
+            {
+                "maximum_utilization_ratio": maximum_ratio,
+                "maximum_utilization_percent": (
+                    None if maximum_ratio is None else 100.0 * maximum_ratio
+                ),
+                "limiting_joint": limiting_joint,
+                "limiting_frame": (
+                    None if limiting_row is None else limiting_row.get("frame")
+                ),
+                "limiting_time_s": (
+                    None if limiting_row is None else limiting_row.get("time_s")
+                ),
+                "limiting_phase": (
+                    None if limiting_row is None else limiting_row.get("phase")
+                ),
+                "exceeds_capacity": exceeds_capacity,
+                "undefined_capacity_events": len(undefined_events),
+            }
+        )
+        summaries.append(summary)
+    return summaries
+
+
 def _project(
     rows: Sequence[Mapping[str, object]], columns: Sequence[str]
 ) -> list[list[object | None]]:
@@ -427,7 +769,9 @@ def workbook_tables(
     tables: OrderedDict[str, dict[str, object]] = OrderedDict()
     for name, columns in TABLE_COLUMNS.items():
         source_rows: Sequence[Mapping[str, object]]
-        if name == "conditions":
+        if name == "synthese":
+            source_rows = _condition_summary_rows(versioned)
+        elif name == "conditions":
             source_rows = _unique_conditions(versioned)
         elif name == "anthropometrie":
             source_rows = _anthropometry_rows(versioned)
@@ -439,19 +783,23 @@ def workbook_tables(
         }
 
     definitions = []
-    for column in versioned[0]:
-        definition = column_definition(column)
-        definitions.append(
-            [
-                SCHEMA_VERSION,
-                "csv_large",
-                column,
-                definition.unit,
-                definition.definition,
-                definition.sign_convention,
-                definition.status,
-            ]
-        )
+    for csv_name, columns in (
+        ("csv_standard", STANDARD_CSV_COLUMNS),
+        ("csv_full", tuple(versioned[0])),
+    ):
+        for column in columns:
+            definition = column_definition(column)
+            definitions.append(
+                [
+                    SCHEMA_VERSION,
+                    csv_name,
+                    column,
+                    definition.unit,
+                    definition.definition,
+                    definition.sign_convention,
+                    definition.status,
+                ]
+            )
     for table_name, columns in TABLE_COLUMNS.items():
         for column in columns:
             definition = column_definition(column)
@@ -532,6 +880,29 @@ def _artifact_runtime() -> tuple[Path, Path]:
     return node, modules
 
 
+def _link_artifact_modules(link: Path, modules: Path) -> None:
+    """Expose the bundled Node modules in a temporary build directory."""
+    try:
+        link.symlink_to(modules, target_is_directory=True)
+        return
+    except OSError as error:
+        if os.name != "nt":
+            raise RuntimeError(
+                f"Impossible de lier les modules Artifact Tool: {error}"
+            ) from error
+    completed = subprocess.run(
+        ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(modules)],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip()
+        raise RuntimeError(
+            f"Impossible de créer la jonction Artifact Tool: {detail}"
+        )
+
+
 def _write_xlsx_artifact(
     path: str | Path,
     rows: Sequence[Mapping[str, object]],
@@ -551,7 +922,7 @@ def _write_xlsx_artifact(
         work = Path(temporary)
         local_builder = work / builder.name
         shutil.copy2(builder, local_builder)
-        (work / "node_modules").symlink_to(modules, target_is_directory=True)
+        _link_artifact_modules(work / "node_modules", modules)
         payload_path = work / "payload.json"
         payload_path.write_text(
             json.dumps(payload, ensure_ascii=False, allow_nan=False),

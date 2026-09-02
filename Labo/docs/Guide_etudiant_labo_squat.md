@@ -26,7 +26,7 @@ Avant la séance, lire les résumés de littérature dans `docs/references_litte
 Commande de base depuis la racine du projet :
 
 ```bash
-python -m squat_gui run --backend biorbd --out exports/condition_demo.csv --summary exports/condition_demo_summary.json
+python -m squat_gui run --backend biorbd --out exports/condition_demo.csv --xlsx exports/condition_demo.xlsx
 ```
 
 Si les scripts de ce dossier sont utilisés :
@@ -34,8 +34,14 @@ Si les scripts de ce dossier sont utilisés :
 ```bash
 cd Labo
 python scripts/run_squat_batch.py --conditions scenarios/scenarios_labo_squat.csv --out results_labo_squat
-python scripts/analyse_squat_results.py --results results_labo_squat/results.csv --out results_labo_squat/summary_metrics.csv
 ```
+
+Le classeur `results_labo_squat/results.xlsx` est la sortie étudiante de
+référence. Son premier onglet `synthese` contient une ligne par condition avec
+les pics de moments et de puissances, les moments normalisés par la masse
+corporelle, le CoM et le CoP/ZMP au squat, l'excursion du point d'appui, les
+frames hors appui, la GRF verticale et l'articulation limitante. Aucun fichier
+JSON n'est nécessaire pour l'analyse dans Excel.
 
 ## Tutoriel de prise en main du GUI
 
@@ -135,7 +141,9 @@ Questions d’analyse :
 
 Étape de conception : ouvrir les conditions les plus critiques dans le GUI, ajuster les angles de la position de squat jusqu’à conserver le ZMP dans la zone d’appui, puis enregistrer la condition adaptée. La base géométrique couvre toute la longueur projetée du pied, du talon aux orteils. La zone fonctionnelle retenue va de la projection de la cheville à la tête des métatarsiens, modélisée à 85 % du segment talon–orteils; les orteils distaux restent hors de la zone fonctionnelle. Rapporter les changements d’angles nécessaires et leurs conséquences sur les couples.
 
-Variables à extraire : `squat_com_x_m`, `squat_support_point_x_m`, `zmp_outside_support_frames`, excursion du point d’appui, pics de couples et ratios d’effort.
+Variables à extraire dans `synthese` : `squat_com_x_m`, `squat_cop_x_m`,
+`zmp_outside_support_frames`, `zmp_excursion_m`, pics de couples et ratios
+d'effort.
 
 Lien littérature attendu : Chan & Sigward (2020), Kim et al. (2021), Schoenfeld (2010).
 

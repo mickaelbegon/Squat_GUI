@@ -104,7 +104,9 @@ class PlotSeriesTests(unittest.TestCase):
             assert exported is not None
             output, summary_path = exported
             self.assertTrue(output.exists())
-            self.assertIn("zmp_in_support", output.read_text(encoding="utf-8").splitlines()[0])
+            header = output.read_text(encoding="utf-8").splitlines()[0]
+            self.assertIn("support_point_in_functional_base", header)
+            self.assertNotIn("zmp_in_support", header)
             payload = json.loads(summary_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["csv"], "resultats.csv")
             self.assertEqual(len(payload["conditions"]), 1)

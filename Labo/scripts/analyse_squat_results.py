@@ -109,14 +109,16 @@ def summarize_condition(condition_id: str, rows: list[dict[str, str]]) -> dict[s
             ("velocity_dependent", "velocity_dependent_Nm"),
             ("gravity", "gravity_Nm"),
             ("external_contact_effect", "external_contact_effect_Nm"),
+            ("inertial_nonlinear", "inertial_nonlinear_Nm"),
             ("reconstruction_residual", "inverse_dynamics_reconstruction_residual_Nm"),
         ):
-            summary[f"peak_{english}_{metric}_Nm"] = peak_abs(
-                rows, f"{french}_{suffix}"
-            )
+            column = f"{french}_{suffix}"
+            if column in rows[0]:
+                summary[f"peak_{english}_{metric}_Nm"] = peak_abs(rows, column)
 
+    peak_knee = float(summary["peak_knee_torque_Nm"])
     summary["peak_hip_to_knee_torque_ratio"] = (
-        float(summary["peak_hip_torque_Nm"]) / float(summary["peak_knee_torque_Nm"])
+        None if peak_knee == 0.0 else float(summary["peak_hip_torque_Nm"]) / peak_knee
     )
     summary["support_point_x_min_m"] = min(
         number(row, "support_point_x_m") for row in rows
