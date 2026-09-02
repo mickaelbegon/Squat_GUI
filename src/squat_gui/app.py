@@ -1805,6 +1805,13 @@ class SquatGui(tk.Tk):
             self.update_idletasks()
         try:
             anthro = self.anthro()
+            requested_degrees = tuple(round(degrees(value), 2) for value in self.final_q)
+            print(
+                "[Verticalisation] Début SLSQP — angles segmentaires "
+                f"(tibia, cuisse, tronc)={requested_degrees}°, "
+                f"frames={self.frame_count}, bornes=±5°, contraintes CoP/GRF.",
+                flush=True,
+            )
             optimization = optimize_deep_squat_bar_path(
                 anthro,
                 self.final_q,
@@ -1822,6 +1829,25 @@ class SquatGui(tk.Tk):
             if optimization.applied:
                 self.final_q = optimization.final_q
                 self.sync_pose_angle_fields_from_final_q()
+                optimized_degrees = tuple(
+                    round(degrees(value), 2) for value in optimization.final_q
+                )
+                print(
+                    "[Verticalisation] Convergence appliquée — angles "
+                    f"optimisés={optimized_degrees}°; excursion horizontale "
+                    f"{100 * optimization.before.horizontal_excursion_m:.1f} → "
+                    f"{100 * optimization.after.horizontal_excursion_m:.1f} cm; "
+                    f"énergie vₓ² {optimization.before.horizontal_velocity_energy_m2_s:.4g} → "
+                    f"{optimization.after.horizontal_velocity_energy_m2_s:.4g} m²/s; "
+                    f"marge CoP minimale={100 * optimization.after.minimum_cop_margin_m:.1f} cm.",
+                    flush=True,
+                )
+            else:
+                print(
+                    "[Verticalisation] Aucun angle modifié — "
+                    f"{optimization.message}",
+                    flush=True,
+                )
             self.status_var.set(f"{self.status_var.get()} · {optimization.message}")
             self.update_condition_differences()
             self.redraw()

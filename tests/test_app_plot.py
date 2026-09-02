@@ -508,9 +508,21 @@ class PlotSeriesTests(unittest.TestCase):
             states=gui.states,
             dynamics=gui.results,
             message="optimisation appliquée",
+            before=SimpleNamespace(
+                horizontal_excursion_m=0.14,
+                horizontal_velocity_energy_m2_s=0.014,
+            ),
+            after=SimpleNamespace(
+                horizontal_excursion_m=0.10,
+                horizontal_velocity_energy_m2_s=0.009,
+                minimum_cop_margin_m=0.03,
+            ),
         )
 
-        with patch("squat_gui.app.optimize_deep_squat_bar_path", return_value=result) as optimize:
+        with (
+            patch("squat_gui.app.optimize_deep_squat_bar_path", return_value=result) as optimize,
+            patch("builtins.print") as terminal_output,
+        ):
             gui.verticalize_bar()
             gui.verticalize_bar()
 
@@ -526,6 +538,9 @@ class PlotSeriesTests(unittest.TestCase):
             gui.optimize_bar_path_button.options,
             {"text": "Verticaliser la barre", "state": "normal"},
         )
+        terminal_lines = "\n".join(str(call.args[0]) for call in terminal_output.call_args_list)
+        self.assertIn("Début SLSQP", terminal_lines)
+        self.assertIn("Convergence appliquée", terminal_lines)
 
     def test_kinematic_series_do_not_include_com(self):
         gui = self.gui_without_tk()
