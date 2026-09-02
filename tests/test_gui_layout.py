@@ -116,6 +116,17 @@ class GuiLayoutTests(unittest.TestCase):
         self.assertEqual(self.app.temporal_preset_var.get(), "")
         self.assertEqual(self.app.temporal_preset_display_var.get(), "")
 
+    def test_bar_stabilization_is_explicit_and_disabled_by_default(self):
+        self.assertFalse(self.app.optimize_bar_path_var.get())
+        controls = self.app.parameter_options.winfo_children()
+        experimental = [
+            control
+            for control in controls
+            if "expérimental" in str(control.cget("text"))
+        ]
+        self.assertEqual(len(experimental), 1)
+        self.assertTrue(experimental[0].winfo_ismapped())
+
     def test_torque_preset_and_checks_use_the_compact_grid(self):
         self.assertIs(self.app.torque_preset_menu.master, self.app.torque_box)
         self.assertEqual(self.app.torque_preset_menu.grid_info()["rowspan"], 2)

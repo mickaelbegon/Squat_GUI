@@ -27,6 +27,11 @@ Ensure-PythonModule -ModuleName "numpy" -PackageName "numpy"
 Ensure-PythonModule -ModuleName "imageio" -PackageName "imageio"
 Ensure-PythonModule -ModuleName "imageio_ffmpeg" -PackageName "imageio-ffmpeg"
 Ensure-PythonModule -ModuleName "openpyxl" -PackageName "openpyxl"
+& $PythonBin -c "import scipy, sys; parts = tuple(int(item) for item in scipy.__version__.split('.')[:2]); sys.exit(0 if (1, 10) <= parts < (1, 17) else 1)" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "Version SciPy absente ou incompatible; installation de scipy>=1.10,<1.17..."
+    & $PythonBin -m pip install --no-build-isolation "scipy>=1.10,<1.17"
+}
 
 & $PythonBin -m PyInstaller --clean --noconfirm packaging\squat_gui.spec
 $env:SQUAT_GUI_SMOKE_TEST = "1"

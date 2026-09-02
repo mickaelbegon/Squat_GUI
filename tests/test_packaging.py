@@ -30,6 +30,8 @@ class PackagingContractTests(unittest.TestCase):
             self.assertIn(module, windows)
         self.assertIn("openpyxl", macos)
         self.assertIn("openpyxl", windows)
+        self.assertIn("scipy", macos)
+        self.assertIn("scipy", windows)
 
     def test_conda_setup_installs_workbook_dependency(self) -> None:
         project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
@@ -38,6 +40,9 @@ class PackagingContractTests(unittest.TestCase):
         )
         self.assertIn('"openpyxl>=3.1,<4"', project)
         self.assertIn('"openpyxl>=3.1"', development_guide)
+        self.assertIn('"scipy>=1.10,<1.17"', project)
+        self.assertIn('"scipy>=1.10,<1.17"', development_guide)
+        self.assertIn('"libblas=*=*openblas"', development_guide)
 
     def test_pyinstaller_bundle_contains_video_and_workbook_assets(self) -> None:
         spec = (ROOT / "packaging" / "squat_gui.spec").read_text(encoding="utf-8")
@@ -45,6 +50,7 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn('"imageio"', spec)
         self.assertIn('"imageio_ffmpeg"', spec)
         self.assertIn('"openpyxl"', spec)
+        self.assertIn('"scipy"', spec)
 
     def test_frozen_smoke_test_encodes_video_and_checks_optional_backends(self) -> None:
         launcher = (ROOT / "packaging" / "squat_gui_launcher.py").read_text(

@@ -79,8 +79,18 @@ phase isométrique peut être insérée en position basse. Le pas temporel par d
 est constant, `Δt = 0,05 s`, et les deux extrémités sont incluses.
 
 La trajectoire de barre affichable est une observation de la trajectoire calculée
-entre les positions haute et basse. Elle n'impose actuellement aucune contrainte
+entre les positions haute et basse. Par défaut, elle n'impose aucune contrainte
 de verticalité au mouvement.
+
+L'option **Stabiliser barre (expérimental)** ajuste avec SLSQP les trois angles
+articulaires de la posture basse, dans un intervalle de ±5° autour
+de la demande. La loi quintique reste inchangée. L'objectif combine l'intégrale
+discrète de la vitesse horizontale de la barre au carré, un faible ancrage sur la
+verticale de la position haute et une régularisation des corrections. Les
+contraintes sont vérifiées à chaque échantillon : CoP dans la zone fonctionnelle,
+GRF verticale positive, limites articulaires et hauteur de hanche basse à ±1 cm.
+Une solution infaisable ou l'absence de SciPy laisse strictement la trajectoire
+d'origine en place et produit un diagnostic plutôt qu'un résultat non conforme.
 
 ## Centres de masse et forces externes
 

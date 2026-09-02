@@ -8,7 +8,7 @@ recommandé.
 ```bash
 conda create -n squat-gui python=3.11 tk -y
 conda activate squat-gui
-conda install -c conda-forge "openpyxl>=3.1" -y
+conda install -c conda-forge "openpyxl>=3.1" "scipy>=1.10,<1.17" "libblas=*=*openblas" -y
 python -m pip install -e ".[dev,video,packaging]"
 python -m squat_gui
 ```
@@ -16,6 +16,12 @@ python -m squat_gui
 `openpyxl` est requis pour l'export Excel (`.xlsx`). Il est déclaré dans les
 dépendances Python du projet et installé explicitement ici afin que l'export soit
 disponible dès la création d'un environnement Conda.
+
+`scipy` fournit le solveur SLSQP de l'option expérimentale de stabilisation de
+la barre. La borne `<1.17` et le backend OpenBLAS évitent une défaillance native
+constatée avec SciPy 1.17.1 et la variante MKL de Conda sous Windows. Si SciPy
+manque dans une ancienne installation, cette option conserve la trajectoire
+demandée et affiche un diagnostic explicite.
 
 Le solveur analytique pur Python est toujours disponible. `biorbd` est une
 dépendance facultative et ne doit pas bloquer le lancement du GUI.

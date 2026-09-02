@@ -36,9 +36,10 @@ hiddenimports = [
     "imageio_ffmpeg",
     "numpy",
     "openpyxl",
+    "scipy",
 ]
 
-for runtime_module in ("imageio", "imageio_ffmpeg", "openpyxl"):
+for runtime_module in ("imageio", "imageio_ffmpeg", "openpyxl", "scipy"):
     module_datas, module_binaries, module_hiddenimports = collect_all(runtime_module)
     datas += module_datas
     binaries += module_binaries

@@ -45,6 +45,21 @@ class ControlledVariableTests(unittest.TestCase):
             "Charge, Durée excentrique, Orientation tronc basse",
         )
 
+    def test_bar_stabilization_is_a_scientific_condition_parameter(self) -> None:
+        reference = {"optimize_bar_path_experimental": False}
+        compared = {"optimize_bar_path_experimental": True}
+
+        differences = parameter_differences(
+            reference, [1, 2, 3], compared, [1, 2, 3]
+        )
+
+        self.assertEqual(len(differences), 1)
+        self.assertEqual(
+            differences[0].label, "Stabilisation expérimentale de la barre"
+        )
+        self.assertEqual(differences[0].reference, "non")
+        self.assertEqual(differences[0].compared, "oui")
+
 
 if __name__ == "__main__":
     unittest.main()

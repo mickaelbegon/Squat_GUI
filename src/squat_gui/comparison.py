@@ -29,6 +29,11 @@ PARAMETERS = (
     ("wedge_20_deg", "Wedge 20°", "bool"),
     ("angle_adapt", "Capacité adaptée à l'angle", "bool"),
     ("velocity_adapt", "Capacité adaptée à la vitesse", "bool"),
+    (
+        "optimize_bar_path_experimental",
+        "Stabilisation expérimentale de la barre",
+        "bool",
+    ),
 )
 
 
@@ -67,6 +72,7 @@ def semantic_parameter_values(
         "wedge_20_deg": False,
         "angle_adapt": True,
         "velocity_adapt": True,
+        "optimize_bar_path_experimental": False,
     }
     for key, label, unit in PARAMETERS:
         values.append((key, label, settings.get(key, defaults[key]), unit))

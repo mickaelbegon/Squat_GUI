@@ -28,6 +28,10 @@ ensure_python_module numpy numpy
 ensure_python_module imageio imageio
 ensure_python_module imageio_ffmpeg imageio-ffmpeg
 ensure_python_module openpyxl openpyxl
+if ! "$PYTHON_BIN" -c "import scipy, sys; parts = tuple(int(item) for item in scipy.__version__.split('.')[:2]); sys.exit(0 if (1, 10) <= parts < (1, 17) else 1)" >/dev/null 2>&1; then
+  echo "Version SciPy absente ou incompatible; installation de scipy>=1.10,<1.17..."
+  "$PYTHON_BIN" -m pip install --no-build-isolation "scipy>=1.10,<1.17"
+fi
 
 "$PYTHON_BIN" -m PyInstaller --clean --noconfirm packaging/squat_gui.spec
 SQUAT_GUI_SMOKE_TEST=1 "dist/Squat GUI/Squat GUI"

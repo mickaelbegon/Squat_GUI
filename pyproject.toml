@@ -5,6 +5,7 @@ description = "Interface 2D pour explorer la cinematique et la dynamique inverse
 requires-python = ">=3.9"
 dependencies = [
     "openpyxl>=3.1,<4",
+    "scipy>=1.10,<1.17",
 ]
 
 [project.optional-dependencies]

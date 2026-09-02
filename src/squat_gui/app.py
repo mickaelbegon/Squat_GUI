@@ -23,6 +23,10 @@ from .anthropometry import (
     scale_from_percent,
 )
 from .backend import BiorbdModelCache, detect_optional_backends
+from .bar_path_optimization import (
+    BarPathOptimizationResult,
+    optimize_deep_squat_bar_path,
+)
 from .cli import condition_from_settings, simulate_condition, write_csv, write_json
 from .comparison import difference_summary, parameter_differences
 from .dynamics import (
@@ -216,6 +220,7 @@ class SquatGui(tk.Tk):
         self.show_anthropometry_var = tk.BooleanVar(value=False)
         self.show_neighbor_samples_var = tk.BooleanVar(value=False)
         self.show_bar_trajectory_var = tk.BooleanVar(value=False)
+        self.optimize_bar_path_var = tk.BooleanVar(value=False)
         self.show_moment_arms_var = tk.BooleanVar(value=True)
         self.show_capacity_rings_var = tk.BooleanVar(value=True)
         self.show_joint_markers_var = tk.BooleanVar(value=True)
@@ -232,6 +237,7 @@ class SquatGui(tk.Tk):
         self.plot_title_var = tk.StringVar(value="")
         self.frame_info_var = tk.StringVar(value="")
         self.status_var = tk.StringVar(value=self.backend_status.message)
+        self.bar_path_optimization: BarPathOptimizationResult | None = None
         self.didactic_mode_var = tk.BooleanVar(value=False)
         self.reveal_mode_var = tk.StringVar(value=RevealMode.FREE.value)
         self.didactic_step = 0
@@ -741,13 +747,19 @@ class SquatGui(tk.Tk):
             text="wedge 20 deg",
             variable=self.wedge_var,
             command=self.on_parameter_changed,
-        ).pack(side="left")
+        ).grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(
             self.parameter_options,
             text="CoM segments + barre",
             variable=self.show_segment_com_var,
             command=self.redraw,
-        ).pack(side="left", padx=(8, 0))
+        ).grid(row=0, column=1, sticky="w", padx=(8, 0))
+        ttk.Checkbutton(
+            self.parameter_options,
+            text="Stabiliser barre (expérimental)",
+            variable=self.optimize_bar_path_var,
+            command=self.on_parameter_changed,
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
 
         self.torque_box = ttk.LabelFrame(left, text="Couples max")
         self.torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
@@ -1718,6 +1730,21 @@ class SquatGui(tk.Tk):
             self.model_cache,
             self.velocity_adapt_var.get(),
         )
+        self.bar_path_optimization = None
+        if self.optimize_bar_path_var.get():
+            self.bar_path_optimization = optimize_deep_squat_bar_path(
+                anthro,
+                self.final_q,
+                self.phase_durations(),
+                self.frame_count,
+                self.max_torques(),
+                self.angle_adapt_var.get(),
+                self.model_cache,
+                self.velocity_adapt_var.get(),
+                baseline=(self.states, self.results),
+            )
+            self.states = self.bar_path_optimization.states
+            self.results = self.bar_path_optimization.dynamics
         if (
             self.results
             and self.results[0].backend == "biorbd"
@@ -1733,6 +1760,10 @@ class SquatGui(tk.Tk):
             self.status_var.set(
                 f"backend analytique actif (contact: {self.results[0].contact_source}): "
                 "biorbd indisponible ou modèle non chargé"
+            )
+        if self.bar_path_optimization is not None:
+            self.status_var.set(
+                f"{self.status_var.get()} · {self.bar_path_optimization.message}"
             )
         self.update_condition_differences()
         self.redraw()
@@ -1770,6 +1801,7 @@ class SquatGui(tk.Tk):
             "show_torque_bounds": self.show_torque_bounds_var.get(),
             "angle_adapt": self.angle_adapt_var.get(),
             "velocity_adapt": self.velocity_adapt_var.get(),
+            "optimize_bar_path_experimental": self.optimize_bar_path_var.get(),
             "show_sprite_centers": self.show_sprite_centers_var.get(),
             "show_segment_com": self.show_segment_com_var.get(),
             "display_layers": {
@@ -1878,6 +1910,14 @@ class SquatGui(tk.Tk):
             )
             self.velocity_adapt_var.set(
                 bool(settings.get("velocity_adapt", self.velocity_adapt_var.get()))
+            )
+            self.optimize_bar_path_var.set(
+                bool(
+                    settings.get(
+                        "optimize_bar_path_experimental",
+                        self.optimize_bar_path_var.get(),
+                    )
+                )
             )
             self.show_sprite_centers_var.set(
                 bool(
@@ -5270,7 +5310,7 @@ class SquatGui(tk.Tk):
             for joint in ("cheville", "genou", "hanche")
         }
         durations = self.phase_durations_from_settings(settings)
-        return simulate(
+        baseline = simulate(
             anthro,
             final_q,
             durations,
@@ -5280,6 +5320,20 @@ class SquatGui(tk.Tk):
             self.model_cache,
             bool(settings.get("velocity_adapt", self.velocity_adapt_var.get())),
         )
+        if not bool(settings.get("optimize_bar_path_experimental", False)):
+            return baseline
+        optimization = optimize_deep_squat_bar_path(
+            anthro,
+            final_q,
+            durations,
+            frame_count_for_duration(durations),
+            max_torques,
+            bool(settings.get("angle_adapt", self.angle_adapt_var.get())),
+            self.model_cache,
+            bool(settings.get("velocity_adapt", self.velocity_adapt_var.get())),
+            baseline=baseline,
+        )
+        return optimization.states, optimization.dynamics
 
     def display_joint_angles(
         self, q: tuple[float, float, float]

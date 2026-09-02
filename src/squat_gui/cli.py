@@ -12,6 +12,7 @@ from typing import Iterable
 
 from .anthropometry import ANTHROPOMETRY_MODES, Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache
+from .bar_path_optimization import optimize_deep_squat_bar_path
 from .dynamics import force_balance, simulate, torque_presets
 from .didactics import (
     DYNAMIC_PHASE_DURATION_OPTIONS,
@@ -65,6 +66,7 @@ class Condition:
     velocity_adapt: bool
     frames: int
     backend: str
+    optimize_bar_path_experimental: bool = False
 
     @property
     def load_kg(self) -> float:
@@ -155,6 +157,7 @@ def condition_from_args(args: argparse.Namespace) -> Condition:
         velocity_adapt=args.velocity_adapt,
         frames=frames,
         backend=args.backend,
+        optimize_bar_path_experimental=args.optimize_bar_path,
     )
 
 
@@ -248,6 +251,13 @@ def condition_from_row(
         ),
         frames=frames,
         backend=row_str(row, "backend", defaults.backend),
+        optimize_bar_path_experimental=parse_bool(
+            row_str(
+                row,
+                "optimize_bar_path_experimental",
+                str(defaults.optimize_bar_path),
+            )
+        ),
     )
 
 
@@ -328,6 +338,9 @@ def condition_from_settings(
         velocity_adapt=bool(settings.get("velocity_adapt", True)),
         frames=max(2, frame_count),
         backend=backend,
+        optimize_bar_path_experimental=bool(
+            settings.get("optimize_bar_path_experimental", False)
+        ),
     )
 
 
@@ -347,6 +360,21 @@ def simulate_condition(
         model_cache,
         condition.velocity_adapt,
     )
+    optimization = None
+    if condition.optimize_bar_path_experimental:
+        optimization = optimize_deep_squat_bar_path(
+            anthro,
+            final_q,
+            condition.phase_durations,
+            condition.frames,
+            condition.max_torques,
+            condition.angle_adapt,
+            model_cache,
+            condition.velocity_adapt,
+            baseline=(states, results),
+        )
+        states = optimization.states
+        results = optimization.dynamics
     actual_backend = results[0].backend if results else "none"
     if condition.backend == "biorbd" and actual_backend != "biorbd":
         raise RuntimeError(
@@ -410,6 +438,15 @@ def simulate_condition(
             "torque_preset": condition.torque_preset,
             "angle_adapt": condition.angle_adapt,
             "velocity_adapt": condition.velocity_adapt,
+            "bar_path_optimization_requested": (
+                condition.optimize_bar_path_experimental
+            ),
+            "bar_path_optimization_applied": (
+                bool(optimization.applied) if optimization is not None else False
+            ),
+            "bar_path_optimization_message": (
+                optimization.message if optimization is not None else "désactivée"
+            ),
             "max_cheville_Nm": condition.max_torques["cheville"],
             "max_genou_Nm": condition.max_torques["genou"],
             "max_hanche_Nm": condition.max_torques["hanche"],
@@ -782,6 +819,14 @@ def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--max-hanche", type=float)
     parser.add_argument("--angle-adapt", type=parse_bool, default=True)
     parser.add_argument("--velocity-adapt", type=parse_bool, default=True)
+    parser.add_argument(
+        "--optimize-bar-path",
+        action="store_true",
+        help=(
+            "Activer la stabilisation expérimentale SLSQP de la trajectoire "
+            "horizontale de la barre (±5 deg, contraintes CoP)."
+        ),
+    )
     parser.add_argument(
         "--backend", choices=("auto", "analytical", "biorbd"), default="auto"
     )

@@ -11,6 +11,44 @@ from squat_gui.export_schema import SCHEMA_VERSION, STANDARD_CSV_COLUMNS
 
 
 class CliExportTests(unittest.TestCase):
+    def test_experimental_bar_path_flag_is_reproducible_in_full_export(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "optimized.csv"
+            summary = Path(tmp) / "optimized.json"
+
+            with redirect_stdout(StringIO()):
+                code = main(
+                    [
+                        "run",
+                        "--backend",
+                        "analytical",
+                        "--frames",
+                        "31",
+                        "--q-segment-deg",
+                        "22",
+                        "-58",
+                        "50",
+                        "--optimize-bar-path",
+                        "--csv-mode",
+                        "full",
+                        "--out",
+                        str(out),
+                        "--summary",
+                        str(summary),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            with out.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+            payload = json.loads(summary.read_text(encoding="utf-8"))
+            self.assertEqual(rows[0]["bar_path_optimization_requested"], "True")
+            self.assertEqual(rows[0]["bar_path_optimization_applied"], "True")
+            self.assertIn("excursion horizontale", rows[0]["bar_path_optimization_message"])
+            self.assertTrue(
+                payload["condition"]["optimize_bar_path_experimental"]
+            )
+
     def test_run_exports_results_and_summary(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "results.csv"
