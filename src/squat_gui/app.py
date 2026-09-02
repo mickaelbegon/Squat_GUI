@@ -225,6 +225,7 @@ class SquatGui(tk.Tk):
         self.show_joint_coordinates_var = tk.BooleanVar(value=False)
         self.show_segment_orientations_var = tk.BooleanVar(value=False)
         self.show_joint_angles_var = tk.BooleanVar(value=False)
+        self.show_animation_torques_var = tk.BooleanVar(value=True)
         self.show_anthropometry_var = tk.BooleanVar(value=False)
         self.show_neighbor_samples_var = tk.BooleanVar(value=False)
         self.show_bar_trajectory_var = tk.BooleanVar(value=False)
@@ -300,6 +301,7 @@ class SquatGui(tk.Tk):
             add_check("Coordonnées articulaires (survol)", self.show_joint_coordinates_var)
             add_check("Orientations segmentaires", self.show_segment_orientations_var)
             add_check("Angles articulaires", self.show_joint_angles_var)
+            add_check("Informations sur les couples", self.show_animation_torques_var)
             add_check("Anthropométrie utilisée", self.show_anthropometry_var)
             add_check("Échantillons i−1 / i / i+1", self.show_neighbor_samples_var)
             add_check("Trajectoire de la barre", self.show_bar_trajectory_var)
@@ -1898,6 +1900,7 @@ class SquatGui(tk.Tk):
                 "geometric_base": self.show_geometric_base_var.get(),
                 "support_limits": self.show_support_limits_var.get(),
                 "force_balance": self.show_force_balance_var.get(),
+                "animation_torques": self.show_animation_torques_var.get(),
                 "joint_coordinates": self.show_joint_coordinates_var.get(),
                 "segment_orientations": self.show_segment_orientations_var.get(),
                 "joint_angles": self.show_joint_angles_var.get(),
@@ -2024,6 +2027,7 @@ class SquatGui(tk.Tk):
                 "geometric_base": self.show_geometric_base_var,
                 "support_limits": self.show_support_limits_var,
                 "force_balance": self.show_force_balance_var,
+                "animation_torques": self.show_animation_torques_var,
                 "joint_coordinates": self.show_joint_coordinates_var,
                 "segment_orientations": self.show_segment_orientations_var,
                 "joint_angles": self.show_joint_angles_var,
@@ -3847,20 +3851,21 @@ class SquatGui(tk.Tk):
                 font=("Helvetica", 10, "bold"),
             )
             y += 18
-            for joint in ("cheville", "genou", "hanche"):
-                torque = result.torques[joint]
-                ratio = result.effort_ratios[joint]
-                text_color = "#8a1f17" if ratio is None or ratio > 1.0 else color
-                utilization_text = "n.d." if ratio is None else f"{100 * ratio: .0f}%"
-                canvas.create_text(
-                    x,
-                    y,
-                    text=f"{joint}: {torque: .1f} Nm (U={utilization_text})",
-                    anchor="nw",
-                    fill=text_color,
-                    font=("Helvetica", 9),
-                )
-                y += 18
+            if self.show_animation_torques_var.get():
+                for joint in ("cheville", "genou", "hanche"):
+                    torque = result.torques[joint]
+                    ratio = result.effort_ratios[joint]
+                    text_color = "#8a1f17" if ratio is None or ratio > 1.0 else color
+                    utilization_text = "n.d." if ratio is None else f"{100 * ratio: .0f}%"
+                    canvas.create_text(
+                        x,
+                        y,
+                        text=f"{joint}: {torque: .1f} Nm (U={utilization_text})",
+                        anchor="nw",
+                        fill=text_color,
+                        font=("Helvetica", 9),
+                    )
+                    y += 18
 
     def draw_plot(self) -> None:
         canvas = self.plot_canvas

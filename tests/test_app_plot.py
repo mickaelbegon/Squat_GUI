@@ -453,8 +453,23 @@ class PlotSeriesTests(unittest.TestCase):
             "contact externe (signé)": FakeVar(True),
             "total ID": FakeVar(True),
         }
+        gui.show_animation_torques_var = FakeVar(True)
         gui.time_mode_var = FakeVar(TimeMode.CENTERED.value)
         return gui
+
+    def test_animation_torque_information_can_be_hidden(self):
+        gui = self.gui_without_tk()
+        sample = [{"label": "courant", "color": None, "result": gui.results[0]}]
+
+        visible_canvas = RecordingCanvas()
+        gui.draw_animation_values(visible_canvas, sample)
+        self.assertEqual(len(visible_canvas.texts), 4)
+
+        gui.show_animation_torques_var.set(False)
+        hidden_canvas = RecordingCanvas()
+        gui.draw_animation_values(hidden_canvas, sample)
+        self.assertEqual(len(hidden_canvas.texts), 1)
+        self.assertEqual(hidden_canvas.texts[0][1]["text"], "courant")
 
     def test_kinematic_series_do_not_include_com(self):
         gui = self.gui_without_tk()
