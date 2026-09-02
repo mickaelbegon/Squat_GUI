@@ -80,7 +80,12 @@ if __name__ == "__main__":
                 else:
                     os.environ["SQUAT_GUI_XLSX_WRITER"] = previous_writer
             assert excel_report["writer"] == "openpyxl"
-            assert len(excel_report["sheets"]) == 11
+            assert excel_report["sheets"] == [
+                "Synthèse",
+                "Données combinées",
+                "frozen_excel",
+                "Définitions",
+            ]
             assert excel_path.stat().st_size > 10000
 
         if os.environ.get("SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS") == "1":

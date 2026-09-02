@@ -157,7 +157,8 @@ Décompresse le ZIP avec l'Explorateur Windows dans un nouveau dossier, puis :
 3. change sujet, prise de barre, wedge, charge et durée;
 4. ajoute une condition, duplique-la, modifie un paramètre et compare;
 5. sauvegarde puis recharge un JSON de conditions;
-6. exporte un Excel, ouvre-le et confirme les 11 onglets;
+6. exporte un Excel, ouvre-le et confirme `Synthèse`, `Données combinées`, une
+   feuille par simulation et `Définitions`;
 7. exporte un MP4 et lis-le dans le lecteur Windows;
 8. ferme puis rouvre l'application.
 

@@ -19,6 +19,9 @@ SEGMENTS = ("foot", "shank", "thigh", "trunk", "bar")
 JOINTS = ("cheville", "genou", "hanche")
 POINTS = ("heel", "toe", "ankle", "knee", "hip", "shoulder", "bar")
 ROW_KEYS = ("schema_version", "condition_id", "frame", "time_s")
+SUMMARY_SHEET = "Synthèse"
+COMBINED_SHEET = "Données combinées"
+DEFINITIONS_SHEET = "Définitions"
 
 
 @dataclass(frozen=True)
@@ -293,23 +296,6 @@ SUMMARY_COLUMNS = (
     "undefined_capacity_events",
 )
 
-TABLE_COLUMNS = OrderedDict(
-    (
-        ("synthese", SUMMARY_COLUMNS),
-        ("conditions", CONDITION_COLUMNS),
-        ("temps", TIME_COLUMNS),
-        ("coordonnees", COORDINATE_COLUMNS),
-        ("orientations", ORIENTATION_COLUMNS),
-        ("cinematique_articulaire", KINEMATIC_COLUMNS),
-        ("anthropometrie", ANTHROPOMETRY_COLUMNS),
-        ("com_segmentaires", SEGMENT_COM_COLUMNS),
-        ("com_global", GLOBAL_COM_COLUMNS),
-        ("forces_equilibre", FORCE_COLUMNS),
-        ("dynamique", DYNAMIC_COLUMNS),
-    )
-)
-
-
 DESCRIPTION_OVERRIDES = {
     "schema_version": "Version du contrat d'export Squat GUI.",
     "condition_id": "Identifiant stable de la condition simulée.",
@@ -574,12 +560,39 @@ def _mean(rows: Sequence[Mapping[str, object]], column: str) -> float:
     return sum(_number(row, column) for row in rows) / len(rows)
 
 
-def _condition_groups(
+def _frame_restarts(previous: object, current: object) -> bool:
+    """Return whether two adjacent frames reveal a repeated simulation ID."""
+    if previous is None or current is None:
+        return False
+    try:
+        return float(current) <= float(previous)
+    except (TypeError, ValueError):
+        return False
+
+
+def _simulation_groups(
     rows: Sequence[Mapping[str, object]],
-) -> OrderedDict[object, list[Mapping[str, object]]]:
-    groups: OrderedDict[object, list[Mapping[str, object]]] = OrderedDict()
+) -> list[tuple[object, list[Mapping[str, object]]]]:
+    """Keep contiguous simulations distinct, even when their IDs are repeated."""
+    groups: list[tuple[object, list[Mapping[str, object]]]] = []
+    current_id: object = None
+    current_rows: list[Mapping[str, object]] = []
+    previous_frame: object = None
     for row in rows:
-        groups.setdefault(row.get("condition_id"), []).append(row)
+        condition_id = row.get("condition_id")
+        frame = row.get("frame")
+        starts_new = bool(current_rows) and (
+            condition_id != current_id or _frame_restarts(previous_frame, frame)
+        )
+        if starts_new:
+            groups.append((current_id, current_rows))
+            current_rows = []
+        if not current_rows:
+            current_id = condition_id
+        current_rows.append(row)
+        previous_frame = frame
+    if current_rows:
+        groups.append((current_id, current_rows))
     return groups
 
 
@@ -588,7 +601,7 @@ def _condition_summary_rows(
 ) -> list[dict[str, object]]:
     """Build one Excel-ready summary row per simulated condition."""
     summaries: list[dict[str, object]] = []
-    for condition_rows in _condition_groups(rows).values():
+    for _condition_id, condition_rows in _simulation_groups(rows):
         first = condition_rows[0]
         frame_count = len(condition_rows)
         squat_rows = [row for row in condition_rows if row.get("phase") == "isometrique"]
@@ -730,62 +743,82 @@ def _project(
     return [[row.get(column) for column in columns] for row in rows]
 
 
-def _unique_conditions(
-    rows: Sequence[Mapping[str, object]],
-) -> list[Mapping[str, object]]:
-    unique: OrderedDict[object, Mapping[str, object]] = OrderedDict()
-    for row in rows:
-        unique.setdefault(row.get("condition_id"), row)
-    return list(unique.values())
+_INVALID_WORKSHEET_CHARACTERS = re.compile(r'[\\/*?:\[\]<>|"\x00-\x1f]')
+_WINDOWS_RESERVED_NAMES = re.compile(
+    r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.IGNORECASE
+)
 
 
-def _anthropometry_rows(
+def _worksheet_name(
+    condition_id: object,
+    used_names: set[str],
+    simulation_index: int,
+) -> str:
+    """Build a safe, unique Excel sheet name of at most 31 characters."""
+    raw_name = "" if condition_id is None else str(condition_id)
+    base = _INVALID_WORKSHEET_CHARACTERS.sub("_", raw_name)
+    base = re.sub(r"\s+", " ", base).strip(" .'_")
+    if not base:
+        base = f"Simulation {simulation_index}"
+    if _WINDOWS_RESERVED_NAMES.fullmatch(base):
+        base = f"_{base}"
+    base = base[:31].rstrip(" .'") or f"Simulation {simulation_index}"
+
+    candidate = base
+    suffix_index = 2
+    while candidate.casefold() in used_names:
+        suffix = f" ({suffix_index})"
+        stem = base[: 31 - len(suffix)].rstrip(" .'")
+        candidate = f"{stem}{suffix}"
+        suffix_index += 1
+    used_names.add(candidate.casefold())
+    return candidate
+
+
+def _ordered_row_columns(
     rows: Sequence[Mapping[str, object]],
-) -> list[dict[str, object]]:
-    result = []
-    for row in _unique_conditions(rows):
-        for segment in SEGMENTS:
-            result.append(
-                {
-                    "schema_version": row.get("schema_version"),
-                    "condition_id": row.get("condition_id"),
-                    "segment": segment,
-                    **{
-                        column: row.get(f"{segment}_{column}")
-                        for column in ANTHROPOMETRY_COLUMNS[3:]
-                    },
-                }
-            )
-    return result
+) -> tuple[str, ...]:
+    """Return the complete row schema in stable first-seen order."""
+    return tuple(dict.fromkeys(column for row in rows for column in row))
 
 
 def workbook_tables(
     rows: Sequence[Mapping[str, object]],
 ) -> OrderedDict[str, dict[str, object]]:
-    """Split canonical wide rows into machine-readable metric families."""
+    """Build the student workbook: summary, combined frames and simulations."""
     if not rows:
         raise ValueError("L'export requiert au moins une ligne de résultats.")
     versioned = add_schema_version(rows)
+    frame_columns = _ordered_row_columns(versioned)
+    simulations = _simulation_groups(versioned)
     tables: OrderedDict[str, dict[str, object]] = OrderedDict()
-    for name, columns in TABLE_COLUMNS.items():
-        source_rows: Sequence[Mapping[str, object]]
-        if name == "synthese":
-            source_rows = _condition_summary_rows(versioned)
-        elif name == "conditions":
-            source_rows = _unique_conditions(versioned)
-        elif name == "anthropometrie":
-            source_rows = _anthropometry_rows(versioned)
-        else:
-            source_rows = versioned
-        tables[name] = {
-            "columns": list(columns),
-            "rows": _project(source_rows, columns),
+    tables[SUMMARY_SHEET] = {
+        "columns": list(SUMMARY_COLUMNS),
+        "rows": _project(_condition_summary_rows(versioned), SUMMARY_COLUMNS),
+    }
+    tables[COMBINED_SHEET] = {
+        "columns": list(frame_columns),
+        "rows": _project(versioned, frame_columns),
+    }
+
+    used_names = {
+        SUMMARY_SHEET.casefold(),
+        COMBINED_SHEET.casefold(),
+        DEFINITIONS_SHEET.casefold(),
+    }
+    for simulation_index, (condition_id, simulation_rows) in enumerate(
+        simulations, start=1
+    ):
+        sheet_name = _worksheet_name(condition_id, used_names, simulation_index)
+        tables[sheet_name] = {
+            "columns": list(frame_columns),
+            "rows": _project(simulation_rows, frame_columns),
         }
 
     definitions = []
     for csv_name, columns in (
         ("csv_standard", STANDARD_CSV_COLUMNS),
-        ("csv_full", tuple(versioned[0])),
+        ("csv_full", frame_columns),
     ):
         for column in columns:
             definition = column_definition(column)
@@ -800,7 +833,11 @@ def workbook_tables(
                     definition.status,
                 ]
             )
-    for table_name, columns in TABLE_COLUMNS.items():
+    for table_name, columns in (
+        (SUMMARY_SHEET, SUMMARY_COLUMNS),
+        (COMBINED_SHEET, frame_columns),
+        ("Simulation", frame_columns),
+    ):
         for column in columns:
             definition = column_definition(column)
             definitions.append(
@@ -814,7 +851,7 @@ def workbook_tables(
                     definition.status,
                 ]
             )
-    tables["definitions"] = {
+    tables[DEFINITIONS_SHEET] = {
         "columns": [
             "schema_version",
             "table",
@@ -831,11 +868,13 @@ def workbook_tables(
 
 def missing_dictionary_columns(tables: Mapping[str, Mapping[str, object]]) -> set[str]:
     """Return data columns that do not have an entry in the definitions table."""
-    defined = {row[2] for row in tables["definitions"]["rows"]}  # type: ignore[index]
+    defined = {
+        row[2] for row in tables[DEFINITIONS_SHEET]["rows"]  # type: ignore[index]
+    }
     exported = {
         column
         for name, table in tables.items()
-        if name != "definitions"
+        if name != DEFINITIONS_SHEET
         for column in table["columns"]  # type: ignore[index]
     }
     return exported - defined
@@ -851,7 +890,12 @@ def _artifact_runtime() -> tuple[Path, Path]:
     codex_dependencies = (
         Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node"
     )
-    node_candidates.append(codex_dependencies / "bin/node")
+    node_candidates.extend(
+        (
+            codex_dependencies / "bin/node",
+            codex_dependencies / "bin/node.exe",
+        )
+    )
     module_candidates = [
         Path(value) for value in (os.environ.get("SQUAT_GUI_NODE_MODULES"),) if value
     ]
@@ -945,7 +989,13 @@ def _write_xlsx_artifact(
             capture_output=True,
             text=True,
         )
-        if completed.returncode != 0:
+        # Artifact Tool 2.8 can terminate Node abnormally during Windows
+        # teardown after preview rendering, despite having completed every
+        # awaited write.  The per-run report is written last and therefore
+        # provides a stronger completion signal than that teardown code.
+        if completed.returncode != 0 and not (
+            report_path.exists() and output.exists()
+        ):
             detail = completed.stderr.strip() or completed.stdout.strip()
             raise RuntimeError(f"Échec de l'export Excel: {detail}")
         if not report_path.exists():
@@ -993,6 +1043,8 @@ def _write_xlsx_openpyxl(
     long_text_columns = {
         "anthropometry_scaling_rule",
         "scaling_rule",
+        "contact_source",
+        "support_point_source",
         "capacity_model",
         "capacity_source",
         "definition",
@@ -1028,7 +1080,7 @@ def _write_xlsx_openpyxl(
             letter = get_column_letter(column_index)
             number_format = _excel_number_format(column)
             is_long_text = column in long_text_columns
-            maximum_width = 48 if name == "definitions" or is_long_text else 24
+            maximum_width = 48 if name == DEFINITIONS_SHEET or is_long_text else 24
             measured_width = max(
                 len(str(sheet.cell(row=row_index, column=column_index).value or ""))
                 for row_index in range(1, sheet.max_row + 1)
@@ -1043,7 +1095,7 @@ def _write_xlsx_openpyxl(
                 if is_long_text:
                     cell.alignment = Alignment(vertical="top", wrap_text=True)
 
-        sheet.freeze_panes = "D2" if name == "anthropometrie" else "C2"
+        sheet.freeze_panes = "C2"
         if sheet.max_row >= 2:
             reference = f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}"
             excel_table = Table(

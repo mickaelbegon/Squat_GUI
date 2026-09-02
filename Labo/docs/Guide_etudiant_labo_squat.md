@@ -37,11 +37,13 @@ python scripts/run_squat_batch.py --conditions scenarios/scenarios_labo_squat.cs
 ```
 
 Le classeur `results_labo_squat/results.xlsx` est la sortie étudiante de
-référence. Son premier onglet `synthese` contient une ligne par condition avec
+référence. Son premier onglet `Synthèse` contient une ligne par simulation avec
 les pics de moments et de puissances, les moments normalisés par la masse
 corporelle, le CoM et le CoP/ZMP au squat, l'excursion du point d'appui, les
-frames hors appui, la GRF verticale et l'articulation limitante. Aucun fichier
-JSON n'est nécessaire pour l'analyse dans Excel.
+frames hors appui, la GRF verticale et l'articulation limitante. `Données
+combinées` regroupe toutes les frames, puis chaque simulation dispose de sa
+propre feuille. `Définitions` documente les colonnes. Aucun fichier JSON n'est
+nécessaire pour l'analyse dans Excel.
 
 ## Tutoriel de prise en main du GUI
 
@@ -96,7 +98,7 @@ Lors d'une comparaison morphologique, vérifier dans la couche `Anthropométrie 
 
 ### 6. Conserver une trace reproductible
 
-Enregistrer la condition lorsqu'elle doit être réutilisée. Pour une analyse complète, exporter le classeur Excel : chaque famille de métriques est placée dans un onglet dédié et la table anthropométrique effectivement utilisée est incluse. L'export vidéo MP4 permet de conserver l'animation et les couches d'affichage sélectionnées.
+Enregistrer la condition lorsqu'elle doit être réutilisée. Pour une analyse complète, exporter le classeur Excel : commencer par `Synthèse`, utiliser `Données combinées` pour les comparaisons et ouvrir la feuille nommée d'après une simulation pour l'étudier isolément. Les colonnes complètes conservent notamment l'anthropométrie effectivement utilisée. L'export vidéo MP4 permet de conserver l'animation et les couches d'affichage sélectionnées.
 
 Avant de poursuivre, vérifier que vous savez : sélectionner un preset temporel, afficher une coordonnée par survol, déplacer le curseur synchronisé, lire l'inspecteur numérique, distinguer les trois repères temporels, dupliquer une référence, vérifier les variables contrôlées et produire un export.
 

@@ -28,7 +28,8 @@
 
 ### Exports et distribution
 
-- Schéma CSV/Excel 1.4.0 et classeur à 11 onglets.
+- Schéma CSV/Excel 1.4.0; classeur étudiant organisé en synthèse, données
+  combinées, une feuille par simulation et définitions.
 - Export CSV combiné de la session avec identifiants de condition uniques,
   déduplication de la condition active et remplacement atomique explicite.
 - Export Excel autonome grâce au fallback `openpyxl` inclus dans le bundle; Artifact

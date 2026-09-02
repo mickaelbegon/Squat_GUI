@@ -80,10 +80,12 @@ Le CSV utilise par défaut le contrat `standard` : une ligne par frame avec les
 paramètres de condition, la cinématique articulaire, les moments et puissances,
 le CoM, le CoP/ZMP et la GRF verticale. `--csv-mode full` conserve l'ancien
 niveau diagnostique avec les coordonnées segmentaires et les termes
-intermédiaires. L'export Excel place en premier l'onglet `synthese`, qui fournit
+intermédiaires. L'export Excel place en premier l'onglet `Synthèse`, qui fournit
 une ligne par condition avec les pics, moments normalisés, position au squat,
 excursion du CoP/ZMP, sorties de la base d'appui et faisabilité mécanique. Les
-autres feuilles conservent les séries et diagnostics détaillés. Le JSON reste
+frames complètes sont ensuite disponibles dans `Données combinées` et dans une
+feuille distincte par simulation; `Définitions` conserve le dictionnaire des
+colonnes. Le JSON reste
 disponible avec `--summary chemin.json`, mais n'est plus requis pour l'analyse
 étudiante.
 

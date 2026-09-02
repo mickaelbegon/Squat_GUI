@@ -55,7 +55,8 @@ et teste Excel/MP4 sans Node.js.
 - Activer les coordonnées articulaires au survol, CoM, appuis et forces.
 - Ajouter une condition, la dupliquer, modifier un paramètre et comparer les deux.
 - Sauvegarder puis recharger les conditions JSON.
-- Exporter un Excel et vérifier ses 11 onglets.
+- Exporter un Excel et vérifier `Synthèse`, `Données combinées`, une feuille par
+  simulation et `Définitions`.
 - Exporter un MP4 et le lire dans le lecteur système.
 - Fermer puis rouvrir l'application.
 

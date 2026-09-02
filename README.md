@@ -40,6 +40,8 @@ conditions enregistrées et la condition active lorsqu'elle est distincte. Chaqu
 ligne porte un `condition_id`. L'export crée un lot neuf et remplace explicitement
 le fichier choisi; il n'ajoute jamais des lignes à un ancien export. Les métriques
 de synthèse destinées aux étudiants restent disponibles dans le classeur Excel.
+Celui-ci commence par `Synthèse`, puis `Données combinées`, et ajoute une feuille
+par simulation avant le dictionnaire technique `Définitions`.
 
 ## Installation Python facultative
 

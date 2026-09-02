@@ -46,12 +46,14 @@ for (const [sheetIndex, [name, table]] of Object.entries(payload.tables).entries
     const isLongText = [
       "anthropometry_scaling_rule",
       "scaling_rule",
+      "contact_source",
+      "support_point_source",
       "capacity_model",
       "capacity_source",
       "definition",
       "sign_convention",
     ].includes(columnName);
-    const maximumWidth = name === "definitions" || isLongText ? 48 : 24;
+    const maximumWidth = name === "Définitions" || isLongText ? 48 : 24;
     const width = Math.min(
       Math.max(columnRange.format.columnWidth || 12, 11),
       maximumWidth,
@@ -71,7 +73,20 @@ for (const [sheetIndex, [name, table]] of Object.entries(payload.tables).entries
   used.format.autofitRows();
   header.format.rowHeight = 34;
   sheet.freezePanes.freezeRows(1);
-  sheet.freezePanes.freezeColumns(name === "anthropometrie" ? 3 : 2);
+  sheet.freezePanes.freezeColumns(2);
+}
+
+if (previewDir) {
+  await fs.mkdir(previewDir, { recursive: true });
+  for (const name of Object.keys(payload.tables)) {
+    // The data dictionary can contain hundreds of rows; a bounded preview
+    // avoids allocating a bitmap taller than the renderer supports.
+    const previewOptions = name === "Définitions"
+      ? { sheetName: name, range: "A1:G40", scale: 1, format: "png" }
+      : { sheetName: name, range: "A1:L20", scale: 1, format: "png" };
+    const preview = await workbook.render(previewOptions);
+    await fs.writeFile(`${previewDir}/${name}.png`, new Uint8Array(await preview.arrayBuffer()));
+  }
 }
 
 await fs.mkdir(path.dirname(outputPath), { recursive: true });
@@ -83,19 +98,6 @@ await output.save(outputPath);
 // workbook in the Python fallback test independently scans cell contents.
 const errors = [];
 await fs.rm(`${outputPath}.inspect.ndjson`, { force: true });
-
-if (previewDir) {
-  await fs.mkdir(previewDir, { recursive: true });
-  for (const name of Object.keys(payload.tables)) {
-    // The data dictionary can contain hundreds of rows; a bounded preview
-    // avoids allocating a bitmap taller than the renderer supports.
-    const previewOptions = name === "definitions"
-      ? { sheetName: name, range: "A1:G40", scale: 1, format: "png" }
-      : { sheetName: name, autoCrop: "all", scale: 1, format: "png" };
-    const preview = await workbook.render(previewOptions);
-    await fs.writeFile(`${previewDir}/${name}.png`, new Uint8Array(await preview.arrayBuffer()));
-  }
-}
 
 await fs.writeFile(
   reportPath,
