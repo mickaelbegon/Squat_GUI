@@ -5,12 +5,28 @@ import unittest
 from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
+from unittest.mock import patch
 
-from squat_gui.cli import main
+from squat_gui.cli import main, write_csv
 from squat_gui.export_schema import SCHEMA_VERSION, STANDARD_CSV_COLUMNS
 
 
 class CliExportTests(unittest.TestCase):
+    def test_csv_replacement_is_atomic_when_writing_fails(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            output = Path(tmp) / "existing.csv"
+            output.write_text("contenu valide\n", encoding="utf-8")
+
+            with patch(
+                "squat_gui.cli.csv.DictWriter.writerows",
+                side_effect=OSError("disque indisponible"),
+            ):
+                with self.assertRaises(OSError):
+                    write_csv(output, [{"condition_id": "test"}])
+
+            self.assertEqual(output.read_text(encoding="utf-8"), "contenu valide\n")
+            self.assertEqual(list(Path(tmp).glob("*.tmp")), [])
+
     def test_experimental_bar_path_flag_is_reproducible_in_full_export(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             out = Path(tmp) / "optimized.csv"

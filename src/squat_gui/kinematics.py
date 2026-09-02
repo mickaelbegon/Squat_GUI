@@ -15,6 +15,11 @@ Vector = tuple[float, float]
 # the remaining 15% represents the distal toes beyond the functional forefoot.
 METATARSAL_HEAD_FRACTION = 0.85
 DEFAULT_SAMPLE_PERIOD_S = 0.05
+CLINICAL_JOINT_LIMITS_DEG = {
+    "cheville": (-30.0, 40.0),
+    "genou": (0.0, 140.0),
+    "hanche": (-15.0, 120.0),
+}
 
 
 @dataclass(frozen=True)
@@ -170,6 +175,31 @@ def segment_values_from_joint_values(ankle: float, knee: float, hip: float) -> t
     thigh = shank + knee
     trunk = thigh + hip
     return (shank, thigh, trunk)
+
+
+def clinical_joint_values_from_segment_values(
+    values: tuple[float, float, float],
+) -> dict[str, float]:
+    """Return the editable clinical convention in the input units.
+
+    Squat_GUI historically stores knee flexion with a negative sign.  The
+    numerical posture editor follows the usual teaching convention where
+    knee flexion is displayed as a positive value.  Ankle dorsiflexion and
+    hip flexion retain their existing signs.
+    """
+    joints = joint_values_from_segment_values(values)
+    return {
+        "cheville": joints["cheville"],
+        "genou": -joints["genou"],
+        "hanche": joints["hanche"],
+    }
+
+
+def segment_values_from_clinical_joint_values(
+    ankle: float, knee_flexion: float, hip_flexion: float
+) -> tuple[float, float, float]:
+    """Convert editable clinical joint values to segment orientations."""
+    return segment_values_from_joint_values(ankle, -knee_flexion, hip_flexion)
 
 
 def geometric_support_limits(pose: Pose) -> tuple[float, float]:

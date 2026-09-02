@@ -29,6 +29,8 @@
 ### Exports et distribution
 
 - Schéma CSV/Excel 1.4.0 et classeur à 11 onglets.
+- Export CSV combiné de la session avec identifiants de condition uniques,
+  déduplication de la condition active et remplacement atomique explicite.
 - Export Excel autonome grâce au fallback `openpyxl` inclus dans le bundle; Artifact
   Tool reste utilisé automatiquement lorsqu'un runtime compatible est disponible.
 - Export MP4 à 20 fps dont la durée du conteneur correspond à la trajectoire.

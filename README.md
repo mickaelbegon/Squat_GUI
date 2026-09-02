@@ -35,7 +35,11 @@ L'export CSV standard privilégie les données biomécaniques essentielles à la
 comparaison (paramètres de condition, cinématique, couples et puissances, CoM,
 CoP/ZMP et force verticale). Les données intermédiaires et le niveau de détail
 diagnostic/complet sont réservés à la documentation et aux usages de
-développement.
+développement. Le bouton `CSV combiné` regroupe dans un seul fichier toutes les
+conditions enregistrées et la condition active lorsqu'elle est distincte. Chaque
+ligne porte un `condition_id`. L'export crée un lot neuf et remplace explicitement
+le fichier choisi; il n'ajoute jamais des lignes à un ancien export. Les métriques
+de synthèse destinées aux étudiants restent disponibles dans le classeur Excel.
 
 ## Installation Python facultative
 

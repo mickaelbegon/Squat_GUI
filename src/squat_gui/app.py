@@ -27,7 +27,7 @@ from .bar_path_optimization import (
     BarPathOptimizationResult,
     optimize_deep_squat_bar_path,
 )
-from .cli import condition_from_settings, simulate_condition, write_csv, write_json
+from .cli import Condition, condition_from_settings, simulate_condition, write_csv
 from .comparison import difference_summary, parameter_differences
 from .dynamics import (
     GRAVITY,
@@ -48,9 +48,11 @@ from .didactics import (
     temporal_preset_display,
 )
 from .kinematics import (
+    CLINICAL_JOINT_LIMITS_DEG,
     DEFAULT_SAMPLE_PERIOD_S,
     MotionState,
     PhaseDurations,
+    clinical_joint_values_from_segment_values,
     functional_support_limits,
     frame_count_for_duration,
     geometric_support_limits,
@@ -58,6 +60,7 @@ from .kinematics import (
     joint_values_from_segment_values,
     pose_from_angles,
     segment_orientations,
+    segment_values_from_clinical_joint_values,
 )
 from .observables import (
     com_contributions,
@@ -141,6 +144,16 @@ class SquatGui(tk.Tk):
         self.configure(bg="#f2f4f1")
 
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        self._syncing_pose_angle_fields = False
+        self.pose_angle_vars = {
+            "cheville": tk.StringVar(value="22"),
+            "genou": tk.StringVar(value="80"),
+            "hanche": tk.StringVar(value="78"),
+        }
+        self._pose_angle_update_after_id: str | None = None
+        for variable in self.pose_angle_vars.values():
+            variable.trace_add("write", self.schedule_pose_angle_fields_changed)
+        self.pose_angle_spinboxes: dict[str, ttk.Spinbox] = {}
         self.frame_count = frame_count_for_duration(PhaseDurations())
         self.playing = False
         self._play_started_at: float | None = None
@@ -463,6 +476,7 @@ class SquatGui(tk.Tk):
         style.configure("TLabel", background="#f2f4f1", foreground="#22312a")
         style.configure("TCheckbutton", background="#f2f4f1")
         style.configure("TButton", padding=6)
+        style.configure("Invalid.TSpinbox", fieldbackground="#ffe3df")
         style.configure(
             "GuideNav.TButton", padding=(3, 2), font=("Helvetica", 11, "bold")
         )
@@ -472,8 +486,13 @@ class SquatGui(tk.Tk):
         self.root_layout = root
         root.pack(fill="both", expand=True)
         root.columnconfigure(0, weight=0, minsize=360)
-        root.columnconfigure(1, weight=1)
-        root.columnconfigure(2, weight=1)
+        # Le poseur sert a regler une seule posture, alors que le panneau droit
+        # affiche toute l'animation.  Garder une largeur minimale au poseur
+        # preserve le glisser-deposer, puis donner deux fois plus de largeur a
+        # l'animation libere un espace appreciable sans masquer les controles
+        # dans les petites fenetres.
+        root.columnconfigure(1, weight=1, minsize=260)
+        root.columnconfigure(2, weight=2, minsize=280)
         root.rowconfigure(0, weight=1, minsize=420)
         root.rowconfigure(2, weight=3, minsize=250)
 
@@ -1108,7 +1127,7 @@ class SquatGui(tk.Tk):
         self.export_mp4_button.grid(row=0, column=3, sticky="ew", padx=(3, 0))
         self.export_csv_button = ttk.Button(
             self.file_box,
-            text="⇩ CSV + résumé",
+            text="⇩ CSV combiné",
             command=self.export_csv_results,
         )
         self.export_csv_button.grid(
@@ -1116,14 +1135,53 @@ class SquatGui(tk.Tk):
         )
         self.table_notebook.bind("<<NotebookTabChanged>>", self.on_table_tab_changed)
 
+        self.pose_panel = ttk.Frame(root)
+        self.pose_panel.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
+        self.pose_panel.rowconfigure(0, weight=1)
+        self.pose_panel.columnconfigure(0, weight=1)
         self.pose_canvas = tk.Canvas(
-            root, bg=CANVAS_BG, highlightthickness=2, highlightbackground="#7f8f83"
+            self.pose_panel,
+            bg=CANVAS_BG,
+            highlightthickness=2,
+            highlightbackground="#7f8f83",
         )
-        self.pose_canvas.grid(row=0, column=1, sticky="nsew", padx=(0, 8))
+        self.pose_canvas.grid(row=0, column=0, sticky="nsew")
         self.pose_canvas.bind("<Configure>", self.schedule_redraw)
         self.pose_canvas.bind("<ButtonPress-1>", self.on_pose_press)
         self.pose_canvas.bind("<B1-Motion>", self.on_pose_drag)
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
+        self.pose_angle_box = ttk.LabelFrame(
+            self.pose_panel, text="Angles articulaires bas (°, flexion +)"
+        )
+        self.pose_angle_box.grid(row=1, column=0, sticky="ew", pady=(4, 0))
+        for column, (joint, label) in enumerate(
+            (
+                ("cheville", "Cheville\n(dorsiflex.)"),
+                ("genou", "Genou\n(flexion)"),
+                ("hanche", "Hanche\n(flexion)"),
+            )
+        ):
+            self.pose_angle_box.columnconfigure(column, weight=1)
+            ttk.Label(self.pose_angle_box, text=label, anchor="center").grid(
+                row=0, column=column, sticky="ew", padx=2
+            )
+            lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
+            spinbox = ttk.Spinbox(
+                self.pose_angle_box,
+                from_=lower,
+                to=upper,
+                increment=0.1,
+                textvariable=self.pose_angle_vars[joint],
+                width=7,
+                justify="center",
+                command=self.on_pose_angle_fields_changed,
+            )
+            spinbox.grid(
+                row=1, column=column, sticky="ew", padx=3, pady=(0, 3)
+            )
+            spinbox.bind("<Return>", self.on_pose_angle_fields_changed)
+            spinbox.bind("<FocusOut>", self.on_pose_angle_fields_changed)
+            self.pose_angle_spinboxes[joint] = spinbox
 
         right = ttk.Frame(root)
         self.animation_panel = right
@@ -1982,6 +2040,7 @@ class SquatGui(tk.Tk):
                     )
                 )
             )
+            self.sync_pose_angle_fields_from_final_q()
             self.quantity_var.set(
                 str(settings.get("quantity", self.quantity_var.get()))
             )
@@ -2078,6 +2137,99 @@ class SquatGui(tk.Tk):
         self.status_var.set(f"configuration chargee: {path}")
         self.redraw()
 
+    @staticmethod
+    def _condition_export_signature(condition: Condition) -> str:
+        """Return the simulation identity, independently from its export label."""
+
+        def canonical(value: object) -> object:
+            if isinstance(value, float):
+                # Degree/radian round-trips in the editor can differ below the
+                # numerical precision of every exported quantity.
+                return round(value, 9)
+            if isinstance(value, dict):
+                return {
+                    str(key): canonical(item)
+                    for key, item in sorted(
+                        value.items(), key=lambda pair: str(pair[0])
+                    )
+                }
+            if isinstance(value, (list, tuple)):
+                return [canonical(item) for item in value]
+            return value
+
+        payload = {
+            key: canonical(value)
+            for key, value in condition.__dict__.items()
+            if key != "condition_id"
+        }
+        return json.dumps(payload, ensure_ascii=False, sort_keys=True)
+
+    @staticmethod
+    def _normalized_export_id(raw_id: object, fallback: str) -> str:
+        """Build an Excel-friendly stable identifier from a session iid."""
+        identifier = "".join(
+            character if character.isalnum() else "_"
+            for character in str(raw_id).strip()
+        )
+        while "__" in identifier:
+            identifier = identifier.replace("__", "_")
+        return identifier.strip("_") or fallback
+
+    @staticmethod
+    def _unique_export_id(candidate: str, used_ids: set[str]) -> str:
+        """Keep condition identifiers unique without changing their stable prefix."""
+        if candidate not in used_ids:
+            used_ids.add(candidate)
+            return candidate
+        suffix = 2
+        while f"{candidate}_{suffix}" in used_ids:
+            suffix += 1
+        unique = f"{candidate}_{suffix}"
+        used_ids.add(unique)
+        return unique
+
+    def session_export_conditions(self) -> list[Condition]:
+        """Collect saved conditions and a distinct active editor condition.
+
+        A condition that has just been added remains visible in the editor.  Its
+        simulation must not therefore appear twice in the student dataset.
+        """
+        conditions: list[Condition] = []
+        saved_signatures: set[str] = set()
+        used_ids: set[str] = set()
+        for index, (iid, saved) in enumerate(self.saved_conditions.items(), start=1):
+            results = list(saved.get("results", []))
+            backend = results[0].backend if results else "analytical"
+            candidate = self._normalized_export_id(iid, f"condition_{index}")
+            condition_id = self._unique_export_id(candidate, used_ids)
+            condition = condition_from_settings(
+                dict(saved["settings"]),
+                list(saved["final_q_deg"]),
+                condition_id,
+                backend=backend,
+            )
+            conditions.append(condition)
+            saved_signatures.add(self._condition_export_signature(condition))
+
+        current_backend = self.results[0].backend if self.results else "analytical"
+        current = condition_from_settings(
+            self.current_settings(),
+            [degrees(value) for value in self.final_q],
+            "condition_courante",
+            backend=current_backend,
+        )
+        if self._condition_export_signature(current) not in saved_signatures:
+            current_id = self._unique_export_id("condition_courante", used_ids)
+            if current_id != current.condition_id:
+                current = condition_from_settings(
+                    self.current_settings(),
+                    [degrees(value) for value in self.final_q],
+                    current_id,
+                    backend=current_backend,
+                )
+            conditions.append(current)
+        return conditions
+
     def export_excel(self, path: str | Path | None = None) -> Path | None:
         interactive = path is None
         if path is None:
@@ -2132,15 +2284,14 @@ class SquatGui(tk.Tk):
         self.status_var.set(f"classeur Excel écrit: {output}")
         return output
 
-    def export_csv_results(
-        self, path: str | Path | None = None
-    ) -> tuple[Path, Path] | None:
-        """Export frame-by-frame results and one JSON summary from the GUI."""
+    def export_csv_results(self, path: str | Path | None = None) -> Path | None:
+        """Replace one student CSV with every distinct condition in the session."""
         interactive = path is None
         if path is None:
             selected = filedialog.asksaveasfilename(
-                title="Exporter les résultats détaillés",
+                title="Exporter toutes les conditions",
                 defaultextension=".csv",
+                confirmoverwrite=True,
                 filetypes=(
                     ("Données CSV", "*.csv"),
                     ("Tous les fichiers", "*.*"),
@@ -2150,60 +2301,37 @@ class SquatGui(tk.Tk):
                 return None
             path = selected
 
-        exports = [
-            (
-                "condition_courante",
-                self.current_settings(),
-                [degrees(value) for value in self.final_q],
-                self.results[0].backend if self.results else "analytical",
-            )
-        ]
-        exports.extend(
-            (
-                f"condition_{condition['label']}",
-                dict(condition["settings"]),
-                list(condition["final_q_deg"]),
-                (
-                    condition["results"][0].backend
-                    if condition["results"]
-                    else "analytical"
-                ),
-            )
-            for condition in self.saved_conditions.values()
-        )
         rows: list[dict[str, object]] = []
-        summaries: list[dict[str, object]] = []
         output = Path(path)
-        summary_output = output.with_name(f"{output.stem}_summary.json")
+        replaced_existing = output.exists()
         try:
-            for condition_id, settings, final_q_deg, backend in exports:
-                condition = condition_from_settings(
-                    settings,
-                    final_q_deg,
-                    condition_id,
-                    backend=backend,
-                )
-                condition_rows, summary = simulate_condition(condition)
+            conditions = self.session_export_conditions()
+            for condition in conditions:
+                condition_rows, _summary = simulate_condition(condition)
                 rows.extend(condition_rows)
-                summaries.append(summary)
-            write_csv(output, rows)
-            write_json(
-                summary_output,
-                {
-                    "version": 1,
-                    "csv": output.name,
-                    "conditions": summaries,
-                },
-            )
+            write_csv(output, rows, mode="standard")
         except (OSError, RuntimeError, ValueError) as error:
             self.status_var.set(f"échec export CSV: {error}")
             if interactive:
                 messagebox.showerror("Export CSV", str(error), parent=self)
             return None
-        self.status_var.set(
-            f"CSV et résumé écrits: {output.name} · {summary_output.name}"
+
+        condition_count = len(conditions)
+        replacement = (
+            "Le fichier existant a été remplacé."
+            if replaced_existing
+            else "Un nouveau fichier a été créé."
         )
-        return output, summary_output
+        condition_word = "condition" if condition_count == 1 else "conditions"
+        exported_word = "exportée" if condition_count == 1 else "exportées"
+        message = (
+            f"{condition_count} {condition_word} ({len(rows)} frames) {exported_word} "
+            f"dans {output.name}. {replacement} Aucun ajout automatique."
+        )
+        self.status_var.set(message)
+        if interactive:
+            messagebox.showinfo("Export CSV combiné", message, parent=self)
+        return output
 
     def export_video(self, path: str | Path | None = None) -> Path | None:
         interactive = path is None
@@ -2990,7 +3118,7 @@ class SquatGui(tk.Tk):
     def draw_squat_angle_labels(self, canvas: tk.Canvas, state: MotionState) -> None:
         pose = state.pose
         bounds = self.scene_bounds()
-        joint_angles = joint_angles_from_pose(pose)
+        joint_angles = clinical_joint_values_from_segment_values(state.q)
         labels = (
             ("cheville", degrees(joint_angles["cheville"]), pose.ankle, (12, -24)),
             ("genou", degrees(joint_angles["genou"]), pose.knee, (12, -24)),
@@ -5056,7 +5184,96 @@ class SquatGui(tk.Tk):
             dy = point[1] - pose.hip[1]
             trunk = atan2(dx, dy)
         self.final_q = self.clamp_final_q((shank, thigh, trunk))
+        self.sync_pose_angle_fields_from_final_q()
         self.on_parameter_changed()
+
+    @staticmethod
+    def format_pose_angle(value: float) -> str:
+        """Format an editable degree value without insignificant zeroes."""
+        return f"{value:.2f}".rstrip("0").rstrip(".")
+
+    def sync_pose_angle_fields_from_final_q(self) -> None:
+        """Reflect the requested posture in the clinical numerical editor."""
+        if "pose_angle_vars" not in self.__dict__:
+            return
+        values = clinical_joint_values_from_segment_values(self.final_q)
+        self._syncing_pose_angle_fields = True
+        try:
+            for joint, variable in self.pose_angle_vars.items():
+                variable.set(self.format_pose_angle(degrees(values[joint])))
+                self.set_pose_angle_field_valid(joint, True)
+        finally:
+            self._syncing_pose_angle_fields = False
+
+    def set_pose_angle_field_valid(self, joint: str, valid: bool) -> None:
+        spinbox = self.__dict__.get("pose_angle_spinboxes", {}).get(joint)
+        if spinbox is not None:
+            spinbox.configure(style="TSpinbox" if valid else "Invalid.TSpinbox")
+
+    def schedule_pose_angle_fields_changed(self, *_args: object) -> None:
+        """Debounce live typing while keeping the avatar responsive."""
+        if self._syncing_pose_angle_fields:
+            return
+        if self._pose_angle_update_after_id is not None:
+            self.after_cancel(self._pose_angle_update_after_id)
+        self._pose_angle_update_after_id = self.after(
+            120, self.apply_scheduled_pose_angle_fields
+        )
+
+    def apply_scheduled_pose_angle_fields(self) -> None:
+        self._pose_angle_update_after_id = None
+        self.on_pose_angle_fields_changed()
+
+    def on_pose_angle_fields_changed(
+        self, _event: tk.Event | None = None
+    ) -> None:
+        """Apply the numerical clinical posture after a committed edit."""
+        if self._syncing_pose_angle_fields:
+            return
+        if self.__dict__.get("_pose_angle_update_after_id") is not None:
+            self.after_cancel(self._pose_angle_update_after_id)
+            self._pose_angle_update_after_id = None
+        parsed: dict[str, float] = {}
+        invalid: list[str] = []
+        for joint, variable in self.pose_angle_vars.items():
+            try:
+                value = float(variable.get().strip().replace(",", "."))
+            except (AttributeError, TypeError, ValueError):
+                invalid.append(joint)
+                self.set_pose_angle_field_valid(joint, False)
+                continue
+            if not isfinite(value):
+                invalid.append(joint)
+                self.set_pose_angle_field_valid(joint, False)
+                continue
+            parsed[joint] = value
+            self.set_pose_angle_field_valid(joint, True)
+        if invalid:
+            labels = ", ".join(invalid)
+            self.status_var.set(
+                f"angle invalide ({labels}) : entrez une valeur numérique en degrés"
+            )
+            return
+
+        limited: list[str] = []
+        for joint, value in tuple(parsed.items()):
+            lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
+            bounded = max(lower, min(upper, value))
+            if bounded != value:
+                limited.append(f"{joint} {self.format_pose_angle(bounded)}°")
+            parsed[joint] = bounded
+
+        self.final_q = self.clamp_final_q(
+            segment_values_from_clinical_joint_values(
+                radians(parsed["cheville"]),
+                radians(parsed["genou"]),
+                radians(parsed["hanche"]),
+            )
+        )
+        self.sync_pose_angle_fields_from_final_q()
+        self.on_parameter_changed()
+        if limited:
+            self.status_var.set("limite anatomique appliquée : " + ", ".join(limited))
 
     def clamp_final_q(
         self, q: tuple[float, float, float]
@@ -5338,7 +5555,7 @@ class SquatGui(tk.Tk):
     def display_joint_angles(
         self, q: tuple[float, float, float]
     ) -> tuple[float, float, float]:
-        values = joint_values_from_segment_values(q)
+        values = clinical_joint_values_from_segment_values(q)
         return tuple(
             degrees(values[joint]) for joint in ("cheville", "genou", "hanche")
         )

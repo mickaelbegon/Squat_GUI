@@ -8,6 +8,7 @@ import json
 from dataclasses import asdict, dataclass
 from math import degrees, radians
 from pathlib import Path
+from tempfile import NamedTemporaryFile
 from typing import Iterable
 
 from .anthropometry import ANTHROPOMETRY_MODES, Anthropometry, scale_from_percent
@@ -676,13 +677,30 @@ def condition_summary(
 def write_csv(
     path: Path, rows: list[dict[str, object]], *, mode: str = "standard"
 ) -> None:
+    """Atomically replace a CSV so a failed export preserves the previous file."""
     path.parent.mkdir(parents=True, exist_ok=True)
     exported_rows = csv_export_rows(rows, mode=mode)
     fieldnames = list(exported_rows[0]) if exported_rows else []
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fieldnames)
-        writer.writeheader()
-        writer.writerows(exported_rows)
+    temporary_path: Path | None = None
+    try:
+        with NamedTemporaryFile(
+            "w",
+            newline="",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = Path(handle.name)
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(exported_rows)
+        temporary_path.replace(path)
+    except Exception:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+        raise
 
 
 def write_json(path: Path, payload: object) -> None:

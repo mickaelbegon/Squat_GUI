@@ -1,4 +1,4 @@
-import json
+import csv
 import tempfile
 import unittest
 from math import radians
@@ -86,7 +86,7 @@ class FakeCursorTable:
 
 
 class PlotSeriesTests(unittest.TestCase):
-    def test_csv_export_writes_time_series_and_summary_without_cli(self):
+    def test_csv_export_writes_one_student_file_without_json_sidecar(self):
         gui = self.gui_without_tk()
         gui.current_settings = lambda: {
             "subject_profile": "homme",
@@ -100,19 +100,140 @@ class PlotSeriesTests(unittest.TestCase):
             csv_path = Path(temporary) / "resultats.csv"
             exported = gui.export_csv_results(csv_path)
 
-            self.assertIsNotNone(exported)
-            assert exported is not None
-            output, summary_path = exported
-            self.assertTrue(output.exists())
-            header = output.read_text(encoding="utf-8").splitlines()[0]
+            self.assertEqual(exported, csv_path)
+            self.assertTrue(csv_path.exists())
+            header = csv_path.read_text(encoding="utf-8").splitlines()[0]
             self.assertIn("support_point_in_functional_base", header)
             self.assertNotIn("zmp_in_support", header)
-            payload = json.loads(summary_path.read_text(encoding="utf-8"))
-            self.assertEqual(payload["csv"], "resultats.csv")
-            self.assertEqual(len(payload["conditions"]), 1)
-            self.assertIn(
-                "zmp_outside_support_frames", payload["conditions"][0]
-            )
+            self.assertFalse((Path(temporary) / "resultats_summary.json").exists())
+            self.assertIn("1 condition", gui.status_var.get())
+            self.assertIn("frames", gui.status_var.get())
+
+    def test_combined_csv_deduplicates_active_and_has_unique_ids(self):
+        gui = self.gui_without_tk()
+        base_settings = {
+            "subject_profile": "homme",
+            "bar_position": "back",
+            "load_percent_bw": 0.0,
+        }
+        gui.current_settings = lambda: dict(base_settings)
+        gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        gui.saved_conditions = {
+            "condition-1": {
+                "label": "1",
+                "settings": dict(base_settings),
+                "final_q_deg": [22.0, -58.0, 20.0],
+                "results": gui.results,
+            },
+            # This iid normalizes to the same identifier and must get a suffix.
+            "condition 1": {
+                "label": "2",
+                "settings": {**base_settings, "load_percent_bw": 25.0},
+                "final_q_deg": [22.0, -58.0, 20.0],
+                "results": gui.results,
+            },
+        }
+        gui.status_var = FakeVar("")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "conditions.csv"
+            gui.export_csv_results(output)
+            with output.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+
+        condition_ids = {row["condition_id"] for row in rows}
+        self.assertEqual(condition_ids, {"condition_1", "condition_1_2"})
+        self.assertNotIn("condition_courante", condition_ids)
+        frames_per_condition = {
+            row["condition_id"]: int(row["frames"]) for row in rows
+        }
+        self.assertEqual(len(rows), sum(frames_per_condition.values()))
+        self.assertIn("2 conditions", gui.status_var.get())
+
+    def test_combined_csv_includes_a_distinct_active_condition(self):
+        gui = self.gui_without_tk()
+        saved_settings = {
+            "subject_profile": "homme",
+            "bar_position": "back",
+            "load_percent_bw": 0.0,
+        }
+        gui.current_settings = lambda: {**saved_settings, "load_percent_bw": 50.0}
+        gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        gui.saved_conditions = {
+            "condition-1": {
+                "label": "1",
+                "settings": saved_settings,
+                "final_q_deg": [22.0, -58.0, 20.0],
+                "results": gui.results,
+            }
+        }
+        gui.status_var = FakeVar("")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "conditions.csv"
+            gui.export_csv_results(output)
+            with output.open(newline="", encoding="utf-8") as handle:
+                rows = list(csv.DictReader(handle))
+
+        self.assertEqual(
+            {row["condition_id"] for row in rows},
+            {"condition_1", "condition_courante"},
+        )
+        self.assertIn("2 conditions", gui.status_var.get())
+
+    def test_combined_csv_failure_preserves_existing_file_and_reports_error(self):
+        gui = self.gui_without_tk()
+        gui.current_settings = lambda: {
+            "subject_profile": "homme",
+            "bar_position": "back",
+        }
+        gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        gui.saved_conditions = {}
+        gui.status_var = FakeVar("")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "conditions.csv"
+            output.write_text("contenu valide", encoding="utf-8")
+            with patch(
+                "squat_gui.app.simulate_condition",
+                side_effect=RuntimeError("simulation impossible"),
+            ):
+                exported = gui.export_csv_results(output)
+
+            self.assertIsNone(exported)
+            self.assertEqual(output.read_text(encoding="utf-8"), "contenu valide")
+            self.assertIn("échec export CSV", gui.status_var.get())
+
+    def test_interactive_combined_csv_confirms_counts_and_replacement(self):
+        gui = self.gui_without_tk()
+        gui.current_settings = lambda: {
+            "subject_profile": "homme",
+            "bar_position": "back",
+        }
+        gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        gui.saved_conditions = {}
+        gui.status_var = FakeVar("")
+
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "conditions.csv"
+            output.write_text("ancien contenu", encoding="utf-8")
+            with (
+                patch(
+                    "squat_gui.app.filedialog.asksaveasfilename",
+                    return_value=str(output),
+                ) as save_dialog,
+                patch("squat_gui.app.messagebox.showinfo") as showinfo,
+            ):
+                exported = gui.export_csv_results()
+
+            self.assertEqual(exported, output)
+            self.assertTrue(save_dialog.call_args.kwargs["confirmoverwrite"])
+            self.assertNotIn("ancien contenu", output.read_text(encoding="utf-8"))
+            message = showinfo.call_args.args[1]
+            self.assertIn("1 condition", message)
+            self.assertIn("frames", message)
+            self.assertIn("remplacé", message)
+            self.assertIn("Aucun ajout automatique", message)
 
     def test_bar_trajectory_stops_at_the_lowest_bar_position(self):
         gui = object.__new__(SquatGui)
@@ -545,10 +666,78 @@ class PlotSeriesTests(unittest.TestCase):
         ankle, knee, hip = gui.display_joint_angles(q)
 
         self.assertAlmostEqual(ankle, 40.0)
-        self.assertGreaterEqual(knee, -140.0)
-        self.assertLessEqual(knee, 0.0)
+        self.assertGreaterEqual(knee, 0.0)
+        self.assertLessEqual(knee, 140.0)
         self.assertGreaterEqual(hip, -15.0)
         self.assertLessEqual(hip, 120.0)
+
+    def test_numerical_pose_editor_uses_positive_knee_flexion(self):
+        gui = object.__new__(SquatGui)
+        gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        gui._syncing_pose_angle_fields = False
+        gui.pose_angle_vars = {
+            "cheville": FakeVar("22"),
+            "genou": FakeVar("110"),
+            "hanche": FakeVar("90"),
+        }
+        gui.pose_angle_spinboxes = {}
+        gui.status_var = FakeVar("")
+        recomputes = []
+        gui.on_parameter_changed = lambda: recomputes.append(True)
+
+        gui.on_pose_angle_fields_changed()
+
+        self.assertEqual(
+            tuple(round(value, 8) for value in gui.display_joint_angles(gui.final_q)),
+            (22.0, 110.0, 90.0),
+        )
+        self.assertEqual(len(recomputes), 1)
+        self.assertEqual(gui.pose_angle_vars["genou"].get(), "110")
+
+    def test_numerical_pose_editor_clamps_anatomical_limits(self):
+        gui = object.__new__(SquatGui)
+        gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
+        gui._syncing_pose_angle_fields = False
+        gui.pose_angle_vars = {
+            "cheville": FakeVar("50"),
+            "genou": FakeVar("200"),
+            "hanche": FakeVar("-30"),
+        }
+        gui.pose_angle_spinboxes = {}
+        gui.status_var = FakeVar("")
+        gui.on_parameter_changed = lambda: None
+
+        gui.on_pose_angle_fields_changed()
+
+        for observed, expected in zip(
+            gui.display_joint_angles(gui.final_q), (40.0, 140.0, -15.0)
+        ):
+            self.assertAlmostEqual(observed, expected)
+        self.assertEqual(gui.pose_angle_vars["cheville"].get(), "40")
+        self.assertEqual(gui.pose_angle_vars["genou"].get(), "140")
+        self.assertEqual(gui.pose_angle_vars["hanche"].get(), "-15")
+        self.assertIn("limite anatomique appliquée", gui.status_var.get())
+
+    def test_invalid_numerical_pose_input_preserves_posture(self):
+        gui = object.__new__(SquatGui)
+        original = (radians(22.0), radians(-58.0), radians(20.0))
+        gui.final_q = original
+        gui._syncing_pose_angle_fields = False
+        gui.pose_angle_vars = {
+            "cheville": FakeVar("22"),
+            "genou": FakeVar("-"),
+            "hanche": FakeVar("78"),
+        }
+        gui.pose_angle_spinboxes = {}
+        gui.status_var = FakeVar("")
+        recomputes = []
+        gui.on_parameter_changed = lambda: recomputes.append(True)
+
+        gui.on_pose_angle_fields_changed()
+
+        self.assertEqual(gui.final_q, original)
+        self.assertEqual(recomputes, [])
+        self.assertIn("genou", gui.status_var.get())
 
 
 if __name__ == "__main__":

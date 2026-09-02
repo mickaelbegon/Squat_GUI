@@ -4,12 +4,14 @@ from math import degrees, radians
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.kinematics import (
     PhaseDurations,
+    clinical_joint_values_from_segment_values,
     joint_angles_from_pose,
     joint_values_from_segment_values,
     motion_state,
     pose_from_angles,
     segment_orientations,
     segment_values_from_joint_values,
+    segment_values_from_clinical_joint_values,
 )
 from squat_gui.observables import (
     com_contributions,
@@ -89,6 +91,19 @@ class ObservableTests(unittest.TestCase):
 
         self.assertEqual(segments, (22.0, -58.0, 20.0))
         self.assertEqual(tuple(reconstructed.values()), joint_values)
+
+    def test_clinical_joint_conversion_displays_knee_flexion_as_positive(self) -> None:
+        segments = (22.0, -58.0, 20.0)
+
+        clinical = clinical_joint_values_from_segment_values(segments)
+        reconstructed = segment_values_from_clinical_joint_values(
+            clinical["cheville"], clinical["genou"], clinical["hanche"]
+        )
+
+        self.assertEqual(
+            clinical, {"cheville": 22.0, "genou": 80.0, "hanche": 78.0}
+        )
+        self.assertEqual(reconstructed, segments)
 
     def test_anthropometry_table_reports_effective_scaled_lengths_and_mass(self) -> None:
         anthro = Anthropometry(

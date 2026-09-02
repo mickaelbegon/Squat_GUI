@@ -185,6 +185,19 @@ class GuiLayoutTests(unittest.TestCase):
             delta=2,
         )
 
+    def test_exact_pose_angle_fields_fit_below_the_pose_canvas(self):
+        self.assertIs(self.app.pose_canvas.master, self.app.pose_panel)
+        self.assertIs(self.app.pose_angle_box.master, self.app.pose_panel)
+        self.assertEqual(
+            set(self.app.pose_angle_spinboxes), {"cheville", "genou", "hanche"}
+        )
+        for spinbox in self.app.pose_angle_spinboxes.values():
+            self.assert_inside(spinbox, self.app.pose_angle_box)
+        canvas_bottom = (
+            self.app.pose_canvas.winfo_rooty() + self.app.pose_canvas.winfo_height()
+        )
+        self.assertLessEqual(canvas_bottom, self.app.pose_angle_box.winfo_rooty())
+
     def test_parameter_controls_fit_inside_the_left_panel(self):
         self.assertGreater(self.app.left_panel.winfo_height(), 0)
         for widget in self.app.left_panel.winfo_children():
