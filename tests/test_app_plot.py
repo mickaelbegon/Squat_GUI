@@ -31,6 +31,16 @@ class FakeVar:
         self.value = value
 
 
+class FakeButton:
+    def __init__(self):
+        self.options = {"text": "Verticaliser la barre", "state": "normal"}
+        self.history = []
+
+    def configure(self, **options):
+        self.options.update(options)
+        self.history.append(dict(options))
+
+
 class FakeTable:
     def selection(self):
         return ("cond1", "cond2")
@@ -487,6 +497,8 @@ class PlotSeriesTests(unittest.TestCase):
         gui.velocity_adapt_var = FakeVar(True)
         gui.model_cache = None
         gui.status_var = FakeVar("prêt")
+        gui.optimize_bar_path_button = FakeButton()
+        gui.update_idletasks = lambda: None
         gui.sync_pose_angle_fields_from_final_q = lambda: None
         gui.update_condition_differences = lambda: None
         gui.redraw = lambda: None
@@ -506,6 +518,14 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertFalse(gui.optimize_bar_path_var.get())
         self.assertEqual(optimize.call_count, 2)
         self.assertEqual(optimize.call_args_list[1].args[1], updated_q)
+        self.assertIn(
+            {"text": "Calcul…", "state": "disabled"},
+            gui.optimize_bar_path_button.history,
+        )
+        self.assertEqual(
+            gui.optimize_bar_path_button.options,
+            {"text": "Verticaliser la barre", "state": "normal"},
+        )
 
     def test_kinematic_series_do_not_include_com(self):
         gui = self.gui_without_tk()

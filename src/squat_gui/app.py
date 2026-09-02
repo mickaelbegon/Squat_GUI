@@ -1799,27 +1799,35 @@ class SquatGui(tk.Tk):
         if not self._suspend_selection_clear:
             self.clear_condition_selection()
         self.optimize_bar_path_var.set(False)
-        anthro = self.anthro()
-        optimization = optimize_deep_squat_bar_path(
-            anthro,
-            self.final_q,
-            self.phase_durations(),
-            self.frame_count,
-            self.max_torques(),
-            self.angle_adapt_var.get(),
-            self.model_cache,
-            self.velocity_adapt_var.get(),
-            baseline=(self.states, self.results),
-        )
-        self.bar_path_optimization = optimization
-        self.states = optimization.states
-        self.results = optimization.dynamics
-        if optimization.applied:
-            self.final_q = optimization.final_q
-            self.sync_pose_angle_fields_from_final_q()
-        self.status_var.set(f"{self.status_var.get()} · {optimization.message}")
-        self.update_condition_differences()
-        self.redraw()
+        button = getattr(self, "optimize_bar_path_button", None)
+        if button is not None:
+            button.configure(text="Calcul…", state="disabled")
+            self.update_idletasks()
+        try:
+            anthro = self.anthro()
+            optimization = optimize_deep_squat_bar_path(
+                anthro,
+                self.final_q,
+                self.phase_durations(),
+                self.frame_count,
+                self.max_torques(),
+                self.angle_adapt_var.get(),
+                self.model_cache,
+                self.velocity_adapt_var.get(),
+                baseline=(self.states, self.results),
+            )
+            self.bar_path_optimization = optimization
+            self.states = optimization.states
+            self.results = optimization.dynamics
+            if optimization.applied:
+                self.final_q = optimization.final_q
+                self.sync_pose_angle_fields_from_final_q()
+            self.status_var.set(f"{self.status_var.get()} · {optimization.message}")
+            self.update_condition_differences()
+            self.redraw()
+        finally:
+            if button is not None:
+                button.configure(text="Verticaliser la barre", state="normal")
 
     def clear_condition_selection(self) -> None:
         selected = self.conditions_table.selection()
