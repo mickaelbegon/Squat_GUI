@@ -144,9 +144,8 @@ class SquatGui(tk.Tk):
         self.configure(bg="#f2f4f1")
 
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
-        # The numerical editor lives immediately below the deep-squat canvas.
-        # Keeping one selected joint avoids a modal window preventing a second
-        # right click from selecting another articulation.
+        # A single non-modal angle window is reused so a second right click can
+        # immediately select another articulation without blocking the canvas.
         self._active_pose_angle_joint: str | None = None
         self._pose_editor_bounds: tuple[float, float, float, float] | None = None
         self._pose_drag_bounds: tuple[float, float, float, float] | None = None
@@ -1150,10 +1149,15 @@ class SquatGui(tk.Tk):
             relx=1.0, rely=1.0, x=-10, y=-10, anchor="se"
         )
 
+        self.pose_angle_dialog = tk.Toplevel(self)
+        self.pose_angle_dialog.withdraw()
+        self.pose_angle_dialog.transient(self)
+        self.pose_angle_dialog.resizable(False, False)
+        self.pose_angle_dialog.protocol("WM_DELETE_WINDOW", self.close_pose_angle_editor)
         self.pose_angle_editor = ttk.LabelFrame(
-            self.pose_panel, text="Angle articulaire", padding=(8, 5)
+            self.pose_angle_dialog, text="Angle articulaire", padding=(8, 5)
         )
-        self.pose_angle_editor.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        self.pose_angle_editor.grid(row=0, column=0, sticky="nsew")
         self.pose_angle_editor.columnconfigure(1, weight=1)
         self.pose_angle_joint_var = tk.StringVar(value="")
         self.pose_angle_value_var = tk.StringVar(value="")
@@ -1195,8 +1199,11 @@ class SquatGui(tk.Tk):
         self.pose_angle_feedback_label.grid(
             row=2, column=0, columnspan=4, sticky="w", pady=(3, 0)
         )
-        self.pose_angle_editor.bind("<Escape>", lambda _event: self.close_pose_angle_editor())
-        self.pose_angle_editor.grid_remove()
+        self.pose_angle_dialog.bind("<Return>", self.confirm_pose_angle_editor)
+        self.pose_angle_dialog.bind("<KP_Enter>", self.confirm_pose_angle_editor)
+        self.pose_angle_dialog.bind(
+            "<Escape>", lambda _event: self.close_pose_angle_editor()
+        )
 
         right = ttk.Frame(root)
         self.animation_panel = right
@@ -5360,7 +5367,7 @@ class SquatGui(tk.Tk):
             )
 
     def open_pose_angle_editor(self, joint: str) -> None:
-        """Show one non-modal editor below the pose canvas for ``joint``.
+        """Show one non-modal editor above the GUI for ``joint``.
 
         Selecting a new articulation always replaces the pending value.  No
         posture is changed until the user explicitly validates this editor.
@@ -5380,14 +5387,21 @@ class SquatGui(tk.Tk):
             self.format_pose_angle(degrees(values[joint]))
         )
         self.pose_angle_feedback_var.set("")
-        self.pose_angle_editor.grid()
+        self.pose_angle_dialog.title(f"Angle — {labels[joint]}")
+        self.pose_angle_dialog.deiconify()
+        self.pose_angle_dialog.lift(self)
+        self.pose_angle_dialog.update_idletasks()
+        x = self.pose_canvas.winfo_rootx() + 16
+        y = self.pose_canvas.winfo_rooty() + 72
+        self.pose_angle_dialog.geometry(f"+{x}+{y}")
 
         def focus_editor() -> None:
             if (
                 self._active_pose_angle_joint == joint
-                and self.pose_angle_editor.winfo_ismapped()
+                and self.pose_angle_dialog.winfo_viewable()
             ):
-                self.pose_angle_entry.focus_set()
+                self.pose_angle_dialog.focus_force()
+                self.pose_angle_entry.focus_force()
                 self.pose_angle_entry.selection_range(0, tk.END)
 
         self.after_idle(focus_editor)
@@ -5408,18 +5422,17 @@ class SquatGui(tk.Tk):
         return "break"
 
     def close_pose_angle_editor(self) -> None:
-        """Discard the pending value and hide the single integrated editor."""
+        """Discard the pending value and hide the angle window."""
         self._active_pose_angle_joint = None
         self.pose_angle_feedback_var.set("")
-        self.pose_angle_editor.grid_remove()
+        self.pose_angle_dialog.withdraw()
 
-    # Compatibility entry point for callers that used the former dialog name.
-    # It deliberately opens the integrated editor rather than a Toplevel.
+    # Compatibility entry point for callers that use the former dialog name.
     def open_pose_angle_dialog(self, joint: str) -> None:
         self.open_pose_angle_editor(joint)
 
     def close_pose_angle_dialog(self, _dialog: tk.Misc | None = None) -> None:
-        """Compatibility entry point; no modal dialog is created anymore."""
+        """Compatibility entry point for the non-modal angle window."""
         self.close_pose_angle_editor()
 
     def apply_clinical_joint_angle(self, joint: str, raw_value: str) -> bool:

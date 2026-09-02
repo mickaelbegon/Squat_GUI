@@ -187,12 +187,13 @@ class GuiLayoutTests(unittest.TestCase):
 
     def test_precise_pose_angle_editor_uses_context_click_not_spinboxes(self):
         self.assertIs(self.app.pose_canvas.master, self.app.pose_panel)
-        self.assertIs(self.app.pose_angle_editor.master, self.app.pose_panel)
-        self.assertFalse(self.app.pose_angle_editor.winfo_ismapped())
+        self.assertIs(self.app.pose_angle_dialog.master, self.app)
+        self.assertIs(self.app.pose_angle_editor.master, self.app.pose_angle_dialog)
+        self.assertFalse(self.app.pose_angle_dialog.winfo_viewable())
         self.assertFalse(hasattr(self.app, "pose_angle_spinboxes"))
         self.assertTrue(self.app.pose_canvas.bind("<ButtonPress-3>"))
 
-    def test_integrated_angle_editor_replaces_selection_without_applying(self):
+    def test_angle_window_replaces_selection_without_applying(self):
         before = self.app.final_q
         self.app.open_pose_angle_editor("genou")
         self.app.update_idletasks()
@@ -200,7 +201,7 @@ class GuiLayoutTests(unittest.TestCase):
             self.assertEqual(self.app.final_q, before)
             self.assertEqual(self.app._active_pose_angle_joint, "genou")
             self.assertIn("Genou", self.app.pose_angle_joint_var.get())
-            self.assertTrue(self.app.pose_angle_editor.winfo_ismapped())
+            self.assertTrue(self.app.pose_angle_dialog.winfo_viewable())
 
             descendants = [self.app.pose_angle_editor]
             for widget in descendants:
