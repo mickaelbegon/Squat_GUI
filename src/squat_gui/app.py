@@ -144,16 +144,9 @@ class SquatGui(tk.Tk):
         self.configure(bg="#f2f4f1")
 
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
-        self._syncing_pose_angle_fields = False
-        self.pose_angle_vars = {
-            "cheville": tk.StringVar(value="22"),
-            "genou": tk.StringVar(value="80"),
-            "hanche": tk.StringVar(value="78"),
-        }
-        self._pose_angle_update_after_id: str | None = None
-        for variable in self.pose_angle_vars.values():
-            variable.trace_add("write", self.schedule_pose_angle_fields_changed)
-        self.pose_angle_spinboxes: dict[str, ttk.Spinbox] = {}
+        self.pose_angle_dialog: tk.Toplevel | None = None
+        self._pose_editor_bounds: tuple[float, float, float, float] | None = None
+        self._pose_drag_bounds: tuple[float, float, float, float] | None = None
         self.frame_count = frame_count_for_duration(PhaseDurations())
         self.playing = False
         self._play_started_at: float | None = None
@@ -1150,38 +1143,7 @@ class SquatGui(tk.Tk):
         self.pose_canvas.bind("<ButtonPress-1>", self.on_pose_press)
         self.pose_canvas.bind("<B1-Motion>", self.on_pose_drag)
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
-        self.pose_angle_box = ttk.LabelFrame(
-            self.pose_panel, text="Angles articulaires bas (°, flexion +)"
-        )
-        self.pose_angle_box.grid(row=1, column=0, sticky="ew", pady=(4, 0))
-        for column, (joint, label) in enumerate(
-            (
-                ("cheville", "Cheville\n(dorsiflex.)"),
-                ("genou", "Genou\n(flexion)"),
-                ("hanche", "Hanche\n(flexion)"),
-            )
-        ):
-            self.pose_angle_box.columnconfigure(column, weight=1)
-            ttk.Label(self.pose_angle_box, text=label, anchor="center").grid(
-                row=0, column=column, sticky="ew", padx=2
-            )
-            lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
-            spinbox = ttk.Spinbox(
-                self.pose_angle_box,
-                from_=lower,
-                to=upper,
-                increment=0.1,
-                textvariable=self.pose_angle_vars[joint],
-                width=7,
-                justify="center",
-                command=self.on_pose_angle_fields_changed,
-            )
-            spinbox.grid(
-                row=1, column=column, sticky="ew", padx=3, pady=(0, 3)
-            )
-            spinbox.bind("<Return>", self.on_pose_angle_fields_changed)
-            spinbox.bind("<FocusOut>", self.on_pose_angle_fields_changed)
-            self.pose_angle_spinboxes[joint] = spinbox
+        self.pose_canvas.bind("<ButtonPress-3>", self.on_pose_context_menu)
 
         right = ttk.Frame(root)
         self.animation_panel = right
@@ -1444,7 +1406,11 @@ class SquatGui(tk.Tk):
             (
                 ("5. Glisser les articulations pour la ", None),
                 ("position basse", "pose"),
-                (".", None),
+                (
+                    ". Pour un angle précis, faire un clic droit sur cheville, "
+                    "genou ou hanche, puis valider la valeur.",
+                    None,
+                ),
             ),
             (
                 ("6. Observer l'", None),
@@ -3139,6 +3105,7 @@ class SquatGui(tk.Tk):
             else []
         )
         bounds = self.pose_editor_bounds(canvas, state, result, anthro)
+        self._pose_editor_bounds = bounds
         self.configure_alert_canvas(canvas, alerts)
         self.draw_skeleton(
             canvas,
@@ -3163,8 +3130,16 @@ class SquatGui(tk.Tk):
         canvas.create_text(
             16, 38, text="Glisser genou, hanche ou epaules", anchor="nw", fill="#506158"
         )
+        canvas.create_text(
+            16,
+            54,
+            text="Clic droit sur cheville, genou ou hanche : angle précis",
+            anchor="nw",
+            fill="#506158",
+            font=("Helvetica", 8),
+        )
         if layers.alerts:
-            self.draw_alert_banner(canvas, alerts, 62)
+            self.draw_alert_banner(canvas, alerts, 74)
 
     def draw_squat_angle_labels(
         self,
@@ -3175,18 +3150,22 @@ class SquatGui(tk.Tk):
         pose = state.pose
         bounds = bounds or self.scene_bounds()
         joint_angles = clinical_joint_values_from_segment_values(state.q)
+        width = max(1, canvas.winfo_width())
+        knee_y = 82 if width >= 260 else 108
+        # Des couloirs fixes empêchent les trois encadrés de se recouvrir dans
+        # une vue compacte. Cheville et hanche sont groupées à gauche; le genou
+        # reste à droite, ce qui les sépare aussi de l'avatar et de ses poignées.
         labels = (
-            ("cheville", degrees(joint_angles["cheville"]), pose.ankle, (12, -24)),
-            ("genou", degrees(joint_angles["genou"]), pose.knee, (12, -24)),
-            ("hanche", degrees(joint_angles["hanche"]), pose.hip, (12, 22)),
+            ("cheville", degrees(joint_angles["cheville"]), 14, 82, "nw"),
+            ("hanche", degrees(joint_angles["hanche"]), 14, 108, "nw"),
+            ("genou", degrees(joint_angles["genou"]), width - 14, knee_y, "ne"),
         )
-        for name, value, point, offset in labels:
-            x, y = self.world_to_canvas(canvas, point, bounds)
+        for name, value, x, y, anchor in labels:
             item = canvas.create_text(
-                x + offset[0],
-                y + offset[1],
+                x,
+                y,
                 text=f"{name}: {value:.0f} deg",
-                anchor="w",
+                anchor=anchor,
                 fill="#22312a",
                 font=("Helvetica", 9, "bold"),
             )
@@ -5210,7 +5189,7 @@ class SquatGui(tk.Tk):
     def nearest_handle(self, x: float, y: float) -> str | None:
         anthro = self.anthro()
         pose = pose_from_angles(anthro, self.final_q)
-        bounds = self.scene_bounds()
+        bounds = getattr(self, "_pose_editor_bounds", None) or self.scene_bounds()
         candidates = {"knee": pose.knee, "hip": pose.hip, "shoulder": pose.shoulder}
         for name, point in candidates.items():
             px, py = self.world_to_canvas(self.pose_canvas, point, bounds)
@@ -5218,7 +5197,32 @@ class SquatGui(tk.Tk):
                 return name
         return None
 
+    def nearest_joint_angle(self, x: float, y: float) -> str | None:
+        """Return the clinical joint selected for a precise right-click edit."""
+        pose = pose_from_angles(self.anthro(), self.final_q)
+        bounds = getattr(self, "_pose_editor_bounds", None) or self.scene_bounds()
+        candidates = {
+            "cheville": pose.ankle,
+            "genou": pose.knee,
+            "hanche": pose.hip,
+        }
+        for joint, point in candidates.items():
+            px, py = self.world_to_canvas(self.pose_canvas, point, bounds)
+            if (px - x) ** 2 + (py - y) ** 2 < 20**2:
+                return joint
+        return None
+
+    def on_pose_context_menu(self, event: tk.Event) -> str | None:
+        joint = self.nearest_joint_angle(event.x, event.y)
+        if joint is None:
+            return None
+        self.open_pose_angle_dialog(joint)
+        return "break"
+
     def on_pose_press(self, event: tk.Event) -> None:
+        self._pose_drag_bounds = (
+            getattr(self, "_pose_editor_bounds", None) or self.scene_bounds()
+        )
         self.drag_target = self.nearest_handle(event.x, event.y)
 
     def on_pose_drag(self, event: tk.Event) -> None:
@@ -5227,7 +5231,12 @@ class SquatGui(tk.Tk):
         anthro = self.anthro()
         pose = pose_from_angles(anthro, self.final_q)
         point = self.canvas_to_world(
-            self.pose_canvas, event.x, event.y, self.scene_bounds()
+            self.pose_canvas,
+            event.x,
+            event.y,
+            self._pose_drag_bounds
+            or getattr(self, "_pose_editor_bounds", None)
+            or self.scene_bounds(),
         )
         shank, thigh, trunk = self.final_q
         if self.drag_target == "knee":
@@ -5248,91 +5257,116 @@ class SquatGui(tk.Tk):
 
     @staticmethod
     def format_pose_angle(value: float) -> str:
-        """Format an editable degree value without insignificant zeroes."""
+        """Format a precise degree value without insignificant zeroes."""
         return f"{value:.2f}".rstrip("0").rstrip(".")
 
     def sync_pose_angle_fields_from_final_q(self) -> None:
-        """Reflect the requested posture in the clinical numerical editor."""
-        if "pose_angle_vars" not in self.__dict__:
-            return
+        """Kept as a harmless compatibility hook for pose drag updates.
+
+        Precise numerical editing now occurs in a modal dialog opened by a
+        right-click; it deliberately has no live-bound variable to synchronize.
+        """
+
+    def open_pose_angle_dialog(self, joint: str) -> None:
+        """Open a modal, non-live numerical editor for one clinical angle."""
+        if self.pose_angle_dialog is not None and self.pose_angle_dialog.winfo_exists():
+            self.pose_angle_dialog.destroy()
         values = clinical_joint_values_from_segment_values(self.final_q)
-        self._syncing_pose_angle_fields = True
-        try:
-            for joint, variable in self.pose_angle_vars.items():
-                variable.set(self.format_pose_angle(degrees(values[joint])))
-                self.set_pose_angle_field_valid(joint, True)
-        finally:
-            self._syncing_pose_angle_fields = False
-
-    def set_pose_angle_field_valid(self, joint: str, valid: bool) -> None:
-        spinbox = self.__dict__.get("pose_angle_spinboxes", {}).get(joint)
-        if spinbox is not None:
-            spinbox.configure(style="TSpinbox" if valid else "Invalid.TSpinbox")
-
-    def schedule_pose_angle_fields_changed(self, *_args: object) -> None:
-        """Debounce live typing while keeping the avatar responsive."""
-        if self._syncing_pose_angle_fields:
-            return
-        if self._pose_angle_update_after_id is not None:
-            self.after_cancel(self._pose_angle_update_after_id)
-        self._pose_angle_update_after_id = self.after(
-            120, self.apply_scheduled_pose_angle_fields
+        lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
+        labels = {
+            "cheville": "Cheville (dorsiflexion)",
+            "genou": "Genou (flexion)",
+            "hanche": "Hanche (flexion)",
+        }
+        dialog = tk.Toplevel(self)
+        self.pose_angle_dialog = dialog
+        dialog.title(f"Angle — {labels[joint]}")
+        dialog.transient(self)
+        dialog.resizable(False, False)
+        body = ttk.Frame(dialog, padding=12)
+        body.grid(sticky="nsew")
+        ttk.Label(body, text=labels[joint], font=("Helvetica", 11, "bold")).grid(
+            row=0, column=0, columnspan=2, sticky="w"
         )
+        ttk.Label(body, text=f"Valeur précise en degrés ({lower:g} à {upper:g}) :").grid(
+            row=1, column=0, sticky="w", pady=(8, 0)
+        )
+        value_var = tk.StringVar(value=self.format_pose_angle(degrees(values[joint])))
+        entry = ttk.Entry(body, textvariable=value_var, width=12, justify="right")
+        entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
+        ttk.Label(
+            body,
+            text="La posture est modifiée seulement après Validation ou Entrée.",
+            foreground="#506158",
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(5, 10))
+        feedback_var = tk.StringVar(value="")
+        ttk.Label(body, textvariable=feedback_var, foreground=ALERT_BORDER).grid(
+            row=3, column=0, columnspan=2, sticky="w", pady=(0, 8)
+        )
+        buttons = ttk.Frame(body)
+        buttons.grid(row=4, column=0, columnspan=2, sticky="e")
 
-    def apply_scheduled_pose_angle_fields(self) -> None:
-        self._pose_angle_update_after_id = None
-        self.on_pose_angle_fields_changed()
+        def cancel() -> None:
+            self.close_pose_angle_dialog(dialog)
 
-    def on_pose_angle_fields_changed(
-        self, _event: tk.Event | None = None
-    ) -> None:
-        """Apply the numerical clinical posture after a committed edit."""
-        if self._syncing_pose_angle_fields:
-            return
-        if self.__dict__.get("_pose_angle_update_after_id") is not None:
-            self.after_cancel(self._pose_angle_update_after_id)
-            self._pose_angle_update_after_id = None
-        parsed: dict[str, float] = {}
-        invalid: list[str] = []
-        for joint, variable in self.pose_angle_vars.items():
-            try:
-                value = float(variable.get().strip().replace(",", "."))
-            except (AttributeError, TypeError, ValueError):
-                invalid.append(joint)
-                self.set_pose_angle_field_valid(joint, False)
-                continue
-            if not isfinite(value):
-                invalid.append(joint)
-                self.set_pose_angle_field_valid(joint, False)
-                continue
-            parsed[joint] = value
-            self.set_pose_angle_field_valid(joint, True)
-        if invalid:
-            labels = ", ".join(invalid)
+        def confirm(_event: tk.Event | None = None) -> str | None:
+            if self.apply_clinical_joint_angle(joint, value_var.get()):
+                self.close_pose_angle_dialog(dialog)
+                return "break"
+            feedback_var.set(self.status_var.get())
+            entry.focus_set()
+            entry.selection_range(0, tk.END)
+            return None
+
+        ttk.Button(buttons, text="Annuler", command=cancel).grid(row=0, column=0)
+        ttk.Button(buttons, text="Valider", command=confirm).grid(
+            row=0, column=1, padx=(6, 0)
+        )
+        entry.bind("<Return>", confirm)
+        dialog.bind("<Escape>", lambda _event: cancel())
+        dialog.protocol("WM_DELETE_WINDOW", cancel)
+        dialog.grab_set()
+        entry.focus_set()
+        entry.selection_range(0, tk.END)
+
+    def close_pose_angle_dialog(self, dialog: tk.Toplevel) -> None:
+        if dialog.winfo_exists():
+            dialog.grab_release()
+            dialog.destroy()
+        if self.pose_angle_dialog is dialog:
+            self.pose_angle_dialog = None
+
+    def apply_clinical_joint_angle(self, joint: str, raw_value: str) -> bool:
+        """Validate and commit one angle only after an explicit dialog action."""
+        try:
+            value = float(raw_value.strip().replace(",", "."))
+        except (AttributeError, TypeError, ValueError):
             self.status_var.set(
-                f"angle invalide ({labels}) : entrez une valeur numérique en degrés"
+                f"angle invalide ({joint}) : entrez une valeur numérique en degrés"
             )
-            return
+            return False
+        if not isfinite(value):
+            self.status_var.set(
+                f"angle invalide ({joint}) : entrez une valeur numérique en degrés"
+            )
+            return False
 
-        limited: list[str] = []
-        for joint, value in tuple(parsed.items()):
-            lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
-            bounded = max(lower, min(upper, value))
-            if bounded != value:
-                limited.append(f"{joint} {self.format_pose_angle(bounded)}°")
-            parsed[joint] = bounded
-
+        lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
+        bounded = max(lower, min(upper, value))
+        values = clinical_joint_values_from_segment_values(self.final_q)
+        values[joint] = radians(bounded)
         self.final_q = self.clamp_final_q(
             segment_values_from_clinical_joint_values(
-                radians(parsed["cheville"]),
-                radians(parsed["genou"]),
-                radians(parsed["hanche"]),
+                values["cheville"], values["genou"], values["hanche"]
             )
         )
-        self.sync_pose_angle_fields_from_final_q()
         self.on_parameter_changed()
-        if limited:
-            self.status_var.set("limite anatomique appliquée : " + ", ".join(limited))
+        if bounded != value:
+            self.status_var.set(
+                "limite anatomique appliquée : "
+                f"{joint} {self.format_pose_angle(bounded)}°"
+            )
+        return True
 
     def clamp_final_q(
         self, q: tuple[float, float, float]
@@ -5363,6 +5397,7 @@ class SquatGui(tk.Tk):
 
     def on_pose_release(self, _event: tk.Event) -> None:
         self.drag_target = None
+        self._pose_drag_bounds = None
 
     def toggle_play(self) -> None:
         self.playing = not self.playing

@@ -690,73 +690,72 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertGreaterEqual(hip, -15.0)
         self.assertLessEqual(hip, 120.0)
 
-    def test_numerical_pose_editor_uses_positive_knee_flexion(self):
+    def test_context_pose_angle_commit_uses_positive_knee_flexion(self):
         gui = object.__new__(SquatGui)
         gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
-        gui._syncing_pose_angle_fields = False
-        gui.pose_angle_vars = {
-            "cheville": FakeVar("22"),
-            "genou": FakeVar("110"),
-            "hanche": FakeVar("90"),
-        }
-        gui.pose_angle_spinboxes = {}
         gui.status_var = FakeVar("")
         recomputes = []
         gui.on_parameter_changed = lambda: recomputes.append(True)
 
-        gui.on_pose_angle_fields_changed()
+        accepted = gui.apply_clinical_joint_angle("genou", "110")
 
+        self.assertTrue(accepted)
         self.assertEqual(
             tuple(round(value, 8) for value in gui.display_joint_angles(gui.final_q)),
-            (22.0, 110.0, 90.0),
+            (22.0, 110.0, 78.0),
         )
         self.assertEqual(len(recomputes), 1)
-        self.assertEqual(gui.pose_angle_vars["genou"].get(), "110")
 
-    def test_numerical_pose_editor_clamps_anatomical_limits(self):
+    def test_context_pose_angle_commit_clamps_anatomical_limits(self):
         gui = object.__new__(SquatGui)
         gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
-        gui._syncing_pose_angle_fields = False
-        gui.pose_angle_vars = {
-            "cheville": FakeVar("50"),
-            "genou": FakeVar("200"),
-            "hanche": FakeVar("-30"),
-        }
-        gui.pose_angle_spinboxes = {}
         gui.status_var = FakeVar("")
         gui.on_parameter_changed = lambda: None
 
-        gui.on_pose_angle_fields_changed()
+        accepted = gui.apply_clinical_joint_angle("cheville", "50")
 
+        self.assertTrue(accepted)
         for observed, expected in zip(
-            gui.display_joint_angles(gui.final_q), (40.0, 140.0, -15.0)
+            gui.display_joint_angles(gui.final_q), (40.0, 80.0, 78.0)
         ):
             self.assertAlmostEqual(observed, expected)
-        self.assertEqual(gui.pose_angle_vars["cheville"].get(), "40")
-        self.assertEqual(gui.pose_angle_vars["genou"].get(), "140")
-        self.assertEqual(gui.pose_angle_vars["hanche"].get(), "-15")
         self.assertIn("limite anatomique appliquée", gui.status_var.get())
 
-    def test_invalid_numerical_pose_input_preserves_posture(self):
+    def test_invalid_context_pose_angle_input_preserves_posture_until_commit(self):
         gui = object.__new__(SquatGui)
         original = (radians(22.0), radians(-58.0), radians(20.0))
         gui.final_q = original
-        gui._syncing_pose_angle_fields = False
-        gui.pose_angle_vars = {
-            "cheville": FakeVar("22"),
-            "genou": FakeVar("-"),
-            "hanche": FakeVar("78"),
-        }
-        gui.pose_angle_spinboxes = {}
         gui.status_var = FakeVar("")
         recomputes = []
         gui.on_parameter_changed = lambda: recomputes.append(True)
 
-        gui.on_pose_angle_fields_changed()
+        accepted = gui.apply_clinical_joint_angle("genou", "-")
 
+        self.assertFalse(accepted)
         self.assertEqual(gui.final_q, original)
         self.assertEqual(recomputes, [])
         self.assertIn("genou", gui.status_var.get())
+
+    def test_squat_angle_callouts_use_separate_left_and_right_lanes(self):
+        gui = object.__new__(SquatGui)
+        state = motion_state(
+            Anthropometry(),
+            (radians(22.0), radians(-58.0), radians(20.0)),
+            PhaseDurations(),
+            2.0,
+        )
+        canvas = RecordingCanvas()
+
+        gui.draw_squat_angle_labels(canvas, state, (-0.4, 1.4, -0.1, 1.9))
+
+        callouts = {
+            kwargs["text"].split(":", 1)[0]: (args, kwargs)
+            for args, kwargs in canvas.texts
+        }
+        self.assertEqual(callouts["cheville"][1]["anchor"], "nw")
+        self.assertEqual(callouts["hanche"][1]["anchor"], "nw")
+        self.assertEqual(callouts["genou"][1]["anchor"], "ne")
+        self.assertNotEqual(callouts["cheville"][0][1], callouts["hanche"][0][1])
 
 
 if __name__ == "__main__":

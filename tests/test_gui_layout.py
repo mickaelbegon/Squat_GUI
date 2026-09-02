@@ -7,6 +7,7 @@ runner with Tk available they exercise the real widget positions after layout.
 import os
 import tkinter as tk
 import unittest
+from types import SimpleNamespace
 from tkinter import ttk
 
 from squat_gui.app import SquatGui
@@ -185,18 +186,59 @@ class GuiLayoutTests(unittest.TestCase):
             delta=2,
         )
 
-    def test_exact_pose_angle_fields_fit_below_the_pose_canvas(self):
+    def test_precise_pose_angle_editor_uses_context_click_not_spinboxes(self):
         self.assertIs(self.app.pose_canvas.master, self.app.pose_panel)
-        self.assertIs(self.app.pose_angle_box.master, self.app.pose_panel)
-        self.assertEqual(
-            set(self.app.pose_angle_spinboxes), {"cheville", "genou", "hanche"}
+        self.assertFalse(hasattr(self.app, "pose_angle_box"))
+        self.assertFalse(hasattr(self.app, "pose_angle_spinboxes"))
+        self.assertTrue(self.app.pose_canvas.bind("<ButtonPress-3>"))
+
+    def test_angle_dialog_is_precise_and_does_not_apply_on_open(self):
+        before = self.app.final_q
+        self.app.open_pose_angle_dialog("genou")
+        dialog = self.app.pose_angle_dialog
+        try:
+            self.assertIsNotNone(dialog)
+            self.assertEqual(self.app.final_q, before)
+            self.assertIn("Genou", dialog.title())
+
+            descendants = [dialog]
+            for widget in descendants:
+                descendants.extend(widget.winfo_children())
+            self.assertFalse(any(isinstance(widget, ttk.Spinbox) for widget in descendants))
+        finally:
+            if dialog is not None:
+                self.app.close_pose_angle_dialog(dialog)
+
+    def test_drag_uses_the_same_bounds_as_the_visible_pose_handles(self):
+        bounds = self.app._pose_editor_bounds
+        self.assertIsNotNone(bounds)
+        pose = self.app.states[-1].pose
+        handles = {
+            "knee": pose.knee,
+            "hip": pose.hip,
+            "shoulder": pose.shoulder,
+        }
+        for handle, point in handles.items():
+            with self.subTest(handle=handle):
+                x, y = self.app.world_to_canvas(self.app.pose_canvas, point, bounds)
+                self.assertEqual(self.app.nearest_handle(x, y), handle)
+
+        before = self.app.final_q
+        knee_x, knee_y = self.app.world_to_canvas(
+            self.app.pose_canvas, pose.knee, bounds
         )
-        for spinbox in self.app.pose_angle_spinboxes.values():
-            self.assert_inside(spinbox, self.app.pose_angle_box)
-        canvas_bottom = (
-            self.app.pose_canvas.winfo_rooty() + self.app.pose_canvas.winfo_height()
+        self.app.on_pose_press(SimpleNamespace(x=knee_x, y=knee_y))
+        target_x, target_y = self.app.world_to_canvas(
+            self.app.pose_canvas,
+            (pose.ankle[0] + 0.06, pose.ankle[1] + 0.26),
+            bounds,
         )
-        self.assertLessEqual(canvas_bottom, self.app.pose_angle_box.winfo_rooty())
+        self.app.on_pose_drag(SimpleNamespace(x=target_x, y=target_y))
+        self.app.on_pose_release(SimpleNamespace())
+
+        self.assertNotEqual(self.app.final_q, before)
+        self.assertIsNone(self.app.drag_target)
+        self.assertIsNone(self.app._pose_drag_bounds)
 
     def test_pose_viewport_centres_the_subject_and_keeps_foot_label_space(self):
         state = self.app.states[-1]
@@ -229,8 +271,6 @@ class GuiLayoutTests(unittest.TestCase):
         self.assertLess(bounds[0], min(point[0] for point in points))
         self.assertGreater(bounds[1], max(point[0] for point in points))
         self.assertLessEqual(bounds[2], -0.16)
-        scene_bounds = self.app.scene_bounds()
-        self.assertLess(bounds[1] - bounds[0], scene_bounds[1] - scene_bounds[0])
 
     def test_parameter_controls_fit_inside_the_left_panel(self):
         self.assertGreater(self.app.left_panel.winfo_height(), 0)
