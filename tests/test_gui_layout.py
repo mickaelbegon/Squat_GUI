@@ -202,6 +202,21 @@ class GuiLayoutTests(unittest.TestCase):
             self.assertEqual(self.app._active_pose_angle_joint, "genou")
             self.assertIn("Genou", self.app.pose_angle_joint_var.get())
             self.assertTrue(self.app.pose_angle_dialog.winfo_viewable())
+            dialog_center = (
+                self.app.pose_angle_dialog.winfo_rootx()
+                + self.app.pose_angle_dialog.winfo_width() / 2.0
+            )
+            canvas_center = (
+                self.app.pose_canvas.winfo_rootx()
+                + self.app.pose_canvas.winfo_width() / 2.0
+            )
+            self.assertAlmostEqual(dialog_center, canvas_center, delta=4.0)
+            self.assertGreaterEqual(
+                self.app.pose_angle_dialog.winfo_rooty(),
+                self.app.pose_canvas.winfo_rooty()
+                + self.app.pose_canvas.winfo_height()
+                - 56,
+            )
 
             descendants = [self.app.pose_angle_editor]
             for widget in descendants:

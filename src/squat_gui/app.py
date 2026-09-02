@@ -5391,8 +5391,14 @@ class SquatGui(tk.Tk):
         self.pose_angle_dialog.deiconify()
         self.pose_angle_dialog.lift(self)
         self.pose_angle_dialog.update_idletasks()
-        x = self.pose_canvas.winfo_rootx() + 16
-        y = self.pose_canvas.winfo_rooty() + 72
+        x = self.pose_canvas.winfo_rootx() + max(
+            16,
+            (self.pose_canvas.winfo_width() - self.pose_angle_dialog.winfo_reqwidth())
+            // 2,
+        )
+        y = self.pose_canvas.winfo_rooty() + max(
+            32, self.pose_canvas.winfo_height() - 52
+        )
         self.pose_angle_dialog.geometry(f"+{x}+{y}")
 
         def focus_editor() -> None:
