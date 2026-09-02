@@ -8,9 +8,14 @@ recommandé.
 ```bash
 conda create -n squat-gui python=3.11 tk -y
 conda activate squat-gui
+conda install -c conda-forge "openpyxl>=3.1" -y
 python -m pip install -e ".[dev,video,packaging]"
 python -m squat_gui
 ```
+
+`openpyxl` est requis pour l'export Excel (`.xlsx`). Il est déclaré dans les
+dépendances Python du projet et installé explicitement ici afin que l'export soit
+disponible dès la création d'un environnement Conda.
 
 Le solveur analytique pur Python est toujours disponible. `biorbd` est une
 dépendance facultative et ne doit pas bloquer le lancement du GUI.

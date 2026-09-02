@@ -31,6 +31,14 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn("openpyxl", macos)
         self.assertIn("openpyxl", windows)
 
+    def test_conda_setup_installs_workbook_dependency(self) -> None:
+        project = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+        development_guide = (ROOT / "DOCS" / "DEVELOPMENT.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn('"openpyxl>=3.1,<4"', project)
+        self.assertIn('"openpyxl>=3.1"', development_guide)
+
     def test_pyinstaller_bundle_contains_video_and_workbook_assets(self) -> None:
         spec = (ROOT / "packaging" / "squat_gui.spec").read_text(encoding="utf-8")
         self.assertIn('"build_workbook.mjs"', spec)
