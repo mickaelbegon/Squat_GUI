@@ -11,6 +11,7 @@ from types import SimpleNamespace
 from tkinter import ttk
 
 from squat_gui.app import SquatGui
+from squat_gui.kinematics import pose_from_angles
 
 
 def _rect(widget: tk.Misc) -> tuple[int, int, int, int]:
@@ -119,14 +120,12 @@ class GuiLayoutTests(unittest.TestCase):
 
     def test_bar_stabilization_is_explicit_and_disabled_by_default(self):
         self.assertFalse(self.app.optimize_bar_path_var.get())
-        controls = self.app.parameter_options.winfo_children()
-        experimental = [
-            control
-            for control in controls
-            if "expérimental" in str(control.cget("text"))
-        ]
-        self.assertEqual(len(experimental), 1)
-        self.assertTrue(experimental[0].winfo_ismapped())
+        toggle = self.app.optimize_bar_path_toggle
+        self.assertIs(toggle.master, self.app.pose_canvas)
+        self.assertEqual(toggle.place_info().get("anchor"), "se")
+        self.assertEqual(float(toggle.place_info().get("relx", 0.0)), 1.0)
+        self.assertEqual(float(toggle.place_info().get("rely", 0.0)), 1.0)
+        self.assertTrue(toggle.winfo_ismapped())
 
     def test_torque_preset_and_checks_use_the_compact_grid(self):
         self.assertIs(self.app.torque_preset_menu.master, self.app.torque_box)
@@ -188,31 +187,65 @@ class GuiLayoutTests(unittest.TestCase):
 
     def test_precise_pose_angle_editor_uses_context_click_not_spinboxes(self):
         self.assertIs(self.app.pose_canvas.master, self.app.pose_panel)
-        self.assertFalse(hasattr(self.app, "pose_angle_box"))
+        self.assertIs(self.app.pose_angle_editor.master, self.app.pose_panel)
+        self.assertFalse(self.app.pose_angle_editor.winfo_ismapped())
         self.assertFalse(hasattr(self.app, "pose_angle_spinboxes"))
         self.assertTrue(self.app.pose_canvas.bind("<ButtonPress-3>"))
 
-    def test_angle_dialog_is_precise_and_does_not_apply_on_open(self):
+    def test_integrated_angle_editor_replaces_selection_without_applying(self):
         before = self.app.final_q
-        self.app.open_pose_angle_dialog("genou")
-        dialog = self.app.pose_angle_dialog
+        self.app.open_pose_angle_editor("genou")
+        self.app.update_idletasks()
         try:
-            self.assertIsNotNone(dialog)
             self.assertEqual(self.app.final_q, before)
-            self.assertIn("Genou", dialog.title())
+            self.assertEqual(self.app._active_pose_angle_joint, "genou")
+            self.assertIn("Genou", self.app.pose_angle_joint_var.get())
+            self.assertTrue(self.app.pose_angle_editor.winfo_ismapped())
 
-            descendants = [dialog]
+            descendants = [self.app.pose_angle_editor]
             for widget in descendants:
                 descendants.extend(widget.winfo_children())
             self.assertFalse(any(isinstance(widget, ttk.Spinbox) for widget in descendants))
+            self.app.pose_angle_value_var.set("999")
+            self.app.open_pose_angle_editor("hanche")
+            self.app.update_idletasks()
+            self.assertEqual(self.app._active_pose_angle_joint, "hanche")
+            self.assertEqual(self.app.final_q, before)
+            self.assertNotEqual(self.app.pose_angle_value_var.get(), "999")
+            self.assertIn("Hanche", self.app.pose_angle_joint_var.get())
         finally:
-            if dialog is not None:
-                self.app.close_pose_angle_dialog(dialog)
+            self.app.close_pose_angle_editor()
+
+    def test_integrated_angle_editor_binds_return_and_keypad_enter(self):
+        before = self.app.final_q
+        self.app.open_pose_angle_editor("genou")
+        self.app.update()
+        try:
+            self.assertTrue(self.app.pose_angle_entry.bind("<Return>"))
+            self.assertTrue(self.app.pose_angle_entry.bind("<KP_Enter>"))
+            self.app.pose_angle_value_var.set("110")
+            self.app.confirm_pose_angle_editor()
+            self.app.update()
+            self.assertIsNone(self.app._active_pose_angle_joint)
+            self.assertNotEqual(self.app.final_q, before)
+
+            self.app.final_q = before
+            self.app.open_pose_angle_editor("genou")
+            self.app.update()
+            self.app.pose_angle_value_var.set("100")
+            self.app.confirm_pose_angle_editor()
+            self.app.update()
+            self.assertIsNone(self.app._active_pose_angle_joint)
+            self.assertNotEqual(self.app.final_q, before)
+        finally:
+            self.app.close_pose_angle_editor()
+            self.app.final_q = before
+            self.app.recompute()
 
     def test_drag_uses_the_same_bounds_as_the_visible_pose_handles(self):
         bounds = self.app._pose_editor_bounds
         self.assertIsNotNone(bounds)
-        pose = self.app.states[-1].pose
+        pose = pose_from_angles(self.app.anthro(), self.app.final_q)
         handles = {
             "knee": pose.knee,
             "hip": pose.hip,

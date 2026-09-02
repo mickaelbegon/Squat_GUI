@@ -144,7 +144,10 @@ class SquatGui(tk.Tk):
         self.configure(bg="#f2f4f1")
 
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
-        self.pose_angle_dialog: tk.Toplevel | None = None
+        # The numerical editor lives immediately below the deep-squat canvas.
+        # Keeping one selected joint avoids a modal window preventing a second
+        # right click from selecting another articulation.
+        self._active_pose_angle_joint: str | None = None
         self._pose_editor_bounds: tuple[float, float, float, float] | None = None
         self._pose_drag_bounds: tuple[float, float, float, float] | None = None
         self.frame_count = frame_count_for_duration(PhaseDurations())
@@ -766,13 +769,6 @@ class SquatGui(tk.Tk):
             variable=self.show_segment_com_var,
             command=self.redraw,
         ).grid(row=0, column=1, sticky="w", padx=(8, 0))
-        ttk.Checkbutton(
-            self.parameter_options,
-            text="Stabiliser barre (expérimental)",
-            variable=self.optimize_bar_path_var,
-            command=self.on_parameter_changed,
-        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(2, 0))
-
         self.torque_box = ttk.LabelFrame(left, text="Couples max")
         self.torque_box.grid(row=2, column=0, sticky="ew", pady=(0, 8))
         for col in range(4):
@@ -1144,6 +1140,63 @@ class SquatGui(tk.Tk):
         self.pose_canvas.bind("<B1-Motion>", self.on_pose_drag)
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
         self.pose_canvas.bind("<ButtonPress-3>", self.on_pose_context_menu)
+        self.optimize_bar_path_toggle = ttk.Checkbutton(
+            self.pose_canvas,
+            text="Stabiliser barre (expérimental)",
+            variable=self.optimize_bar_path_var,
+            command=self.on_parameter_changed,
+        )
+        self.optimize_bar_path_toggle.place(
+            relx=1.0, rely=1.0, x=-10, y=-10, anchor="se"
+        )
+
+        self.pose_angle_editor = ttk.LabelFrame(
+            self.pose_panel, text="Angle articulaire", padding=(8, 5)
+        )
+        self.pose_angle_editor.grid(row=1, column=0, sticky="ew", pady=(6, 0))
+        self.pose_angle_editor.columnconfigure(1, weight=1)
+        self.pose_angle_joint_var = tk.StringVar(value="")
+        self.pose_angle_value_var = tk.StringVar(value="")
+        self.pose_angle_feedback_var = tk.StringVar(value="")
+        self.pose_angle_joint_label = ttk.Label(
+            self.pose_angle_editor,
+            textvariable=self.pose_angle_joint_var,
+            font=("Helvetica", 10, "bold"),
+        )
+        self.pose_angle_joint_label.grid(row=0, column=0, columnspan=3, sticky="w")
+        ttk.Label(self.pose_angle_editor, text="Valeur précise (deg) :").grid(
+            row=1, column=0, sticky="w", pady=(4, 0)
+        )
+        self.pose_angle_entry = ttk.Entry(
+            self.pose_angle_editor,
+            textvariable=self.pose_angle_value_var,
+            width=12,
+            justify="right",
+        )
+        self.pose_angle_entry.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
+        self.pose_angle_entry.bind("<Return>", self.confirm_pose_angle_editor)
+        self.pose_angle_entry.bind("<KP_Enter>", self.confirm_pose_angle_editor)
+        self.pose_angle_entry.bind(
+            "<Escape>", lambda _event: self.close_pose_angle_editor()
+        )
+        self.pose_angle_cancel_button = ttk.Button(
+            self.pose_angle_editor, text="Annuler", command=self.close_pose_angle_editor
+        )
+        self.pose_angle_cancel_button.grid(row=1, column=2, padx=(6, 0), pady=(4, 0))
+        self.pose_angle_apply_button = ttk.Button(
+            self.pose_angle_editor, text="Valider", command=self.confirm_pose_angle_editor
+        )
+        self.pose_angle_apply_button.grid(row=1, column=3, padx=(6, 0), pady=(4, 0))
+        self.pose_angle_feedback_label = ttk.Label(
+            self.pose_angle_editor,
+            textvariable=self.pose_angle_feedback_var,
+            foreground=ALERT_BORDER,
+        )
+        self.pose_angle_feedback_label.grid(
+            row=2, column=0, columnspan=4, sticky="w", pady=(3, 0)
+        )
+        self.pose_angle_editor.bind("<Escape>", lambda _event: self.close_pose_angle_editor())
+        self.pose_angle_editor.grid_remove()
 
         right = ttk.Frame(root)
         self.animation_panel = right
@@ -1408,7 +1461,7 @@ class SquatGui(tk.Tk):
                 ("position basse", "pose"),
                 (
                     ". Pour un angle précis, faire un clic droit sur cheville, "
-                    "genou ou hanche, puis valider la valeur.",
+                    "genou ou hanche, puis valider la valeur sous l'image.",
                     None,
                 ),
             ),
@@ -3133,7 +3186,7 @@ class SquatGui(tk.Tk):
         canvas.create_text(
             16,
             54,
-            text="Clic droit sur cheville, genou ou hanche : angle précis",
+            text="Clic droit : angle précis sous l'image (Entrée ou Valider)",
             anchor="nw",
             fill="#506158",
             font=("Helvetica", 8),
@@ -3151,14 +3204,51 @@ class SquatGui(tk.Tk):
         bounds = bounds or self.scene_bounds()
         joint_angles = clinical_joint_values_from_segment_values(state.q)
         width = max(1, canvas.winfo_width())
-        knee_y = 82 if width >= 260 else 108
-        # Des couloirs fixes empêchent les trois encadrés de se recouvrir dans
-        # une vue compacte. Cheville et hanche sont groupées à gauche; le genou
-        # reste à droite, ce qui les sépare aussi de l'avatar et de ses poignées.
+        canvas_height = max(
+            1, getattr(canvas, "winfo_height", lambda: 480)()
+        )
+        if canvas_height <= 1:
+            canvas_height = 480
+        # Keep the values in left/right lanes, but line each one up with its
+        # actual joint.  A small vertical separation is applied only when two
+        # labels would otherwise overlap in a compact viewport.
+        joint_points = {
+            "cheville": pose.ankle,
+            "hanche": pose.hip,
+            "genou": pose.knee,
+        }
+        desired_y = {
+            name: max(
+                74,
+                min(
+                    canvas_height - 18,
+                    self.world_to_canvas(canvas, point, bounds)[1],
+                ),
+            )
+            for name, point in joint_points.items()
+        }
+
+        def separated_lane(names: tuple[str, ...]) -> dict[str, float]:
+            gap = 24
+            floor = 74
+            ceiling = canvas_height - 18
+            placed: dict[str, float] = {}
+            previous = floor - gap
+            for name in sorted(names, key=desired_y.__getitem__):
+                placed[name] = max(desired_y[name], previous + gap, floor)
+                previous = placed[name]
+            overflow = max(0.0, max(placed.values()) - ceiling)
+            if overflow:
+                placed = {
+                    name: max(floor, y - overflow) for name, y in placed.items()
+                }
+            return placed
+
+        left_y = separated_lane(("cheville", "hanche"))
         labels = (
-            ("cheville", degrees(joint_angles["cheville"]), 14, 82, "nw"),
-            ("hanche", degrees(joint_angles["hanche"]), 14, 108, "nw"),
-            ("genou", degrees(joint_angles["genou"]), width - 14, knee_y, "ne"),
+            ("cheville", degrees(joint_angles["cheville"]), 14, left_y["cheville"], "nw"),
+            ("hanche", degrees(joint_angles["hanche"]), 14, left_y["hanche"], "nw"),
+            ("genou", degrees(joint_angles["genou"]), width - 14, desired_y["genou"], "ne"),
         )
         for name, value, x, y, anchor in labels:
             item = canvas.create_text(
@@ -5216,7 +5306,7 @@ class SquatGui(tk.Tk):
         joint = self.nearest_joint_angle(event.x, event.y)
         if joint is None:
             return None
-        self.open_pose_angle_dialog(joint)
+        self.open_pose_angle_editor(joint)
         return "break"
 
     def on_pose_press(self, event: tk.Event) -> None:
@@ -5261,16 +5351,20 @@ class SquatGui(tk.Tk):
         return f"{value:.2f}".rstrip("0").rstrip(".")
 
     def sync_pose_angle_fields_from_final_q(self) -> None:
-        """Kept as a harmless compatibility hook for pose drag updates.
+        """Refresh the visible editor after a drag without committing input."""
+        joint = getattr(self, "_active_pose_angle_joint", None)
+        if joint is not None and hasattr(self, "pose_angle_value_var"):
+            values = clinical_joint_values_from_segment_values(self.final_q)
+            self.pose_angle_value_var.set(
+                self.format_pose_angle(degrees(values[joint]))
+            )
 
-        Precise numerical editing now occurs in a modal dialog opened by a
-        right-click; it deliberately has no live-bound variable to synchronize.
+    def open_pose_angle_editor(self, joint: str) -> None:
+        """Show one non-modal editor below the pose canvas for ``joint``.
+
+        Selecting a new articulation always replaces the pending value.  No
+        posture is changed until the user explicitly validates this editor.
         """
-
-    def open_pose_angle_dialog(self, joint: str) -> None:
-        """Open a modal, non-live numerical editor for one clinical angle."""
-        if self.pose_angle_dialog is not None and self.pose_angle_dialog.winfo_exists():
-            self.pose_angle_dialog.destroy()
         values = clinical_joint_values_from_segment_values(self.final_q)
         lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
         labels = {
@@ -5278,63 +5372,55 @@ class SquatGui(tk.Tk):
             "genou": "Genou (flexion)",
             "hanche": "Hanche (flexion)",
         }
-        dialog = tk.Toplevel(self)
-        self.pose_angle_dialog = dialog
-        dialog.title(f"Angle — {labels[joint]}")
-        dialog.transient(self)
-        dialog.resizable(False, False)
-        body = ttk.Frame(dialog, padding=12)
-        body.grid(sticky="nsew")
-        ttk.Label(body, text=labels[joint], font=("Helvetica", 11, "bold")).grid(
-            row=0, column=0, columnspan=2, sticky="w"
+        self._active_pose_angle_joint = joint
+        self.pose_angle_joint_var.set(
+            f"{labels[joint]} — {lower:g} à {upper:g} deg"
         )
-        ttk.Label(body, text=f"Valeur précise en degrés ({lower:g} à {upper:g}) :").grid(
-            row=1, column=0, sticky="w", pady=(8, 0)
+        self.pose_angle_value_var.set(
+            self.format_pose_angle(degrees(values[joint]))
         )
-        value_var = tk.StringVar(value=self.format_pose_angle(degrees(values[joint])))
-        entry = ttk.Entry(body, textvariable=value_var, width=12, justify="right")
-        entry.grid(row=1, column=1, sticky="ew", padx=(8, 0), pady=(8, 0))
-        ttk.Label(
-            body,
-            text="La posture est modifiée seulement après Validation ou Entrée.",
-            foreground="#506158",
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(5, 10))
-        feedback_var = tk.StringVar(value="")
-        ttk.Label(body, textvariable=feedback_var, foreground=ALERT_BORDER).grid(
-            row=3, column=0, columnspan=2, sticky="w", pady=(0, 8)
-        )
-        buttons = ttk.Frame(body)
-        buttons.grid(row=4, column=0, columnspan=2, sticky="e")
+        self.pose_angle_feedback_var.set("")
+        self.pose_angle_editor.grid()
 
-        def cancel() -> None:
-            self.close_pose_angle_dialog(dialog)
+        def focus_editor() -> None:
+            if (
+                self._active_pose_angle_joint == joint
+                and self.pose_angle_editor.winfo_ismapped()
+            ):
+                self.pose_angle_entry.focus_set()
+                self.pose_angle_entry.selection_range(0, tk.END)
 
-        def confirm(_event: tk.Event | None = None) -> str | None:
-            if self.apply_clinical_joint_angle(joint, value_var.get()):
-                self.close_pose_angle_dialog(dialog)
-                return "break"
-            feedback_var.set(self.status_var.get())
-            entry.focus_set()
-            entry.selection_range(0, tk.END)
-            return None
+        self.after_idle(focus_editor)
 
-        ttk.Button(buttons, text="Annuler", command=cancel).grid(row=0, column=0)
-        ttk.Button(buttons, text="Valider", command=confirm).grid(
-            row=0, column=1, padx=(6, 0)
-        )
-        entry.bind("<Return>", confirm)
-        dialog.bind("<Escape>", lambda _event: cancel())
-        dialog.protocol("WM_DELETE_WINDOW", cancel)
-        dialog.grab_set()
-        entry.focus_set()
-        entry.selection_range(0, tk.END)
+    def confirm_pose_angle_editor(
+        self, _event: tk.Event | None = None
+    ) -> str | None:
+        """Commit the currently selected joint only on Valider or Enter."""
+        joint = self._active_pose_angle_joint
+        if joint is None:
+            return "break"
+        if self.apply_clinical_joint_angle(joint, self.pose_angle_value_var.get()):
+            self.close_pose_angle_editor()
+            return "break"
+        self.pose_angle_feedback_var.set(self.status_var.get())
+        self.pose_angle_entry.focus_set()
+        self.pose_angle_entry.selection_range(0, tk.END)
+        return "break"
 
-    def close_pose_angle_dialog(self, dialog: tk.Toplevel) -> None:
-        if dialog.winfo_exists():
-            dialog.grab_release()
-            dialog.destroy()
-        if self.pose_angle_dialog is dialog:
-            self.pose_angle_dialog = None
+    def close_pose_angle_editor(self) -> None:
+        """Discard the pending value and hide the single integrated editor."""
+        self._active_pose_angle_joint = None
+        self.pose_angle_feedback_var.set("")
+        self.pose_angle_editor.grid_remove()
+
+    # Compatibility entry point for callers that used the former dialog name.
+    # It deliberately opens the integrated editor rather than a Toplevel.
+    def open_pose_angle_dialog(self, joint: str) -> None:
+        self.open_pose_angle_editor(joint)
+
+    def close_pose_angle_dialog(self, _dialog: tk.Misc | None = None) -> None:
+        """Compatibility entry point; no modal dialog is created anymore."""
+        self.close_pose_angle_editor()
 
     def apply_clinical_joint_angle(self, joint: str, raw_value: str) -> bool:
         """Validate and commit one angle only after an explicit dialog action."""

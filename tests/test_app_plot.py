@@ -66,6 +66,9 @@ class RecordingCanvas:
     def winfo_width(self):
         return 320
 
+    def winfo_height(self):
+        return 480
+
 
 class FakeCursorTable:
     def __init__(self):
@@ -736,7 +739,7 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(recomputes, [])
         self.assertIn("genou", gui.status_var.get())
 
-    def test_squat_angle_callouts_use_separate_left_and_right_lanes(self):
+    def test_squat_angle_callouts_follow_joints_in_separate_lanes(self):
         gui = object.__new__(SquatGui)
         state = motion_state(
             Anthropometry(),
@@ -756,6 +759,21 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(callouts["hanche"][1]["anchor"], "nw")
         self.assertEqual(callouts["genou"][1]["anchor"], "ne")
         self.assertNotEqual(callouts["cheville"][0][1], callouts["hanche"][0][1])
+        expected_y = {
+            "cheville": gui.world_to_canvas(
+                canvas, state.pose.ankle, (-0.4, 1.4, -0.1, 1.9)
+            )[1],
+            "hanche": gui.world_to_canvas(
+                canvas, state.pose.hip, (-0.4, 1.4, -0.1, 1.9)
+            )[1],
+            "genou": gui.world_to_canvas(
+                canvas, state.pose.knee, (-0.4, 1.4, -0.1, 1.9)
+            )[1],
+        }
+        for joint, expected in expected_y.items():
+            # A left-lane label may move by one line to avoid collision; the
+            # right-lane knee value remains directly level with the joint.
+            self.assertLessEqual(abs(callouts[joint][0][1] - expected), 24)
 
 
 if __name__ == "__main__":
