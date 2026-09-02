@@ -251,6 +251,24 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(canvas.texts[-2][1]["text"], "haut")
         self.assertEqual(canvas.texts[-1][1]["text"], "bas")
 
+    def test_bar_trajectory_uses_a_valid_default_color(self):
+        gui = object.__new__(SquatGui)
+        canvas = RecordingCanvas()
+        gui.world_to_canvas = lambda _canvas, point, _bounds: point
+        states = self.gui_without_tk().states
+
+        gui.draw_bar_trajectory(
+            canvas,
+            states,
+            (-1.0, 1.0, -1.0, 2.0),
+            0.0,
+            None,
+        )
+
+        self.assertEqual(canvas.lines[0][1]["fill"], "#2e7d54")
+        self.assertEqual(canvas.ovals[0][1]["outline"], "#2e7d54")
+        self.assertEqual(canvas.texts[-1][1]["fill"], "#2e7d54")
+
     def test_alert_banner_wraps_each_alert_on_its_own_line(self):
         canvas = RecordingCanvas()
 

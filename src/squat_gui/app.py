@@ -3258,7 +3258,7 @@ class SquatGui(tk.Tk):
                     item["states"],  # type: ignore[arg-type]
                     bounds,
                     float(index),
-                    str(item["color"]),
+                    str(item["color"] or "#2e7d54"),
                 )
             self.register_animation_hover_targets(
                 canvas,
@@ -3351,11 +3351,12 @@ class SquatGui(tk.Tk):
         states: list[MotionState],
         bounds: tuple[float, float, float, float],
         x_offset: float,
-        color: str,
+        color: str | None,
     ) -> None:
         """Draw the actual bar path from standing to the lowest bar position."""
         if len(states) < 2:
             return
+        color = color or "#2e7d54"
         bottom_index = min(range(len(states)), key=lambda index: states[index].pose.bar[1])
         extreme_states = states[: bottom_index + 1]
         if len(extreme_states) < 2:
