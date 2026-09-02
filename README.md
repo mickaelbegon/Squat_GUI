@@ -31,6 +31,12 @@ vérifier que le ZIP provient bien de la page Releases du dépôt avant de conti
 5. Ajouter une condition, la dupliquer et ne modifier qu'un paramètre.
 6. Comparer les deux conditions et exporter les résultats au besoin.
 
+L'export CSV standard privilégie les données biomécaniques essentielles à la
+comparaison (paramètres de condition, cinématique, couples et puissances, CoM,
+CoP/ZMP et force verticale). Les données intermédiaires et le niveau de détail
+diagnostic/complet sont réservés à la documentation et aux usages de
+développement.
+
 ## Installation Python facultative
 
 Pour les personnes qui disposent déjà de Python 3.9 ou plus :
