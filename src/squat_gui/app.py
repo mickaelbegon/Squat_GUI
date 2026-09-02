@@ -1141,13 +1141,12 @@ class SquatGui(tk.Tk):
         self.pose_canvas.bind("<B1-Motion>", self.on_pose_drag)
         self.pose_canvas.bind("<ButtonRelease-1>", self.on_pose_release)
         self.pose_canvas.bind("<ButtonPress-3>", self.on_pose_context_menu)
-        self.optimize_bar_path_toggle = ttk.Checkbutton(
+        self.optimize_bar_path_button = ttk.Button(
             self.pose_canvas,
-            text="Stabiliser barre (expérimental)",
-            variable=self.optimize_bar_path_var,
-            command=self.on_parameter_changed,
+            text="Verticaliser la barre",
+            command=self.verticalize_bar,
         )
-        self.optimize_bar_path_toggle.place(
+        self.optimize_bar_path_button.place(
             relx=1.0, rely=1.0, x=-10, y=-10, anchor="se"
         )
 
@@ -1789,6 +1788,38 @@ class SquatGui(tk.Tk):
         if not self._suspend_selection_clear:
             self.clear_condition_selection()
         self.recompute()
+
+    def verticalize_bar(self) -> None:
+        """Apply one constrained bar-path optimization to the current pose.
+
+        The optimized segment orientations become the current pose. The button
+        is deliberately an action, not a persistent checkbox: pressing it again
+        runs a new optimization from those updated orientations.
+        """
+        if not self._suspend_selection_clear:
+            self.clear_condition_selection()
+        self.optimize_bar_path_var.set(False)
+        anthro = self.anthro()
+        optimization = optimize_deep_squat_bar_path(
+            anthro,
+            self.final_q,
+            self.phase_durations(),
+            self.frame_count,
+            self.max_torques(),
+            self.angle_adapt_var.get(),
+            self.model_cache,
+            self.velocity_adapt_var.get(),
+            baseline=(self.states, self.results),
+        )
+        self.bar_path_optimization = optimization
+        self.states = optimization.states
+        self.results = optimization.dynamics
+        if optimization.applied:
+            self.final_q = optimization.final_q
+            self.sync_pose_angle_fields_from_final_q()
+        self.status_var.set(f"{self.status_var.get()} · {optimization.message}")
+        self.update_condition_differences()
+        self.redraw()
 
     def clear_condition_selection(self) -> None:
         selected = self.conditions_table.selection()

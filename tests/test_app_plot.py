@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from math import radians
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from squat_gui.anthropometry import Anthropometry
@@ -470,6 +471,41 @@ class PlotSeriesTests(unittest.TestCase):
         gui.draw_animation_values(hidden_canvas, sample)
         self.assertEqual(len(hidden_canvas.texts), 1)
         self.assertEqual(hidden_canvas.texts[0][1]["text"], "courant")
+
+    def test_verticalize_bar_updates_the_current_pose_on_each_press(self):
+        gui = self.gui_without_tk()
+        original_q = (radians(22.0), radians(-58.0), radians(20.0))
+        updated_q = (radians(24.0), radians(-61.0), radians(49.0))
+        gui.final_q = original_q
+        gui._suspend_selection_clear = True
+        gui.optimize_bar_path_var = FakeVar(True)
+        gui.anthro = Anthropometry
+        gui.phase_durations = lambda: PhaseDurations()
+        gui.frame_count = len(gui.states)
+        gui.max_torques = lambda: {"cheville": 180.0, "genou": 220.0, "hanche": 260.0}
+        gui.angle_adapt_var = FakeVar(True)
+        gui.velocity_adapt_var = FakeVar(True)
+        gui.model_cache = None
+        gui.status_var = FakeVar("prêt")
+        gui.sync_pose_angle_fields_from_final_q = lambda: None
+        gui.update_condition_differences = lambda: None
+        gui.redraw = lambda: None
+        result = SimpleNamespace(
+            applied=True,
+            final_q=updated_q,
+            states=gui.states,
+            dynamics=gui.results,
+            message="optimisation appliquée",
+        )
+
+        with patch("squat_gui.app.optimize_deep_squat_bar_path", return_value=result) as optimize:
+            gui.verticalize_bar()
+            gui.verticalize_bar()
+
+        self.assertEqual(gui.final_q, updated_q)
+        self.assertFalse(gui.optimize_bar_path_var.get())
+        self.assertEqual(optimize.call_count, 2)
+        self.assertEqual(optimize.call_args_list[1].args[1], updated_q)
 
     def test_kinematic_series_do_not_include_com(self):
         gui = self.gui_without_tk()

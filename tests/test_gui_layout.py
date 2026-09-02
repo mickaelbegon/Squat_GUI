@@ -118,14 +118,15 @@ class GuiLayoutTests(unittest.TestCase):
         self.assertEqual(self.app.temporal_preset_var.get(), "")
         self.assertEqual(self.app.temporal_preset_display_var.get(), "")
 
-    def test_bar_stabilization_is_explicit_and_disabled_by_default(self):
+    def test_bar_verticalization_is_an_explicit_pose_action(self):
         self.assertFalse(self.app.optimize_bar_path_var.get())
-        toggle = self.app.optimize_bar_path_toggle
-        self.assertIs(toggle.master, self.app.pose_canvas)
-        self.assertEqual(toggle.place_info().get("anchor"), "se")
-        self.assertEqual(float(toggle.place_info().get("relx", 0.0)), 1.0)
-        self.assertEqual(float(toggle.place_info().get("rely", 0.0)), 1.0)
-        self.assertTrue(toggle.winfo_ismapped())
+        button = self.app.optimize_bar_path_button
+        self.assertIs(button.master, self.app.pose_canvas)
+        self.assertEqual(button.cget("text"), "Verticaliser la barre")
+        self.assertEqual(button.place_info().get("anchor"), "se")
+        self.assertEqual(float(button.place_info().get("relx", 0.0)), 1.0)
+        self.assertEqual(float(button.place_info().get("rely", 0.0)), 1.0)
+        self.assertTrue(button.winfo_ismapped())
 
     def test_torque_preset_and_checks_use_the_compact_grid(self):
         self.assertIs(self.app.torque_preset_menu.master, self.app.torque_box)
