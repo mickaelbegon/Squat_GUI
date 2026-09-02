@@ -2596,6 +2596,55 @@ class SquatGui(tk.Tk):
         )
         return (-0.36, xmax + extra_x, -0.08, ymax)
 
+    def pose_editor_bounds(
+        self,
+        canvas: tk.Canvas,
+        state: MotionState,
+        result: DynamicsResult,
+        anthro: Anthropometry,
+    ) -> tuple[float, float, float, float]:
+        """Fit the single-pose viewport to the displayed subject.
+
+        ``scene_bounds`` intentionally reserves space to the right for every
+        possible animation and for side-by-side conditions.  Reusing it for
+        the pose editor left a crouched subject at the far left of its own
+        canvas.  Here the vertical reference is kept stable (so force and
+        support annotations remain comparable), while the horizontal extent is
+        centred on the actual subject and expanded only as much as the canvas
+        aspect ratio requires.
+        """
+        pose = state.pose
+        subject_points = (
+            pose.heel,
+            pose.toe,
+            pose.ankle,
+            pose.knee,
+            pose.hip,
+            pose.shoulder,
+            pose.bar,
+            pose.com,
+            *pose.segment_coms.values(),
+            (result.cop_x, 0.0),
+        )
+        subject_xmin = min(point[0] for point in subject_points) - 0.18
+        subject_xmax = max(point[0] for point in subject_points) + 0.18
+
+        # Keep room below the foot for the geometric/functional-base labels.
+        _, _, _, ymax = self.scene_bounds(anthropometries=[anthro])
+        ymin = -0.16
+        pad = 42
+        drawable_width = max(1, canvas.winfo_width() - 2 * pad)
+        drawable_height = max(1, canvas.winfo_height() - 2 * pad)
+        aspect_width = (ymax - ymin) * drawable_width / drawable_height
+        required_width = max(subject_xmax - subject_xmin, aspect_width)
+        centre_x = (subject_xmin + subject_xmax) / 2.0
+        return (
+            centre_x - required_width / 2.0,
+            centre_x + required_width / 2.0,
+            ymin,
+            ymax,
+        )
+
     def cop_in_foot(self, state: MotionState, result: DynamicsResult) -> bool:
         return support_margins(state.pose, result.cop_x).in_geometric_base
 
@@ -3089,18 +3138,20 @@ class SquatGui(tk.Tk):
             if layers.alerts
             else []
         )
+        bounds = self.pose_editor_bounds(canvas, state, result, anthro)
         self.configure_alert_canvas(canvas, alerts)
         self.draw_skeleton(
             canvas,
             state,
             result,
             with_handles=True,
+            bounds=bounds,
             render_anthro=anthro,
             refined_sprites=not self.low_quality_sprites_var.get(),
             layers=layers,
         )
         if layers.joint_angles:
-            self.draw_squat_angle_labels(canvas, state)
+            self.draw_squat_angle_labels(canvas, state, bounds)
         canvas.create_text(
             16,
             16,
@@ -3115,9 +3166,14 @@ class SquatGui(tk.Tk):
         if layers.alerts:
             self.draw_alert_banner(canvas, alerts, 62)
 
-    def draw_squat_angle_labels(self, canvas: tk.Canvas, state: MotionState) -> None:
+    def draw_squat_angle_labels(
+        self,
+        canvas: tk.Canvas,
+        state: MotionState,
+        bounds: tuple[float, float, float, float] | None = None,
+    ) -> None:
         pose = state.pose
-        bounds = self.scene_bounds()
+        bounds = bounds or self.scene_bounds()
         joint_angles = clinical_joint_values_from_segment_values(state.q)
         labels = (
             ("cheville", degrees(joint_angles["cheville"]), pose.ankle, (12, -24)),

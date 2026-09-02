@@ -198,6 +198,40 @@ class GuiLayoutTests(unittest.TestCase):
         )
         self.assertLessEqual(canvas_bottom, self.app.pose_angle_box.winfo_rooty())
 
+    def test_pose_viewport_centres_the_subject_and_keeps_foot_label_space(self):
+        state = self.app.states[-1]
+        result = self.app.results[-1]
+        bounds = self.app.pose_editor_bounds(
+            self.app.pose_canvas, state, result, self.app.anthro()
+        )
+        points = (
+            state.pose.heel,
+            state.pose.toe,
+            state.pose.ankle,
+            state.pose.knee,
+            state.pose.hip,
+            state.pose.shoulder,
+            state.pose.bar,
+            state.pose.com,
+            *state.pose.segment_coms.values(),
+            (result.cop_x, 0.0),
+        )
+        screen_x = [
+            self.app.world_to_canvas(self.app.pose_canvas, point, bounds)[0]
+            for point in points
+        ]
+        subject_middle = (min(screen_x) + max(screen_x)) / 2.0
+        self.assertAlmostEqual(
+            subject_middle,
+            self.app.pose_canvas.winfo_width() / 2.0,
+            delta=2.0,
+        )
+        self.assertLess(bounds[0], min(point[0] for point in points))
+        self.assertGreater(bounds[1], max(point[0] for point in points))
+        self.assertLessEqual(bounds[2], -0.16)
+        scene_bounds = self.app.scene_bounds()
+        self.assertLess(bounds[1] - bounds[0], scene_bounds[1] - scene_bounds[0])
+
     def test_parameter_controls_fit_inside_the_left_panel(self):
         self.assertGreater(self.app.left_panel.winfo_height(), 0)
         for widget in self.app.left_panel.winfo_children():
