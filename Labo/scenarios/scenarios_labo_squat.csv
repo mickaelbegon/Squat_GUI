@@ -1,5 +1,5 @@
 condition_id,subject_profile,bar_position,load_percent_bw,wedge_20_deg,shank_percent,thigh_percent,trunk_percent,duration_excentrique_s,duration_isometrique_s,duration_concentrique_s,frames,backend,torque_preset,angle_adapt,velocity_adapt,q_shank_deg,q_thigh_deg,q_trunk_deg,anthropometry_mode
-baseline,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
+baseline,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,25,-65,55,longueur seule
 posture_knee_dominant,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,35,-70,10,longueur seule
 posture_hip_dominant,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,15,-65,35,longueur seule
 balance_bar_back,homme,back,40,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
@@ -10,8 +10,8 @@ balance_long_thigh_front,homme,front,40,false,0,5,0,4.0,1.0,4.0,181,biorbd,ander
 balance_long_trunk_front,homme,front,40,false,0,0,5,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
 balance_pregnant_back,femme enceinte,back,40,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
 balance_pregnant_front,femme enceinte,front,40,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
-stability_forward,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,40,-70,5,longueur seule
-stability_backward,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,8,-62,45,longueur seule
+stability_forward,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,30,-65,50,longueur seule
+stability_backward,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,25,-60,45,longueur seule
 load_30bw,homme,back,30,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
 load_60bw,homme,back,60,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule
 load_100bw,homme,back,100,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,-58,20,longueur seule

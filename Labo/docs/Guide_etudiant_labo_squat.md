@@ -104,7 +104,13 @@ Avant de poursuivre, vérifier que vous savez : sélectionner un preset temporel
 
 ### Bloc 1 — Référence et lecture des sorties
 
-Lancer une simulation baseline en suivant le tutoriel intégré. Formuler d'abord une hypothèse en mode Observation, puis identifier les angles articulaires, les vitesses, les accélérations, les moments, les puissances, le CoM, le CoP/ZMP et les ratios d'effort.
+Lancer une simulation baseline en suivant le tutoriel intégré. Formuler d'abord une hypothèse en mode Observation, puis identifier les angles articulaires, les vitesses, les accélérations, les moments, les puissances, le CoM, le CoP/ZMP et les ratios d’effort.
+
+La posture basse de référence vise une flexion clinique de cheville/genou/hanche
+de `25 / 90 / 120°`. Les orientations segmentaires correspondantes sont
+conservées dans le fichier de scénarios afin de rester compatibles avec le
+modèle. Cette référence est contrôlée sur toute la trajectoire : son CoP reste
+dans la base fonctionnelle d'appui avec le backend analytique.
 
 Questions d’analyse :
 
@@ -151,7 +157,12 @@ Lien littérature attendu : Chan & Sigward (2020), Kim et al. (2021), Schoenfeld
 
 Comparer `stability_forward` et `stability_backward`.
 
-Hypothèse : une posture peut être biomécaniquement exigeante sans être acceptable si le ZMP sort de la zone d’appui fonctionnelle.
+Hypothèse : une stratégie plus avancée (`stability_forward`, 30 / 95 / 115°)
+rapproche le CoP de l'avant du pied, tandis qu'une stratégie plus reculée
+(`stability_backward`, 25 / 85 / 105°) le rapproche de la limite postérieure.
+Les deux postures restent plausibles et dans la base fonctionnelle ; l'exercice
+porte donc sur les marges d'appui et les couples, plutôt que sur une posture
+manifestement irréaliste.
 
 Variables à extraire : ZMP, CoM, couleur d’alerte du GUI, moments normalisés.
 
