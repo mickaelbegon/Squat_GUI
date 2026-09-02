@@ -3353,21 +3353,18 @@ class SquatGui(tk.Tk):
         x_offset: float,
         color: str | None,
     ) -> None:
-        """Draw the actual bar path from standing to the lowest bar position."""
+        """Draw the full actual bar path, from descent through the return."""
         if len(states) < 2:
             return
         color = color or "#2e7d54"
         bottom_index = min(range(len(states)), key=lambda index: states[index].pose.bar[1])
-        extreme_states = states[: bottom_index + 1]
-        if len(extreme_states) < 2:
-            return
         points = [
             self.world_to_canvas(
                 canvas,
                 (state.pose.bar[0] + x_offset, state.pose.bar[1]),
                 bounds,
             )
-            for state in extreme_states
+            for state in states
         ]
         coordinates = [coordinate for point in points for coordinate in point]
         canvas.create_line(
@@ -3377,7 +3374,12 @@ class SquatGui(tk.Tk):
             dash=(7, 4),
             smooth=True,
         )
-        for point, label in ((points[0], "haut"), (points[-1], "bas")):
+        markers = (
+            (points[0], "départ", -8),
+            (points[bottom_index], "bas", 0),
+            (points[-1], "retour", 8),
+        )
+        for point, label, label_y_offset in markers:
             x, y = point
             canvas.create_oval(
                 x - 5,
@@ -3390,7 +3392,7 @@ class SquatGui(tk.Tk):
             )
             canvas.create_text(
                 x + 8,
-                y,
+                y + label_y_offset,
                 text=label,
                 anchor="w",
                 fill=color,

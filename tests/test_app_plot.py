@@ -235,7 +235,7 @@ class PlotSeriesTests(unittest.TestCase):
             self.assertIn("remplacé", message)
             self.assertIn("Aucun ajout automatique", message)
 
-    def test_bar_trajectory_stops_at_the_lowest_bar_position(self):
+    def test_bar_trajectory_covers_descent_and_return(self):
         gui = object.__new__(SquatGui)
         canvas = RecordingCanvas()
         gui.world_to_canvas = lambda _canvas, point, _bounds: point
@@ -244,12 +244,13 @@ class PlotSeriesTests(unittest.TestCase):
         gui.draw_bar_trajectory(canvas, states, (-1.0, 1.0, -1.0, 2.0), 0.0, "#123456")
 
         self.assertEqual(len(canvas.lines), 1)
-        self.assertEqual(len(canvas.ovals), 2)
+        self.assertEqual(len(canvas.ovals), 3)
         line_coordinates = canvas.lines[0][0]
         bottom_index = min(range(len(states)), key=lambda index: states[index].pose.bar[1])
-        self.assertEqual(len(line_coordinates), 2 * (bottom_index + 1))
-        self.assertEqual(canvas.texts[-2][1]["text"], "haut")
-        self.assertEqual(canvas.texts[-1][1]["text"], "bas")
+        self.assertEqual(len(line_coordinates), 2 * len(states))
+        self.assertEqual(canvas.texts[-3][1]["text"], "départ")
+        self.assertEqual(canvas.texts[-2][1]["text"], "bas")
+        self.assertEqual(canvas.texts[-1][1]["text"], "retour")
 
     def test_bar_trajectory_uses_a_valid_default_color(self):
         gui = object.__new__(SquatGui)
