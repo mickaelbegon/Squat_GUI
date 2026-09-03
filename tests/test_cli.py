@@ -7,11 +7,32 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
-from squat_gui.cli import main, write_csv
+from squat_gui.cli import build_parser, condition_from_args, main, write_csv
+from squat_gui.cli_handlers import run_batch, run_condition
 from squat_gui.export_schema import SCHEMA_VERSION, STANDARD_CSV_COLUMNS
 
 
 class CliExportTests(unittest.TestCase):
+    def test_parser_wires_commands_to_dedicated_handlers(self) -> None:
+        parser = build_parser()
+
+        run_args = parser.parse_args(["run"])
+        batch_args = parser.parse_args(["batch", "conditions.csv"])
+
+        self.assertIs(run_args.func, run_condition)
+        self.assertIs(batch_args.func, run_batch)
+
+    def test_argument_conversion_stays_independent_from_export_handler(self) -> None:
+        args = build_parser().parse_args(
+            ["run", "--load", "35", "--frames", "1", "--backend", "analytical"]
+        )
+
+        condition = condition_from_args(args)
+
+        self.assertEqual(condition.load_percent_bw, 50.0)
+        self.assertEqual(condition.frames, 2)
+        self.assertEqual(condition.backend, "analytical")
+
     def test_csv_replacement_is_atomic_when_writing_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "existing.csv"
