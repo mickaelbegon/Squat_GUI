@@ -29,12 +29,8 @@ from .dynamics import (
     DynamicsResult,
 )
 from .didactics import (
-    DidacticPathState,
     RevealMode,
     bounded_phase_durations,
-    didactic_focus_keys,
-    didactic_message,
-    layers_for_reveal,
 )
 from .kinematics import (
     MotionState,
@@ -42,7 +38,6 @@ from .kinematics import (
     frame_count_for_duration,
 )
 from .layout_builder import build_layout
-from .observables import frame_info
 from .plot_controller import (
     JOINT_COLORS as JOINT_COLORS,
     PLOT_CHOICES,
@@ -72,6 +67,7 @@ from .timeline import (
     time_axis_label,
 )
 from .torque_capacity import torque_presets
+from .ui_state_controller import UiStateController
 
 # La charge est volontairement discrète dans le GUI : cinq niveaux couvrent
 # l'absence de barre, une progression intermédiaire et la charge maximale.
@@ -202,6 +198,9 @@ class SquatGui(tk.Tk):
             tuple[float, float, float, float, float, float]
         ] = []
 
+        self._ui_state_controller = UiStateController(
+            self, load_percent_options=LOAD_PERCENT_OPTIONS
+        )
         self._build_layout()
         self._plot_controller = PlotCanvasController(self)
         self._condition_controller = ConditionInteractionController(
@@ -210,207 +209,26 @@ class SquatGui(tk.Tk):
         self.recompute()
 
     def _build_display_menu(self, parent: tk.Misc, *, scope: str) -> ttk.Menubutton:
-        """Build a display menu scoped to the upper or lower figures."""
-        if scope not in {"upper", "lower"}:
-            raise ValueError(f"Portée d'affichage inconnue: {scope}")
-        label = "Affichage haut" if scope == "upper" else "Affichage bas"
-        button = ttk.Menubutton(parent, text=label)
-        display_menu = tk.Menu(button, tearoff=False)
-
-        def add_section(title: str) -> None:
-            display_menu.add_command(label=title, state="disabled")
-
-        def add_check(label: str, variable: tk.Variable) -> None:
-            display_menu.add_checkbutton(
-                label=label, variable=variable, command=self.on_display_changed
-            )
-
-        if scope == "lower":
-            add_section("COURBES")
-            for name, variable in self.show_vars.items():
-                add_check(f"Courbe — {name}", variable)
-            for name, variable in self.com_component_vars.items():
-                add_check(f"Composante — {name}", variable)
-            display_menu.add_separator()
-            add_section("DÉCOMPOSITION DYNAMIQUE")
-            for name, variable in self.torque_component_vars.items():
-                add_check(name, variable)
-            add_check("Courbes sur 3 axes", self.subplot_mode_var)
-            add_check("Limites de couple", self.show_torque_bounds_var)
-            display_menu.add_separator()
-            add_section("PHASES")
-            add_check("Limites des phases", self.show_phase_limits_var)
-            add_check("Noms des phases", self.show_phase_names_var)
-        else:
-            add_section("ANIMATION ET REPÈRES")
-            add_check(
-                "Coordonnées articulaires (survol)", self.show_joint_coordinates_var
-            )
-            add_check("Orientations segmentaires", self.show_segment_orientations_var)
-            add_check("Angles articulaires", self.show_joint_angles_var)
-            add_check("Informations sur les couples", self.show_animation_torques_var)
-            add_check("Anthropométrie utilisée", self.show_anthropometry_var)
-            add_check("Échantillons i−1 / i / i+1", self.show_neighbor_samples_var)
-            add_check("Trajectoire de la barre", self.show_bar_trajectory_var)
-            display_menu.add_separator()
-            add_section("CoM ET APPUI")
-            add_check("CoM global", self.show_global_com_var)
-            add_check("Projection du CoM", self.show_com_projection_var)
-            add_check("CoM segmentaires + barre", self.show_segment_com_var)
-            add_check("Point d'appui (CoP ou ZMP)", self.show_cop_var)
-            add_check("GRF", self.show_grf_var)
-            add_check("Poids", self.show_weight_var)
-            add_check("Base géométrique projetée", self.show_geometric_base_var)
-            add_check("Zone fonctionnelle d'appui", self.show_support_limits_var)
-            add_check("Bilan forces et équilibre", self.show_force_balance_var)
-            display_menu.add_separator()
-            add_section("ANNOTATIONS DYNAMIQUES")
-            add_check("Bras de levier GRF", self.show_moment_arms_var)
-            add_check("Anneaux demande/capacité", self.show_capacity_rings_var)
-            add_check("Marqueurs articulaires", self.show_joint_markers_var)
-            add_check("Centres des sprites", self.show_sprite_centers_var)
-            add_check("Sprites basse qualité", self.low_quality_sprites_var)
-
-        button.configure(menu=display_menu)
-        if scope == "upper":
-            self.display_menu_upper = display_menu
-        else:
-            self.display_menu_lower = display_menu
-        return button
+        return self._ui_state().build_display_menu(parent, scope=scope)
 
     def on_display_changed(self) -> None:
-        """Refresh visual selections without recomputing scientific results."""
-        self.update_plot_choices()
+        self._ui_state().on_display_changed()
 
     def reveal_mode(self) -> RevealMode:
-        variable = self.__dict__.get("reveal_mode_var")
-        if variable is None:
-            return RevealMode.FREE
-        try:
-            return RevealMode(variable.get())
-        except ValueError:
-            return RevealMode.FREE
+        return self._ui_state().reveal_mode()
 
     def set_reveal_mode(self, mode: RevealMode | str) -> None:
-        target = RevealMode(mode)
-        previous = getattr(self, "_last_reveal_mode", RevealMode.FREE)
-        if previous is RevealMode.FREE and target is not RevealMode.FREE:
-            self._plot_choice_before_reveal = self.plot_choice.get()
-        self.reveal_mode_var.set(target.value)
-        if target is RevealMode.KINEMATICS and previous is RevealMode.OBSERVATION:
-            self.plot_choice.set(SYNCHRONIZED_KINEMATICS_CHOICE)
-        elif target is RevealMode.KINEMATICS and self.plot_choice.get() not in (
-            "cinematique articulaire",
-            "centre de masse",
-            SYNCHRONIZED_KINEMATICS_CHOICE,
-        ):
-            self.plot_choice.set(SYNCHRONIZED_KINEMATICS_CHOICE)
-        elif target is RevealMode.DYNAMICS and previous in (
-            RevealMode.OBSERVATION,
-            RevealMode.KINEMATICS,
-        ):
-            self.plot_choice.set("force reaction sol")
-        elif (
-            target is RevealMode.FREE
-            and self._plot_choice_before_reveal in PLOT_CHOICES
-        ):
-            self.plot_choice.set(self._plot_choice_before_reveal)
-            self._plot_choice_before_reveal = None
-        self._last_reveal_mode = target
-        if hasattr(self, "plot_menu"):
-            self.update_plot_choices()
-            state = ["!disabled"] if target is RevealMode.FREE else ["disabled"]
-            self.display_menu_upper_button.state(state)
-            self.display_menu_lower_button.state(state)
+        self._ui_state().set_reveal_mode(mode)
 
     def on_reveal_mode_changed(self) -> None:
-        self.set_reveal_mode(self.reveal_mode_var.get())
+        self._ui_state().on_reveal_mode_changed()
 
     def render_layers(self, *, refined_sprites: bool | None = None) -> RenderLayers:
-        refined = (
-            not self.low_quality_sprites_var.get()
-            if refined_sprites is None
-            else refined_sprites
-        )
-        mode = self.reveal_mode()
-        if mode is not RevealMode.FREE:
-            return layers_for_reveal(mode, refined_sprites=refined)
-        return RenderLayers(
-            global_com=self.show_global_com_var.get(),
-            com_projection=self.show_com_projection_var.get(),
-            segment_com=self.show_segment_com_var.get(),
-            cop_zmp=self.show_cop_var.get(),
-            grf=self.show_grf_var.get(),
-            weight=self.show_weight_var.get(),
-            geometric_base=self.show_geometric_base_var.get(),
-            functional_base=self.show_support_limits_var.get(),
-            force_balance=self.show_force_balance_var.get(),
-            joint_coordinates=self.show_joint_coordinates_var.get(),
-            segment_orientations=self.show_segment_orientations_var.get(),
-            joint_angles=self.show_joint_angles_var.get(),
-            anthropometry=self.show_anthropometry_var.get(),
-            moment_arms=self.show_moment_arms_var.get(),
-            capacity_rings=self.show_capacity_rings_var.get(),
-            joint_markers=self.show_joint_markers_var.get(),
-            refined_sprites=refined,
-        )
+        return self._ui_state().render_layers(refined_sprites=refined_sprites)
 
     @staticmethod
     def _configure_didactic_styles(style: ttk.Style) -> None:
-        focus_styles = {
-            "Sujet": ("#d9f0eb", "#16756d"),
-            "Barre": ("#f7e7d5", "#b05e16"),
-            "Charge": ("#dceff4", "#237f9f"),
-            "Phase": ("#ebe7f6", "#6d5ea8"),
-            "Pose": ("#e0f0e2", "#2e7d54"),
-            "Results": ("#e6eff7", "#276c92"),
-        }
-        for name, (background, border) in focus_styles.items():
-            style.configure(
-                f"Guide{name}.TLabelframe",
-                background=background,
-                foreground=border,
-                bordercolor=border,
-                lightcolor=border,
-                darkcolor=border,
-            )
-            style.configure(
-                f"Guide{name}.TLabelframe.Label",
-                background=background,
-                foreground=border,
-            )
-        for name, (background, border) in focus_styles.items():
-            style.configure(
-                f"Guide{name}.TCombobox",
-                fieldbackground=background,
-                background=background,
-                bordercolor=border,
-                lightcolor=border,
-                darkcolor=border,
-                arrowcolor=border,
-            )
-            style.map(
-                f"Guide{name}.TCombobox", fieldbackground=[("readonly", background)]
-            )
-        style.configure(
-            "GuidePose.TButton",
-            background="#e0f0e2",
-            foreground="#2e7d54",
-            bordercolor="#2e7d54",
-            font=("Helvetica", 10, "bold"),
-        )
-        style.map("GuidePose.TButton", background=[("active", "#d1e8d5")])
-        style.configure(
-            "GuidePhase.Treeview",
-            fieldbackground="#ebe7f6",
-            background="#ebe7f6",
-            bordercolor="#6d5ea8",
-        )
-        style.configure(
-            "GuidePhase.Treeview.Heading",
-            foreground="#6d5ea8",
-            font=("Helvetica", 9, "bold"),
-        )
+        UiStateController.configure_didactic_styles(style)
 
     def _build_layout(self) -> None:
         """Create the widgets through the dedicated view builder."""
@@ -422,31 +240,28 @@ class SquatGui(tk.Tk):
             load_percent_options=LOAD_PERCENT_OPTIONS,
         )
 
+    def _ui_state(self) -> UiStateController:
+        """Return the UI-state controller, including for headless callbacks."""
+
+        controller = self.__dict__.get("_ui_state_controller")
+        if controller is None:
+            controller = UiStateController(
+                self, load_percent_options=LOAD_PERCENT_OPTIONS
+            )
+            self._ui_state_controller = controller
+        return controller
+
     def _update_left_scroll_region(self, _event: tk.Event | None = None) -> None:
-        self.left_scroll_canvas.configure(
-            scrollregion=self.left_scroll_canvas.bbox("all")
-        )
+        self._ui_state().update_left_scroll_region(_event)
 
     def _resize_left_contents(self, event: tk.Event) -> None:
-        # A Canvas window does not propagate the height of its viewport to its
-        # child.  Give the child at least the viewport height so row 4 (the
-        # conditions table) can consume any spare room; preserve its requested
-        # height when the controls need scrolling.
-        required_height = self.left_panel.winfo_reqheight()
-        self.left_scroll_canvas.itemconfigure(
-            self.left_scroll_window,
-            width=max(1, event.width),
-            height=max(1, event.height, required_height),
-        )
-        self._update_left_scroll_region()
+        self._ui_state().resize_left_contents(event)
 
     def _scroll_left_panel(self, event: tk.Event) -> str:
-        delta = -1 if event.delta > 0 else 1
-        self.left_scroll_canvas.yview_scroll(delta, "units")
-        return "break"
+        return self._ui_state().scroll_left_panel(event)
 
     def _resize_status_text(self, event: tk.Event) -> None:
-        self.status_label.configure(wraplength=max(300, event.width - 20))
+        self._ui_state().resize_status_text(event)
 
     def _add_scale(
         self,
@@ -459,201 +274,36 @@ class SquatGui(tk.Tk):
         row: int,
         columnspan: int = 1,
     ) -> ttk.LabelFrame:
-        box = ttk.LabelFrame(parent, text=label)
-        box.grid(row=row, column=0, columnspan=columnspan, sticky="ew", padx=4, pady=2)
-        box.columnconfigure(0, weight=1)
-        scale = ttk.Scale(
-            box,
-            variable=var,
-            from_=start,
-            to=end,
-            orient="horizontal",
-            command=lambda _value: self.on_parameter_changed(),
+        return self._ui_state().add_scale(
+            parent, label, var, start, end, resolution, row, columnspan
         )
-        scale.grid(row=0, column=0, sticky="ew", padx=4)
-        value_label = ttk.Label(box, width=7)
-        value_label.grid(row=0, column=1, padx=(4, 2))
-
-        def sync_label(*_args: object) -> None:
-            snapped = round((var.get() - start) / resolution) * resolution + start
-            snapped = min(end, max(start, snapped))
-            if abs(snapped - var.get()) > 1e-6:
-                var.set(snapped)
-            value_label.configure(text=f"{snapped:g}")
-
-        var.trace_add("write", sync_label)
-        sync_label()
-        return box
 
     def _sync_load_display(self, *_args: object) -> None:
-        """Keep the readable popup value aligned with the numeric setting."""
-        if hasattr(self, "load_display_var"):
-            value = self.load_var.get()
-            snapped = min(LOAD_PERCENT_OPTIONS, key=lambda option: abs(option - value))
-            if abs(snapped - value) > 1e-6:
-                self.load_var.set(float(snapped))
-            self.load_display_var.set(f"{snapped:g} %BW")
+        self._ui_state().sync_load_display(*_args)
 
     def on_load_menu_changed(self) -> None:
-        """Apply a discrete popup selection without changing the data model."""
-        text = self.load_display_var.get().split()[0]
-        try:
-            self.load_var.set(float(text))
-        except (TypeError, ValueError):
-            self._sync_load_display()
-            return
-        self.on_parameter_changed()
+        self._ui_state().on_load_menu_changed()
 
     def update_didactic_focus(self) -> None:
-        if not hasattr(self, "profile_menu"):
-            return
-        self.profile_menu.configure(style="TCombobox")
-        self.bar_menu.configure(style="TCombobox")
-        self.temporal_preset_menu.configure(style="TCombobox")
-        for frame in (
-            self.parameter_box,
-            self.charge_box,
-            self.duration_box,
-            self.lengths_box,
-            self.torque_box,
-            self.plot_box,
-            self.table_box,
-        ):
-            frame.configure(style="TLabelframe")
-        self.add_condition_button.configure(style="TButton")
-        self.play_button.configure(style="TButton")
-        self.conditions_table.configure(style="Treeview")
-        self._didactic_canvas_colors.clear()
-        self.plot_canvas.configure(highlightthickness=1, highlightbackground="#c9d1c7")
-
-        if self.didactic_mode_var.get():
-            focus_targets = {
-                "subject": (("widget", self.profile_menu, "GuideSujet.TCombobox"),),
-                "bar": (("widget", self.bar_menu, "GuideBarre.TCombobox"),),
-                "load": (("widget", self.charge_box, "GuideCharge.TLabelframe"),),
-                "phase": (
-                    ("widget", self.duration_box, "GuidePhase.TLabelframe"),
-                    ("widget", self.temporal_preset_menu, "GuidePhase.TCombobox"),
-                ),
-                "deep_pose": (("canvas", self.pose_canvas, "#2e7d54"),),
-                "animation": (
-                    ("canvas", self.animation_canvas, "#2e7d54"),
-                    ("widget", self.play_button, "GuidePose.TButton"),
-                ),
-                "kinematics": (
-                    ("widget", self.plot_box, "GuideResults.TLabelframe"),
-                    ("widget", self.table_box, "GuideResults.TLabelframe"),
-                    ("plot_canvas", self.plot_canvas, "#276c92"),
-                ),
-                "dynamics": (
-                    ("canvas", self.animation_canvas, "#b05e16"),
-                    ("widget", self.plot_box, "GuideResults.TLabelframe"),
-                ),
-                "add": (("widget", self.add_condition_button, "GuidePose.TButton"),),
-                "duplicate": (
-                    ("widget", self.duplicate_condition_button, "GuidePose.TButton"),
-                    ("widget", self.parameter_box, "GuideCharge.TLabelframe"),
-                    ("widget", self.add_condition_button, "GuidePose.TButton"),
-                ),
-                "comparison": (
-                    ("widget", self.table_box, "GuidePhase.TLabelframe"),
-                    ("widget", self.conditions_table, "GuidePhase.Treeview"),
-                    ("widget", self.differences_table, "GuidePhase.Treeview"),
-                ),
-            }
-            for focus_key in didactic_focus_keys(self.didactic_step):
-                for target_type, widget, style_or_color in focus_targets[focus_key]:
-                    if target_type == "widget":
-                        widget.configure(style=style_or_color)
-                    elif target_type == "canvas":
-                        self._didactic_canvas_colors[widget] = style_or_color
-                    else:
-                        widget.configure(
-                            highlightthickness=4, highlightbackground=style_or_color
-                        )
-        if self.states:
-            self.redraw()
+        self._ui_state().update_didactic_focus()
 
     def update_didactic_guide(self) -> None:
-        self.didactic_label.configure(state="normal")
-        self.didactic_label.delete("1.0", "end")
-        if self.didactic_mode_var.get():
-            self.didactic_label.configure(bg="#e5f1e8", fg="#154a34")
-            pieces = didactic_message(True, self.didactic_step)
-        else:
-            self.didactic_label.configure(bg="#f2f4f1", fg="#506158")
-            pieces = didactic_message(False, self.didactic_step)
-        for text, tag in pieces:
-            self.didactic_label.insert("end", text, () if tag is None else (tag,))
-        self.didactic_label.configure(state="disabled")
-        self.update_didactic_focus()
-        self.update_didactic_navigation()
+        self._ui_state().update_didactic_guide()
 
     def draw_didactic_switch(self) -> None:
-        enabled = self.didactic_mode_var.get()
-        background = "#2e7d54" if enabled else "#bcc4bd"
-        knob_x = 28 if enabled else 10
-        self.didactic_switch.delete("all")
-        self.didactic_switch.create_oval(
-            2, 2, 20, 18, fill=background, outline=background
-        )
-        self.didactic_switch.create_oval(
-            18, 2, 36, 18, fill=background, outline=background
-        )
-        self.didactic_switch.create_rectangle(
-            10, 2, 28, 18, fill=background, outline=background
-        )
-        self.didactic_switch.create_oval(
-            knob_x - 7,
-            4,
-            knob_x + 7,
-            16,
-            fill="#ffffff",
-            outline="#ffffff",
-        )
+        self._ui_state().draw_didactic_switch()
 
     def update_didactic_navigation(self) -> None:
-        self.draw_didactic_switch()
-        state = DidacticPathState(self.didactic_mode_var.get(), self.didactic_step)
-        self.reveal_mode_menu.state(
-            ["disabled"] if state.active else ["!disabled", "readonly"]
-        )
-        self.didactic_previous_button.state(
-            ["!disabled"] if state.can_go_back else ["disabled"]
-        )
-        self.didactic_next_button.state(
-            ["!disabled"] if state.can_go_forward else ["disabled"]
-        )
+        self._ui_state().update_didactic_navigation()
 
     def toggle_didactic_mode(self) -> None:
-        current = DidacticPathState(self.didactic_mode_var.get(), self.didactic_step)
-        updated = current.toggled()
-        self.didactic_mode_var.set(updated.active)
-        self.didactic_step = updated.step
-        if updated.active:
-            self._reveal_mode_before_didactic = self.reveal_mode_var.get()
-            self.set_reveal_mode(updated.reveal_mode)
-        else:
-            self.set_reveal_mode(self._reveal_mode_before_didactic)
-        self.update_didactic_guide()
+        self._ui_state().toggle_didactic_mode()
 
     def advance_didactic_guide(self) -> None:
-        updated = DidacticPathState(
-            self.didactic_mode_var.get(), self.didactic_step
-        ).advanced()
-        self.didactic_mode_var.set(updated.active)
-        self.didactic_step = updated.step
-        self.set_reveal_mode(updated.reveal_mode)
-        self.update_didactic_guide()
+        self._ui_state().advance_didactic_guide()
 
     def retreat_didactic_guide(self) -> None:
-        current = DidacticPathState(self.didactic_mode_var.get(), self.didactic_step)
-        if not current.active:
-            return
-        updated = current.retreated()
-        self.didactic_step = updated.step
-        self.set_reveal_mode(updated.reveal_mode)
-        self.update_didactic_guide()
+        self._ui_state().retreat_didactic_guide()
 
     def anthro(self) -> Anthropometry:
         return self.anthro_from_settings(
@@ -1057,34 +707,13 @@ class SquatGui(tk.Tk):
         )
 
     def schedule_redraw(self, _event: tk.Event | None = None) -> None:
-        if self._redraw_pending:
-            return
-        self._redraw_pending = True
-        self.after(40, self.flush_scheduled_redraw)
+        self._ui_state().schedule_redraw(_event)
 
     def flush_scheduled_redraw(self) -> None:
-        self._redraw_pending = False
-        self.redraw()
+        self._ui_state().flush_scheduled_redraw()
 
     def redraw(self) -> None:
-        if not self.states:
-            return
-        if not self.canvases_ready():
-            self.schedule_redraw()
-            return
-        frame = min(self.frame_count - 1, max(0, int(self.frame_var.get())))
-        info = frame_info(self.states, frame)
-        if self.reveal_mode() is RevealMode.OBSERVATION:
-            self.frame_info_var.set("OBSERVATION · temps, phase et grandeurs masqués")
-        else:
-            self.frame_info_var.set(
-                f"Frame {info.frame}/{info.frame_count - 1}  ·  "
-                f"t={info.time_s:.3f} s  ·  Δt={info.delta_time_s:.3f} s  ·  "
-                f"{info.normalized_time_percent:.1f} %  ·  {info.phase}"
-            )
-        self.draw_pose_editor()
-        self.draw_plot()
-        self.draw_animation(frame)
+        self._ui_state().redraw()
 
     def on_table_selection_changed(self, _event: tk.Event | None = None) -> None:
         self._conditions().on_selection_changed()

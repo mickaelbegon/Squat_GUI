@@ -17,8 +17,9 @@ class RecordingController:
         self.calls: list[tuple[str, tuple[object, ...]]] = []
 
     def __getattr__(self, name: str):
-        def callback(*args: object) -> str:
-            self.calls.append((name, args))
+        def callback(*args: object, **kwargs: object) -> str:
+            call = (name, args) if not kwargs else (name, args, kwargs)
+            self.calls.append(call)
             return f"{name}-result"
 
         return callback
@@ -84,4 +85,39 @@ def test_plot_and_scene_facades_delegate_once_without_tcl() -> None:
     assert scene_controller.calls == [
         ("world_to_canvas", (canvas, (0.2, 0.4), bounds)),
         ("draw_pose_editor", ()),
+    ]
+
+
+def test_ui_state_facades_delegate_without_a_tcl_interpreter() -> None:
+    app = object.__new__(SquatGui)
+    controller = RecordingController()
+    app.__dict__["_ui_state_controller"] = controller
+    event = SimpleNamespace(delta=120, width=400)
+
+    assert app.on_display_changed() is None
+    assert app.reveal_mode() == "reveal_mode-result"
+    assert app.set_reveal_mode("dynamics") is None
+    assert app.on_reveal_mode_changed() is None
+    assert app.render_layers(refined_sprites=False) == "render_layers-result"
+    assert app._scroll_left_panel(event) == "scroll_left_panel-result"
+    assert app._sync_load_display("write") is None
+    assert app.on_load_menu_changed() is None
+    assert app.update_didactic_guide() is None
+    assert app.advance_didactic_guide() is None
+    assert app.schedule_redraw(event) is None
+    assert app.redraw() is None
+
+    assert controller.calls == [
+        ("on_display_changed", ()),
+        ("reveal_mode", ()),
+        ("set_reveal_mode", ("dynamics",)),
+        ("on_reveal_mode_changed", ()),
+        ("render_layers", (), {"refined_sprites": False}),
+        ("scroll_left_panel", (event,)),
+        ("sync_load_display", ("write",)),
+        ("on_load_menu_changed", ()),
+        ("update_didactic_guide", ()),
+        ("advance_didactic_guide", ()),
+        ("schedule_redraw", (event,)),
+        ("redraw", ()),
     ]
