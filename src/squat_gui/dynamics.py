@@ -54,23 +54,79 @@ from .kinematics import com_accelerations as com_accelerations
 from .kinematics import com_velocities as com_velocities
 from .kinematics import cross_z as cross_z
 from .kinematics import dot as dot
+from .kinematics import joint_angles_from_pose as joint_angles_from_pose
+from .kinematics import (
+    joint_values_from_segment_values as joint_values_from_segment_values,
+)
 from .kinematics import local_angle_derivative_vector as local_angle_derivative_vector
 from .kinematics import motion_state as motion_state
 from .kinematics import phase_durations as phase_durations
 from .kinematics import sub as sub
+from .torque_capacity import (
+    ANDERSON_2007_YOUNG_MALE as ANDERSON_2007_YOUNG_MALE,
+)
+from .torque_capacity import (
+    ATHLETE_REFERENCE_TORQUES_PER_KG as ATHLETE_REFERENCE_TORQUES_PER_KG,
+)
 from .torque_capacity import GRAVITY as GRAVITY
+from .torque_capacity import AndersonTorqueParameters as AndersonTorqueParameters
 from .torque_capacity import TorqueCapacity as TorqueCapacity
+from .torque_capacity import TorquePreset as TorquePreset
+from .torque_capacity import angle_adapted_max as angle_adapted_max
+from .torque_capacity import anderson_angle_domain as anderson_angle_domain
+from .torque_capacity import anderson_angle_factor as anderson_angle_factor
+from .torque_capacity import anderson_reference_max_torques as anderson_reference_max_torques
+from .torque_capacity import anderson_velocity_factor as anderson_velocity_factor
+from .torque_capacity import athlete_reference_max_torques as athlete_reference_max_torques
+from .torque_capacity import (
+    available_joint_torque_limits as available_joint_torque_limits,
+)
+from .torque_capacity import joint_angles_for_limits as joint_angles_for_limits
 from .torque_capacity import joint_torque_capacities as joint_torque_capacities
+from .torque_capacity import joint_velocities_for_limits as joint_velocities_for_limits
+from .torque_capacity import torque_presets as torque_presets
 
 
 __all__ = [
+    "ANDERSON_2007_YOUNG_MALE",
+    "ATHLETE_REFERENCE_TORQUES_PER_KG",
+    "AndersonTorqueParameters",
+    "Anthropometry",
     "GRAVITY",
     "DynamicsResult",
     "ForceBalance",
+    "MotionState",
+    "PhaseDurations",
+    "Pose",
+    "TorqueCapacity",
+    "TorquePreset",
+    "Vector",
+    "anderson_angle_domain",
+    "anderson_angle_factor",
+    "anderson_reference_max_torques",
+    "anderson_velocity_factor",
+    "angle_adapted_max",
+    "angle_derivative_vector",
+    "athlete_reference_max_torques",
+    "available_joint_torque_limits",
+    "com_accelerations",
+    "com_velocities",
+    "cross_z",
+    "dot",
     "force_balance",
     "ground_reaction_and_cop",
     "inverse_dynamics",
+    "joint_angles_for_limits",
+    "joint_angles_from_pose",
+    "joint_torque_capacities",
+    "joint_values_from_segment_values",
+    "joint_velocities_for_limits",
+    "local_angle_derivative_vector",
+    "motion_state",
+    "phase_durations",
     "simulate",
+    "sub",
+    "torque_presets",
     "total_com_acceleration",
     "total_com_velocity",
 ]
