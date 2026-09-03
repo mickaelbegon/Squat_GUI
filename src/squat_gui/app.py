@@ -27,7 +27,6 @@ from .simulation_service import Condition, simulate_condition
 from .conditions_controller import ConditionInteractionController
 from .dynamics import (
     DynamicsResult,
-    simulate,
 )
 from .didactics import (
     DidacticPathState,
@@ -36,14 +35,11 @@ from .didactics import (
     didactic_focus_keys,
     didactic_message,
     layers_for_reveal,
-    reveal_mode_for_step,
 )
 from .kinematics import (
-    DEFAULT_SAMPLE_PERIOD_S,
     MotionState,
     PhaseDurations,
     frame_count_for_duration,
-    pose_from_angles,
 )
 from .layout_builder import build_layout
 from .observables import frame_info
@@ -61,14 +57,7 @@ from .plot_data import (
     current_plot_time as frame_plot_time,
     plot_times as times_for_plot,
 )
-from .pose_editing import (
-    apply_clinical_angle,
-    clamp_segment_angles,
-    clinical_joint_angles_deg,
-    drag_updated_q,
-    format_pose_angle as format_precise_pose_angle,
-    nearest_named_point,
-)
+from .pose_condition_actions import PoseConditionActionsController
 from .raster_segments import draw_sprite_segment
 from .rendering import RenderLayers
 from .scene_canvas import CANVAS_BG, SceneCanvasController
@@ -1920,31 +1909,21 @@ class SquatGui(tk.Tk):
     def torque_bound_series(self) -> dict[str, list[float]]:
         return self._plots().torque_bound_series()
 
+    def _pose_actions(self) -> PoseConditionActionsController:
+        """Return the controller for pose, playback and condition callbacks."""
+
+        controller = self.__dict__.get("_pose_condition_actions")
+        if controller is None:
+            controller = PoseConditionActionsController(self)
+            self._pose_condition_actions = controller
+        return controller
+
     def nearest_handle(self, x: float, y: float) -> str | None:
-        anthro = self.anthro()
-        pose = pose_from_angles(anthro, self.final_q)
-        bounds = getattr(self, "_pose_editor_bounds", None) or self.scene_bounds()
-        candidates = {"knee": pose.knee, "hip": pose.hip, "shoulder": pose.shoulder}
-        canvas_candidates = {
-            name: self.world_to_canvas(self.pose_canvas, point, bounds)
-            for name, point in candidates.items()
-        }
-        return nearest_named_point(x, y, canvas_candidates)
+        return self._pose_actions().nearest_handle(x, y)
 
     def nearest_joint_angle(self, x: float, y: float) -> str | None:
         """Return the clinical joint selected for a precise right-click edit."""
-        pose = pose_from_angles(self.anthro(), self.final_q)
-        bounds = getattr(self, "_pose_editor_bounds", None) or self.scene_bounds()
-        candidates = {
-            "cheville": pose.ankle,
-            "genou": pose.knee,
-            "hanche": pose.hip,
-        }
-        canvas_candidates = {
-            joint: self.world_to_canvas(self.pose_canvas, point, bounds)
-            for joint, point in candidates.items()
-        }
-        return nearest_named_point(x, y, canvas_candidates)
+        return self._pose_actions().nearest_joint_angle(x, y)
 
     @property
     def _active_pose_angle_joint(self) -> str | None:
@@ -1953,57 +1932,35 @@ class SquatGui(tk.Tk):
         return self.pose_angle_controller.active_joint
 
     def on_pose_context_menu(self, event: tk.Event) -> str | None:
-        joint = self.nearest_joint_angle(event.x, event.y)
-        if joint is None:
-            return None
-        self.open_pose_angle_editor(joint)
-        return "break"
+        return self._pose_actions().on_pose_context_menu(event)
 
     def on_pose_press(self, event: tk.Event) -> None:
-        self._pose_drag_bounds = (
-            getattr(self, "_pose_editor_bounds", None) or self.scene_bounds()
-        )
-        self.drag_target = self.nearest_handle(event.x, event.y)
+        self._pose_actions().on_pose_press(event)
 
     def on_pose_drag(self, event: tk.Event) -> None:
-        if not self.drag_target:
-            return
-        anthro = self.anthro()
-        pose = pose_from_angles(anthro, self.final_q)
-        point = self.canvas_to_world(
-            self.pose_canvas,
-            event.x,
-            event.y,
-            self._pose_drag_bounds
-            or getattr(self, "_pose_editor_bounds", None)
-            or self.scene_bounds(),
-        )
-        self.final_q = drag_updated_q(self.final_q, self.drag_target, point, pose)
-        self.sync_pose_angle_fields_from_final_q()
-        self.on_parameter_changed()
+        self._pose_actions().on_pose_drag(event)
 
     @staticmethod
     def format_pose_angle(value: float) -> str:
         """Format a precise degree value without insignificant zeroes."""
-        return format_precise_pose_angle(value)
+        return PoseConditionActionsController.format_pose_angle(value)
 
     def sync_pose_angle_fields_from_final_q(self) -> None:
         """Refresh the visible editor after a drag without committing input."""
-        self.pose_angle_controller.synchronize(self.final_q)
+        self._pose_actions().synchronize_pose_angle_fields()
 
     def open_pose_angle_editor(self, joint: str) -> None:
         """Show the precise-angle editor for ``joint``."""
-
-        self.pose_angle_controller.open(joint, self.final_q)
+        self._pose_actions().open_pose_angle_editor(joint)
 
     def confirm_pose_angle_editor(self, _event: tk.Event | None = None) -> str | None:
         """Delegate explicit validation to the precise-angle controller."""
 
-        return self.pose_angle_controller.confirm(_event)
+        return self._pose_actions().confirm_pose_angle_editor(_event)
 
     def close_pose_angle_editor(self) -> None:
         """Discard the pending value and hide the angle window."""
-        self.pose_angle_controller.close()
+        self._pose_actions().close_pose_angle_editor()
 
     # Compatibility entry point for callers that use the former dialog name.
     def open_pose_angle_dialog(self, joint: str) -> None:
@@ -2015,25 +1972,12 @@ class SquatGui(tk.Tk):
 
     def apply_clinical_joint_angle(self, joint: str, raw_value: str) -> bool:
         """Validate and commit one angle only after an explicit dialog action."""
-        update = apply_clinical_angle(self.final_q, joint, raw_value)
-        if not update.accepted:
-            self.status_var.set(update.error_message or "angle invalide")
-            return False
-        if update.q is None or update.bounded_deg is None:
-            raise RuntimeError("mise à jour clinique incomplète")
-        self.final_q = update.q
-        self.on_parameter_changed()
-        if update.was_clamped:
-            self.status_var.set(
-                "limite anatomique appliquée : "
-                f"{joint} {self.format_pose_angle(update.bounded_deg)}°"
-            )
-        return True
+        return self._pose_actions().apply_clinical_joint_angle(joint, raw_value)
 
     def clamp_final_q(
         self, q: tuple[float, float, float]
     ) -> tuple[float, float, float]:
-        return clamp_segment_angles(q)
+        return self._pose_actions().clamp_final_q(q)
 
     def project_on_force_line(
         self,
@@ -2046,49 +1990,22 @@ class SquatGui(tk.Tk):
         return project_point_on_line(joint, force_origin, force_vector)
 
     def on_pose_release(self, _event: tk.Event) -> None:
-        self.drag_target = None
-        self._pose_drag_bounds = None
+        self._pose_actions().on_pose_release(_event)
 
     def toggle_play(self) -> None:
-        self.playing = not self.playing
-        self.play_button.configure(text="⏸" if self.playing else "▶")
-        if self.playing:
-            self._play_started_at = perf_counter()
-            self._play_start_time_s = self.frame_var.get() * DEFAULT_SAMPLE_PERIOD_S
-            self.step_animation()
-        else:
-            self._play_started_at = None
+        self._pose_actions().toggle_play(clock=perf_counter)
 
     def step_animation(self) -> None:
-        if not self.playing:
-            return
-        duration_s = max(
-            DEFAULT_SAMPLE_PERIOD_S,
-            (self.frame_count - 1) * DEFAULT_SAMPLE_PERIOD_S,
-        )
-        started_at = (
-            self._play_started_at
-            if self._play_started_at is not None
-            else perf_counter()
-        )
-        elapsed_s = perf_counter() - started_at
-        target_time_s = (self._play_start_time_s + elapsed_s) % duration_s
-        self.frame_var.set(round(target_time_s / DEFAULT_SAMPLE_PERIOD_S))
-        self.redraw()
-        self.after(round(1000 * DEFAULT_SAMPLE_PERIOD_S), self.step_animation)
+        self._pose_actions().step_animation(clock=perf_counter)
 
     def record_condition(self) -> None:
-        self._conditions().record()
-        if self.didactic_mode_var.get() and self.didactic_step < 9:
-            self.didactic_step = 9
-            self.set_reveal_mode(reveal_mode_for_step(self.didactic_step))
-            self.update_didactic_guide()
+        self._pose_actions().record_condition()
 
     def clear_conditions(self) -> None:
-        self._conditions().clear()
+        self._pose_actions().clear_conditions()
 
     def duplicate_selected_condition(self) -> None:
-        self._conditions().duplicate_selected()
+        self._pose_actions().duplicate_selected_condition()
 
     def add_saved_condition(
         self,
@@ -2100,7 +2017,7 @@ class SquatGui(tk.Tk):
         results: list[DynamicsResult] | None = None,
         comparison_reference: ComparisonReference | Mapping[str, object] | None = None,
     ) -> str:
-        return self._conditions().add_saved_condition(
+        return self._pose_actions().add_saved_condition(
             settings,
             final_q_deg,
             label=label,
@@ -2111,55 +2028,19 @@ class SquatGui(tk.Tk):
         )
 
     def delete_selected_conditions(self) -> None:
-        self._conditions().delete_selected()
+        self._pose_actions().delete_selected_conditions()
 
     def simulate_from_condition(
         self,
         settings: dict[str, object],
         final_q_deg: list[float],
     ) -> tuple[list[MotionState], list[DynamicsResult]]:
-        anthro = self.anthro_from_settings(settings)
-        final_q = self.clamp_final_q(
-            tuple(radians(value) for value in self.normalized_final_q_deg(final_q_deg))
-        )
-        max_torques = {
-            joint: float(
-                dict(settings.get("max_torques", {})).get(
-                    joint, self.max_torque_vars[joint].get()
-                )
-            )
-            for joint in ("cheville", "genou", "hanche")
-        }
-        durations = self.phase_durations_from_settings(settings)
-        baseline = simulate(
-            anthro,
-            final_q,
-            durations,
-            frame_count_for_duration(durations),
-            max_torques,
-            bool(settings.get("angle_adapt", self.angle_adapt_var.get())),
-            self.model_cache,
-            bool(settings.get("velocity_adapt", self.velocity_adapt_var.get())),
-        )
-        if not bool(settings.get("optimize_bar_path_experimental", False)):
-            return baseline
-        optimization = optimize_deep_squat_bar_path(
-            anthro,
-            final_q,
-            durations,
-            frame_count_for_duration(durations),
-            max_torques,
-            bool(settings.get("angle_adapt", self.angle_adapt_var.get())),
-            self.model_cache,
-            bool(settings.get("velocity_adapt", self.velocity_adapt_var.get())),
-            baseline=baseline,
-        )
-        return optimization.states, optimization.dynamics
+        return self._pose_actions().simulate_from_condition(settings, final_q_deg)
 
     def display_joint_angles(
         self, q: tuple[float, float, float]
     ) -> tuple[float, float, float]:
-        return clinical_joint_angles_deg(q)
+        return self._pose_actions().display_joint_angles(q)
 
 
 def main() -> None:
