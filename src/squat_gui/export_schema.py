@@ -2,26 +2,28 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
-from copy import copy
 from dataclasses import dataclass
-import json
 import os
 from pathlib import Path
-import re
-import shutil
-import subprocess
-import tempfile
 from typing import Iterable, Mapping, Sequence
+
+from .workbook_model import (
+    COMBINED_SHEET,
+    DEFINITIONS_SHEET,
+    SUMMARY_SHEET,
+    WorkbookContract,
+    WorkbookTables,
+    build_workbook_tables,
+    excel_number_format,
+    missing_dictionary_columns,
+)
+from .xlsx_writers import write_xlsx_artifact, write_xlsx_openpyxl
 
 SCHEMA_VERSION = "2.0.0"
 SEGMENTS = ("foot", "shank", "thigh", "trunk", "bar")
 JOINTS = ("cheville", "genou", "hanche")
 POINTS = ("heel", "toe", "ankle", "knee", "hip", "shoulder", "bar")
 ROW_KEYS = ("schema_version", "condition_id", "frame", "time_s")
-SUMMARY_SHEET = "Synthèse"
-COMBINED_SHEET = "Données combinées"
-DEFINITIONS_SHEET = "Définitions"
 
 
 @dataclass(frozen=True)
@@ -549,402 +551,21 @@ def csv_export_rows(
     ]
 
 
-def _number(row: Mapping[str, object], column: str) -> float:
-    value = row.get(column)
-    if value is None:
-        raise ValueError(f"Valeur numérique absente: {column}")
-    return float(value)
-
-
-def _mean(rows: Sequence[Mapping[str, object]], column: str) -> float:
-    return sum(_number(row, column) for row in rows) / len(rows)
-
-
-def _frame_restarts(previous: object, current: object) -> bool:
-    """Return whether two adjacent frames reveal a repeated simulation ID."""
-    if previous is None or current is None:
-        return False
-    try:
-        return float(current) <= float(previous)
-    except (TypeError, ValueError):
-        return False
-
-
-def _simulation_groups(
-    rows: Sequence[Mapping[str, object]],
-) -> list[tuple[object, list[Mapping[str, object]]]]:
-    """Keep contiguous simulations distinct, even when their IDs are repeated."""
-    groups: list[tuple[object, list[Mapping[str, object]]]] = []
-    current_id: object = None
-    current_rows: list[Mapping[str, object]] = []
-    previous_frame: object = None
-    for row in rows:
-        condition_id = row.get("condition_id")
-        frame = row.get("frame")
-        starts_new = bool(current_rows) and (
-            condition_id != current_id or _frame_restarts(previous_frame, frame)
-        )
-        if starts_new:
-            groups.append((current_id, current_rows))
-            current_rows = []
-        if not current_rows:
-            current_id = condition_id
-        current_rows.append(row)
-        previous_frame = frame
-    if current_rows:
-        groups.append((current_id, current_rows))
-    return groups
-
-
-def _condition_summary_rows(
-    rows: Sequence[Mapping[str, object]],
-) -> list[dict[str, object]]:
-    """Build one Excel-ready summary row per simulated condition."""
-    summaries: list[dict[str, object]] = []
-    for _condition_id, condition_rows in _simulation_groups(rows):
-        first = condition_rows[0]
-        frame_count = len(condition_rows)
-        squat_rows = [row for row in condition_rows if row.get("phase") == "isometrique"]
-        if not squat_rows:
-            squat_rows = [min(condition_rows, key=lambda row: _number(row, "com_y_m"))]
-
-        support_values = [_number(row, "support_point_x_m") for row in condition_rows]
-        outside_functional = sum(
-            1
-            for row in condition_rows
-            if not bool(row.get("support_point_in_functional_base"))
-        )
-        outside_geometric = sum(
-            1
-            for row in condition_rows
-            if not bool(row.get("support_point_in_geometric_base"))
-        )
-        over_limit = sum(
-            1
-            for row in condition_rows
-            if any(
-                bool(row.get(f"{joint}_utilization_exceeds_capacity"))
-                for joint in JOINTS
-            )
-        )
-
-        summary: dict[str, object] = {
-            column: first.get(column) for column in SUMMARY_COLUMNS[:18]
-        }
-        summary.update(
-            {
-                "schema_version": SCHEMA_VERSION,
-                "frames": frame_count,
-                "squat_com_x_m": _mean(squat_rows, "com_x_m"),
-                "squat_cop_x_m": _mean(squat_rows, "support_point_x_m"),
-                "support_point_label": first.get("support_point_label"),
-                "zmp_x_min_m": min(support_values),
-                "zmp_x_max_m": max(support_values),
-                "zmp_excursion_m": max(support_values) - min(support_values),
-                "zmp_outside_support_frames": outside_functional,
-                "zmp_outside_support_percent": (
-                    100.0 * outside_functional / frame_count
-                ),
-                "cop_outside_foot_frames": outside_geometric,
-                "cop_outside_foot_percent": (
-                    100.0 * outside_geometric / frame_count
-                ),
-                "over_limit_frames": over_limit,
-                "peak_grf_y_N": max(
-                    abs(_number(row, "grf_y_N")) for row in condition_rows
-                ),
-            }
-        )
-
-        undefined_events: list[tuple[Mapping[str, object], str]] = []
-        defined_events: list[tuple[float, Mapping[str, object], str]] = []
-        for joint in JOINTS:
-            utilizations = [
-                float(row[f"{joint}_utilization_ratio"])
-                for row in condition_rows
-                if row.get(f"{joint}_utilization_ratio") is not None
-            ]
-            for row in condition_rows:
-                ratio = row.get(f"{joint}_utilization_ratio")
-                torque = _number(row, f"{joint}_torque_Nm")
-                if ratio is None and abs(torque) > 0.0:
-                    undefined_events.append((row, joint))
-                elif ratio is not None:
-                    defined_events.append((float(ratio), row, joint))
-            summary.update(
-                {
-                    f"{joint}_peak_abs_torque_Nm": max(
-                        abs(_number(row, f"{joint}_torque_Nm"))
-                        for row in condition_rows
-                    ),
-                    f"{joint}_peak_abs_torque_body_mass_normalized_Nm_kg": max(
-                        abs(
-                            _number(
-                                row,
-                                f"{joint}_torque_body_mass_normalized_Nm_kg",
-                            )
-                        )
-                        for row in condition_rows
-                    ),
-                    f"{joint}_peak_abs_power_W": max(
-                        abs(_number(row, f"{joint}_power_W"))
-                        for row in condition_rows
-                    ),
-                    f"{joint}_peak_utilization_ratio": (
-                        max(utilizations) if utilizations else None
-                    ),
-                    f"{joint}_peak_utilization_percent": (
-                        100.0 * max(utilizations) if utilizations else None
-                    ),
-                }
-            )
-
-        if undefined_events:
-            limiting_row, limiting_joint = undefined_events[0]
-            maximum_ratio: float | None = None
-            exceeds_capacity = True
-        elif defined_events:
-            maximum_ratio, limiting_row, limiting_joint = max(
-                defined_events, key=lambda item: item[0]
-            )
-            exceeds_capacity = maximum_ratio > 1.0
-        else:
-            maximum_ratio = None
-            limiting_row = None
-            limiting_joint = None
-            exceeds_capacity = False
-        summary.update(
-            {
-                "maximum_utilization_ratio": maximum_ratio,
-                "maximum_utilization_percent": (
-                    None if maximum_ratio is None else 100.0 * maximum_ratio
-                ),
-                "limiting_joint": limiting_joint,
-                "limiting_frame": (
-                    None if limiting_row is None else limiting_row.get("frame")
-                ),
-                "limiting_time_s": (
-                    None if limiting_row is None else limiting_row.get("time_s")
-                ),
-                "limiting_phase": (
-                    None if limiting_row is None else limiting_row.get("phase")
-                ),
-                "exceeds_capacity": exceeds_capacity,
-                "undefined_capacity_events": len(undefined_events),
-            }
-        )
-        summaries.append(summary)
-    return summaries
-
-
-def _project(
-    rows: Sequence[Mapping[str, object]], columns: Sequence[str]
-) -> list[list[object | None]]:
-    return [[row.get(column) for column in columns] for row in rows]
-
-
-_INVALID_WORKSHEET_CHARACTERS = re.compile(r'[\\/*?:\[\]<>|"\x00-\x1f]')
-_WINDOWS_RESERVED_NAMES = re.compile(
-    r"^(con|prn|aux|nul|com[1-9]|lpt[1-9])$", re.IGNORECASE
-)
-
-
-def _worksheet_name(
-    condition_id: object,
-    used_names: set[str],
-    simulation_index: int,
-) -> str:
-    """Build a safe, unique Excel sheet name of at most 31 characters."""
-    raw_name = "" if condition_id is None else str(condition_id)
-    base = _INVALID_WORKSHEET_CHARACTERS.sub("_", raw_name)
-    base = re.sub(r"\s+", " ", base).strip(" .'_")
-    if not base:
-        base = f"Simulation {simulation_index}"
-    if _WINDOWS_RESERVED_NAMES.fullmatch(base):
-        base = f"_{base}"
-    base = base[:31].rstrip(" .'") or f"Simulation {simulation_index}"
-
-    candidate = base
-    suffix_index = 2
-    while candidate.casefold() in used_names:
-        suffix = f" ({suffix_index})"
-        stem = base[: 31 - len(suffix)].rstrip(" .'")
-        candidate = f"{stem}{suffix}"
-        suffix_index += 1
-    used_names.add(candidate.casefold())
-    return candidate
-
-
-def _ordered_row_columns(
-    rows: Sequence[Mapping[str, object]],
-) -> tuple[str, ...]:
-    """Return the complete row schema in stable first-seen order."""
-    return tuple(dict.fromkeys(column for row in rows for column in row))
+def _workbook_contract() -> WorkbookContract:
+    return WorkbookContract(
+        schema_version=SCHEMA_VERSION,
+        joints=JOINTS,
+        standard_csv_columns=STANDARD_CSV_COLUMNS,
+        summary_columns=SUMMARY_COLUMNS,
+        column_definition=column_definition,
+    )
 
 
 def workbook_tables(
     rows: Sequence[Mapping[str, object]],
-) -> OrderedDict[str, dict[str, object]]:
-    """Build the student workbook: summary, combined frames and simulations."""
-    if not rows:
-        raise ValueError("L'export requiert au moins une ligne de résultats.")
-    versioned = add_schema_version(rows)
-    frame_columns = _ordered_row_columns(versioned)
-    simulations = _simulation_groups(versioned)
-    tables: OrderedDict[str, dict[str, object]] = OrderedDict()
-    tables[SUMMARY_SHEET] = {
-        "columns": list(SUMMARY_COLUMNS),
-        "rows": _project(_condition_summary_rows(versioned), SUMMARY_COLUMNS),
-    }
-    tables[COMBINED_SHEET] = {
-        "columns": list(frame_columns),
-        "rows": _project(versioned, frame_columns),
-    }
-
-    used_names = {
-        SUMMARY_SHEET.casefold(),
-        COMBINED_SHEET.casefold(),
-        DEFINITIONS_SHEET.casefold(),
-    }
-    for simulation_index, (condition_id, simulation_rows) in enumerate(
-        simulations, start=1
-    ):
-        sheet_name = _worksheet_name(condition_id, used_names, simulation_index)
-        tables[sheet_name] = {
-            "columns": list(frame_columns),
-            "rows": _project(simulation_rows, frame_columns),
-        }
-
-    definitions = []
-    for csv_name, columns in (
-        ("csv_standard", STANDARD_CSV_COLUMNS),
-        ("csv_full", frame_columns),
-    ):
-        for column in columns:
-            definition = column_definition(column)
-            definitions.append(
-                [
-                    SCHEMA_VERSION,
-                    csv_name,
-                    column,
-                    definition.unit,
-                    definition.definition,
-                    definition.sign_convention,
-                    definition.status,
-                ]
-            )
-    for table_name, columns in (
-        (SUMMARY_SHEET, SUMMARY_COLUMNS),
-        (COMBINED_SHEET, frame_columns),
-        ("Simulation", frame_columns),
-    ):
-        for column in columns:
-            definition = column_definition(column)
-            definitions.append(
-                [
-                    SCHEMA_VERSION,
-                    table_name,
-                    column,
-                    definition.unit,
-                    definition.definition,
-                    definition.sign_convention,
-                    definition.status,
-                ]
-            )
-    tables[DEFINITIONS_SHEET] = {
-        "columns": [
-            "schema_version",
-            "table",
-            "column",
-            "unit",
-            "definition",
-            "sign_convention",
-            "status",
-        ],
-        "rows": definitions,
-    }
-    return tables
-
-
-def missing_dictionary_columns(tables: Mapping[str, Mapping[str, object]]) -> set[str]:
-    """Return data columns that do not have an entry in the definitions table."""
-    defined = {
-        row[2] for row in tables[DEFINITIONS_SHEET]["rows"]  # type: ignore[index]
-    }
-    exported = {
-        column
-        for name, table in tables.items()
-        if name != DEFINITIONS_SHEET
-        for column in table["columns"]  # type: ignore[index]
-    }
-    return exported - defined
-
-
-def _artifact_runtime() -> tuple[Path, Path]:
-    """Locate Node and the artifact-tool modules without hard-coding a workstation."""
-    node_candidates = [
-        Path(value)
-        for value in (os.environ.get("SQUAT_GUI_NODE"), shutil.which("node"))
-        if value
-    ]
-    codex_dependencies = (
-        Path.home() / ".cache/codex-runtimes/codex-primary-runtime/dependencies/node"
-    )
-    node_candidates.extend(
-        (
-            codex_dependencies / "bin/node",
-            codex_dependencies / "bin/node.exe",
-        )
-    )
-    module_candidates = [
-        Path(value) for value in (os.environ.get("SQUAT_GUI_NODE_MODULES"),) if value
-    ]
-    module_candidates.extend(
-        (
-            Path.cwd() / "node_modules",
-            codex_dependencies / "node_modules",
-        )
-    )
-    node = next(
-        (candidate for candidate in node_candidates if candidate.is_file()), None
-    )
-    modules = next(
-        (
-            candidate
-            for candidate in module_candidates
-            if (candidate / "@oai/artifact-tool").exists()
-        ),
-        None,
-    )
-    if node is None or modules is None:
-        raise RuntimeError(
-            "Export Excel indisponible: Node.js et @oai/artifact-tool sont requis. "
-            "Définir SQUAT_GUI_NODE et SQUAT_GUI_NODE_MODULES si nécessaire."
-        )
-    return node, modules
-
-
-def _link_artifact_modules(link: Path, modules: Path) -> None:
-    """Expose the bundled Node modules in a temporary build directory."""
-    try:
-        link.symlink_to(modules, target_is_directory=True)
-        return
-    except OSError as error:
-        if os.name != "nt":
-            raise RuntimeError(
-                f"Impossible de lier les modules Artifact Tool: {error}"
-            ) from error
-    completed = subprocess.run(
-        ["cmd.exe", "/d", "/c", "mklink", "/J", str(link), str(modules)],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    if completed.returncode != 0:
-        detail = completed.stderr.strip() or completed.stdout.strip()
-        raise RuntimeError(
-            f"Impossible de créer la jonction Artifact Tool: {detail}"
-        )
+) -> WorkbookTables:
+    """Build the student workbook through the writer-independent model."""
+    return build_workbook_tables(rows, _workbook_contract())
 
 
 def _write_xlsx_artifact(
@@ -953,182 +574,27 @@ def _write_xlsx_artifact(
     *,
     preview_directory: str | Path | None = None,
 ) -> dict[str, object]:
-    """Write the canonical tables with Artifact Tool when its runtime exists."""
-    output = Path(path).expanduser().resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    node, modules = _artifact_runtime()
-    payload = {"schema_version": SCHEMA_VERSION, "tables": workbook_tables(rows)}
-    builder = Path(__file__).with_name("build_workbook.mjs")
-    if not builder.exists():
-        raise RuntimeError(f"Constructeur de classeur introuvable: {builder}")
-
-    with tempfile.TemporaryDirectory(prefix="squat-gui-xlsx-") as temporary:
-        work = Path(temporary)
-        local_builder = work / builder.name
-        shutil.copy2(builder, local_builder)
-        _link_artifact_modules(work / "node_modules", modules)
-        payload_path = work / "payload.json"
-        payload_path.write_text(
-            json.dumps(payload, ensure_ascii=False, allow_nan=False),
-            encoding="utf-8",
-        )
-        report_path = work / "report.json"
-        command = [
-            str(node),
-            str(local_builder),
-            str(payload_path),
-            str(output),
-            str(report_path),
-        ]
-        if preview_directory is not None:
-            command.append(str(Path(preview_directory).expanduser().resolve()))
-        completed = subprocess.run(
-            command,
-            cwd=work,
-            check=False,
-            capture_output=True,
-            text=True,
-        )
-        # Artifact Tool 2.8 can terminate Node abnormally during Windows
-        # teardown after preview rendering, despite having completed every
-        # awaited write.  The per-run report is written last and therefore
-        # provides a stronger completion signal than that teardown code.
-        if completed.returncode != 0 and not (
-            report_path.exists() and output.exists()
-        ):
-            detail = completed.stderr.strip() or completed.stdout.strip()
-            raise RuntimeError(f"Échec de l'export Excel: {detail}")
-        if not report_path.exists():
-            raise RuntimeError("Échec de l'export Excel: rapport de validation absent.")
-        report = json.loads(report_path.read_text(encoding="utf-8"))
-        report["writer"] = "artifact-tool"
-        return report
+    """Compatibility wrapper around the Artifact Tool writer."""
+    return write_xlsx_artifact(
+        path,
+        workbook_tables(rows),
+        schema_version=SCHEMA_VERSION,
+        builder=Path(__file__).with_name("build_workbook.mjs"),
+        preview_directory=preview_directory,
+    )
 
 
 def _excel_number_format(column: str) -> str | None:
-    if re.search(r"(^|_)(time|delta_time|duration).*_s$", column):
-        return "0.000"
-    if re.search(r"(_m|_m_s|_m_s2|_kg_m|_kg_m2|_N|_Nm|_W)$", column):
-        return "0.000000"
-    if re.search(r"(_deg|_deg_s|_deg_s2|_percent)$", column):
-        return "0.000"
-    return None
+    """Compatibility alias for the canonical workbook format selector."""
+    return excel_number_format(column)
 
 
 def _write_xlsx_openpyxl(
     path: str | Path,
     rows: Sequence[Mapping[str, object]],
 ) -> dict[str, object]:
-    """Write the canonical workbook without an external Node.js runtime."""
-    try:
-        from openpyxl import Workbook, load_workbook
-        from openpyxl.styles import Alignment, Font, PatternFill, Side
-        from openpyxl.worksheet.table import Table, TableStyleInfo
-        from openpyxl.utils import get_column_letter
-    except ImportError as error:
-        raise RuntimeError(
-            "Export Excel indisponible: installer openpyxl>=3.1 ou fournir "
-            "Node.js avec @oai/artifact-tool."
-        ) from error
-
-    output = Path(path).expanduser().resolve()
-    output.parent.mkdir(parents=True, exist_ok=True)
-    tables = workbook_tables(rows)
-    workbook = Workbook()
-    workbook.remove(workbook.active)
-    header_fill = PatternFill("solid", fgColor="245B4A")
-    alternate_fill = PatternFill("solid", fgColor="EAF2EE")
-    header_font = Font(color="FFFFFF", bold=True)
-    subtle_border = Side(style="thin", color="D8E1DD")
-    long_text_columns = {
-        "anthropometry_scaling_rule",
-        "scaling_rule",
-        "contact_source",
-        "support_point_source",
-        "capacity_model",
-        "capacity_source",
-        "definition",
-        "sign_convention",
-    }
-
-    for sheet_index, (name, table) in enumerate(tables.items(), start=1):
-        sheet = workbook.create_sheet(name)
-        sheet.sheet_view.showGridLines = False
-        columns = list(table["columns"])
-        table_rows = list(table["rows"])
-        sheet.append(columns)
-        for values in table_rows:
-            sheet.append(list(values))
-
-        sheet.row_dimensions[1].height = 34
-        for cell in sheet[1]:
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(
-                horizontal="left", vertical="center", wrap_text=True
-            )
-
-        for row_index in range(2, sheet.max_row + 1):
-            for cell in sheet[row_index]:
-                border = copy(cell.border)
-                border.bottom = subtle_border
-                cell.border = border
-                if row_index % 2 == 0:
-                    cell.fill = alternate_fill
-
-        for column_index, column in enumerate(columns, start=1):
-            letter = get_column_letter(column_index)
-            number_format = _excel_number_format(column)
-            is_long_text = column in long_text_columns
-            maximum_width = 48 if name == DEFINITIONS_SHEET or is_long_text else 24
-            measured_width = max(
-                len(str(sheet.cell(row=row_index, column=column_index).value or ""))
-                for row_index in range(1, sheet.max_row + 1)
-            )
-            sheet.column_dimensions[letter].width = min(
-                max(measured_width + 2, 11), maximum_width
-            )
-            for row_index in range(2, sheet.max_row + 1):
-                cell = sheet.cell(row=row_index, column=column_index)
-                if number_format and isinstance(cell.value, (int, float)):
-                    cell.number_format = number_format
-                if is_long_text:
-                    cell.alignment = Alignment(vertical="top", wrap_text=True)
-
-        sheet.freeze_panes = "C2"
-        if sheet.max_row >= 2:
-            reference = f"A1:{get_column_letter(sheet.max_column)}{sheet.max_row}"
-            excel_table = Table(
-                displayName=f"SquatTable{sheet_index}", ref=reference
-            )
-            excel_table.tableStyleInfo = TableStyleInfo(
-                name="TableStyleMedium2",
-                showFirstColumn=False,
-                showLastColumn=False,
-                showRowStripes=True,
-                showColumnStripes=False,
-            )
-            sheet.add_table(excel_table)
-
-    workbook.save(output)
-    check = load_workbook(output, read_only=False, data_only=False)
-    try:
-        formula_errors = [
-            cell.value
-            for sheet in check.worksheets
-            for row in sheet.iter_rows()
-            for cell in row
-            if isinstance(cell.value, str)
-            and cell.value in {"#REF!", "#DIV/0!", "#VALUE!", "#NAME?", "#N/A"}
-        ]
-        sheets = check.sheetnames
-    finally:
-        check.close()
-    return {
-        "sheets": sheets,
-        "formulaErrors": formula_errors,
-        "writer": "openpyxl",
-    }
+    """Compatibility wrapper around the autonomous openpyxl writer."""
+    return write_xlsx_openpyxl(path, workbook_tables(rows))
 
 
 def write_xlsx(

@@ -19,6 +19,9 @@ from squat_gui.export_schema import (
     workbook_tables,
     write_xlsx,
 )
+from squat_gui.xlsx_writers import (
+    write_xlsx_openpyxl as write_normalized_xlsx_openpyxl,
+)
 
 
 class ExportSchemaTests(unittest.TestCase):
@@ -254,6 +257,45 @@ class ExportSchemaTests(unittest.TestCase):
                 self.assertEqual(
                     workbook[SUMMARY_SHEET]["A1"].fill.fgColor.rgb[-6:], "245B4A"
                 )
+            finally:
+                workbook.close()
+
+    def test_openpyxl_writer_preserves_the_canonical_table_model(self) -> None:
+        """The physical writer must consume, not reinterpret, normalized tables."""
+        tables = workbook_tables(self.rows())
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "canonical-tables.xlsx"
+            report = write_normalized_xlsx_openpyxl(output, tables)
+
+            from openpyxl import load_workbook
+
+            workbook = load_workbook(output, read_only=True, data_only=False)
+            try:
+                self.assertEqual(report["sheets"], list(tables))
+                for name, table in tables.items():
+                    written_rows = list(workbook[name].iter_rows(values_only=True))
+                    self.assertEqual(written_rows[0], tuple(table["columns"]))
+                    expected_rows = [tuple(row) for row in table["rows"]]
+                    self.assertEqual(len(written_rows) - 1, len(expected_rows))
+                    for written, expected in zip(written_rows[1:], expected_rows):
+                        self.assertEqual(len(written), len(expected))
+                        for written_value, expected_value in zip(written, expected):
+                            if (
+                                isinstance(written_value, (int, float))
+                                and not isinstance(written_value, bool)
+                                and isinstance(expected_value, (int, float))
+                                and not isinstance(expected_value, bool)
+                            ):
+                                self.assertTrue(
+                                    math.isclose(
+                                        float(written_value),
+                                        float(expected_value),
+                                        rel_tol=1e-12,
+                                        abs_tol=1e-12,
+                                    )
+                                )
+                            else:
+                                self.assertEqual(written_value, expected_value)
             finally:
                 workbook.close()
 
