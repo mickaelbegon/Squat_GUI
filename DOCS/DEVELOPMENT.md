@@ -102,6 +102,23 @@ ignorés sans session graphique ; les exécuter sur un poste disposant de Tk pou
 valider une modification de layout. Les autres tests doivent rester
 indépendants de ces backends et de l'affichage.
 
+### Checklist manuelle GUI Windows
+
+À faire sur Windows avec l'environnement Conda du projet après une modification
+de l'interface. Cette vérification complète les tests headless : elle vise le
+rendu réel de Tk, les polices et les interactions du gestionnaire de fenêtres.
+
+- Lancer `python -m squat_gui`, puis vérifier à 1480×920 et 1024×700 que les
+  panneaux ne se chevauchent pas et que la colonne de gauche défile.
+- Dans la pose, glisser genou, hanche et épaule ; faire un clic droit sur chaque
+  articulation, valider avec Entrée et avec le pavé numérique, puis annuler.
+- Vérifier lecture/pause, curseur de frame, survol de l'animation et le bouton
+  « Verticaliser la barre » sans erreur ni blocage visuel.
+- Changer le type de graphe, le mode temporel et le mode didactique ; vérifier
+  les courbes, le curseur et les onglets Conditions/Valeurs/Variables contrôlées.
+- Ajouter, dupliquer et supprimer une condition ; sauvegarder/charger un JSON
+  et ouvrir les exports CSV et XLSX obtenus avec une application de bureau.
+
 `ruff` est inclus seulement dans l'extra de développement (`.[dev]`) : il n'est
 pas requis pour lancer l'application ni pour les distributions étudiantes. La
 première règle CI couvre exclusivement les erreurs certaines d'import, de
