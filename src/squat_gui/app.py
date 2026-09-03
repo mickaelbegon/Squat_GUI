@@ -523,6 +523,11 @@ class SquatGui(tk.Tk):
         self.left_scroll_canvas.bind("<Configure>", self._resize_left_contents)
         self.left_scroll_canvas.bind("<MouseWheel>", self._scroll_left_panel)
         left.columnconfigure(0, weight=1)
+        # When the window is tall enough, give the spare vertical space to the
+        # saved-conditions area rather than leaving an empty strip under it.
+        # On smaller windows the scroll canvas keeps the table at its minimum
+        # useful height instead.
+        left.rowconfigure(4, weight=1)
         guide_box = ttk.LabelFrame(left, text="Parcours didactique")
         guide_box.grid(row=0, column=0, sticky="ew", pady=(0, 8))
         guide_box.columnconfigure(1, weight=1)
@@ -1304,8 +1309,15 @@ class SquatGui(tk.Tk):
         )
 
     def _resize_left_contents(self, event: tk.Event) -> None:
+        # A Canvas window does not propagate the height of its viewport to its
+        # child.  Give the child at least the viewport height so row 4 (the
+        # conditions table) can consume any spare room; preserve its requested
+        # height when the controls need scrolling.
+        required_height = self.left_panel.winfo_reqheight()
         self.left_scroll_canvas.itemconfigure(
-            self.left_scroll_window, width=max(1, event.width)
+            self.left_scroll_window,
+            width=max(1, event.width),
+            height=max(1, event.height, required_height),
         )
         self._update_left_scroll_region()
 
