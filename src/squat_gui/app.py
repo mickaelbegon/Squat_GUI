@@ -11,6 +11,7 @@ os.environ.setdefault("LC_ALL", "en_US.UTF-8")
 import json
 import tkinter as tk
 from copy import deepcopy
+from collections.abc import Mapping
 from math import atan2, degrees, isfinite, radians
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
@@ -75,6 +76,14 @@ from .export_schema import write_xlsx
 from .raster_segments import draw_sprite_segment
 from .rendering import RenderLayers
 from .segment_shapes import draw_segment, load_segments
+from .session_persistence import (
+    ComparisonReference,
+    GuiSettings,
+    SavedCondition,
+    SessionDocument,
+    SessionJsonCodec,
+    SettingsReader,
+)
 from .timeline import (
     TimeMode,
     nearest_time_index,
@@ -160,7 +169,7 @@ class SquatGui(tk.Tk):
         self.states: list[MotionState] = []
         self.results: list[DynamicsResult] = []
         self.saved_condition_count = 0
-        self.saved_conditions: dict[str, dict[str, object]] = {}
+        self.saved_conditions: dict[str, SavedCondition] = {}
         self._comparison_reference_iid: str | None = None
         self.backend_status = detect_optional_backends()
         self.model_cache = (
@@ -1933,42 +1942,42 @@ class SquatGui(tk.Tk):
         self.redraw()
 
     def current_settings(self) -> dict[str, object]:
-        return {
-            "subject_profile": self.subject_profile_var.get(),
-            "bar_position": self.bar_position_var.get(),
-            "load_percent_bw": self.load_var.get(),
-            "load_kg": self.anthro().bar_mass,
-            "shank_percent": self.shank_var.get(),
-            "thigh_percent": self.thigh_var.get(),
-            "trunk_percent": self.trunk_var.get(),
-            "anthropometry_mode": self.anthropometry_mode_var.get(),
-            "duration_excentrique_s": self.eccentric_duration_var.get(),
-            "duration_isometrique_s": self.isometric_duration_var.get(),
-            "duration_concentrique_s": self.concentric_duration_var.get(),
-            "temporal_preset": self.temporal_preset_var.get(),
-            "wedge_20_deg": self.wedge_var.get(),
-            "frame": self.frame_var.get(),
-            "plot_choice": self.plot_choice.get(),
-            "quantity": self.quantity_var.get(),
-            "synchronized_source": self.synchronized_source_var.get(),
-            "show_joints": {name: var.get() for name, var in self.show_vars.items()},
-            "show_com_components": {
+        return GuiSettings(
+            subject_profile=self.subject_profile_var.get(),
+            bar_position=self.bar_position_var.get(),
+            load_percent_bw=self.load_var.get(),
+            load_kg=self.anthro().bar_mass,
+            shank_percent=self.shank_var.get(),
+            thigh_percent=self.thigh_var.get(),
+            trunk_percent=self.trunk_var.get(),
+            anthropometry_mode=self.anthropometry_mode_var.get(),
+            duration_excentrique_s=self.eccentric_duration_var.get(),
+            duration_isometrique_s=self.isometric_duration_var.get(),
+            duration_concentrique_s=self.concentric_duration_var.get(),
+            temporal_preset=self.temporal_preset_var.get(),
+            wedge_20_deg=self.wedge_var.get(),
+            frame=self.frame_var.get(),
+            plot_choice=self.plot_choice.get(),
+            quantity=self.quantity_var.get(),
+            synchronized_source=self.synchronized_source_var.get(),
+            show_joints={name: var.get() for name, var in self.show_vars.items()},
+            show_com_components={
                 name: var.get() for name, var in self.com_component_vars.items()
             },
-            "show_torque_components": {
+            show_torque_components={
                 name: var.get() for name, var in self.torque_component_vars.items()
             },
-            "max_torques": {
+            max_torques={
                 joint: var.get() for joint, var in self.max_torque_vars.items()
             },
-            "torque_preset": self.torque_preset_var.get(),
-            "show_torque_bounds": self.show_torque_bounds_var.get(),
-            "angle_adapt": self.angle_adapt_var.get(),
-            "velocity_adapt": self.velocity_adapt_var.get(),
-            "optimize_bar_path_experimental": self.optimize_bar_path_var.get(),
-            "show_sprite_centers": self.show_sprite_centers_var.get(),
-            "show_segment_com": self.show_segment_com_var.get(),
-            "display_layers": {
+            torque_preset=self.torque_preset_var.get(),
+            show_torque_bounds=self.show_torque_bounds_var.get(),
+            angle_adapt=self.angle_adapt_var.get(),
+            velocity_adapt=self.velocity_adapt_var.get(),
+            optimize_bar_path_experimental=self.optimize_bar_path_var.get(),
+            show_sprite_centers=self.show_sprite_centers_var.get(),
+            show_segment_com=self.show_segment_com_var.get(),
+            display_layers={
                 "global_com": self.show_global_com_var.get(),
                 "com_projection": self.show_com_projection_var.get(),
                 "segment_com": self.show_segment_com_var.get(),
@@ -1989,112 +1998,87 @@ class SquatGui(tk.Tk):
                 "capacity_rings": self.show_capacity_rings_var.get(),
                 "joint_markers": self.show_joint_markers_var.get(),
             },
-            "low_quality_sprites": self.low_quality_sprites_var.get(),
-            "refined_sprites": not self.low_quality_sprites_var.get(),
-            "time_mode": self.time_mode().value,
-            "normalize_time": self.time_mode() is TimeMode.NORMALIZED,
-            "subplot_mode": self.subplot_mode_var.get(),
-            "show_phase_limits": self.show_phase_limits_var.get(),
-            "show_phase_names": self.show_phase_names_var.get(),
-            "final_q_deg": [degrees(value) for value in self.final_q],
-            "frame_count": self.frame_count,
-        }
+            low_quality_sprites=self.low_quality_sprites_var.get(),
+            time_mode=self.time_mode().value,
+            subplot_mode=self.subplot_mode_var.get(),
+            show_phase_limits=self.show_phase_limits_var.get(),
+            show_phase_names=self.show_phase_names_var.get(),
+            final_q_deg=[degrees(value) for value in self.final_q],
+            frame_count=self.frame_count,
+        ).to_mapping()
 
     def apply_settings(self, settings: dict[str, object]) -> None:
+        reader = SettingsReader.from_object(settings)
         self._suspend_selection_clear = True
         try:
             self.subject_profile_var.set(
-                str(settings.get("subject_profile", self.subject_profile_var.get()))
+                reader.text("subject_profile", self.subject_profile_var.get())
             )
             self.bar_position_var.set(
-                str(settings.get("bar_position", self.bar_position_var.get()))
+                reader.text("bar_position", self.bar_position_var.get())
             )
-            if "load_percent_bw" in settings:
-                self.load_var.set(float(settings["load_percent_bw"]))
-            elif "load_kg" in settings:
-                self.load_var.set(100.0 * float(settings["load_kg"]) / 70.0)
-            self.shank_var.set(
-                float(settings.get("shank_percent", self.shank_var.get()))
-            )
-            self.thigh_var.set(
-                float(settings.get("thigh_percent", self.thigh_var.get()))
-            )
-            self.trunk_var.set(
-                float(settings.get("trunk_percent", self.trunk_var.get()))
-            )
+            if reader.has("load_percent_bw") or reader.has("load_kg"):
+                self.load_var.set(reader.load_percent_bw(self.load_var.get()))
+            self.shank_var.set(reader.number("shank_percent", self.shank_var.get()))
+            self.thigh_var.set(reader.number("thigh_percent", self.thigh_var.get()))
+            self.trunk_var.set(reader.number("trunk_percent", self.trunk_var.get()))
             self.anthropometry_mode_var.set(
-                str(
-                    settings.get(
-                        "anthropometry_mode", self.anthropometry_mode_var.get()
-                    )
+                reader.text(
+                    "anthropometry_mode", self.anthropometry_mode_var.get()
                 )
             )
-            legacy_duration = float(settings.get("duration_phase_s", 4.0))
-            self.eccentric_duration_var.set(
-                float(settings.get("duration_excentrique_s", legacy_duration))
-            )
-            self.isometric_duration_var.set(
-                float(settings.get("duration_isometrique_s", 2.0))
-            )
-            self.concentric_duration_var.set(
-                float(settings.get("duration_concentrique_s", legacy_duration))
-            )
-            loaded_preset = str(settings.get("temporal_preset", ""))
+            eccentric, isometric, concentric = reader.phase_durations()
+            self.eccentric_duration_var.set(eccentric)
+            self.isometric_duration_var.set(isometric)
+            self.concentric_duration_var.set(concentric)
+            loaded_preset = reader.text("temporal_preset")
             preset = TEMPORAL_PRESETS_BY_NAME.get(loaded_preset)
             self.temporal_preset_var.set(preset.name if preset is not None else "")
             self.temporal_preset_display_var.set(
                 temporal_preset_display(preset) if preset is not None else ""
             )
-            self.wedge_var.set(bool(settings.get("wedge_20_deg", False)))
+            self.wedge_var.set(reader.flag("wedge_20_deg"))
             self.torque_preset_var.set(
-                str(settings.get("torque_preset", self.torque_preset_var.get()))
+                reader.text("torque_preset", self.torque_preset_var.get())
             )
-            for joint, value in dict(settings.get("max_torques", {})).items():
+            for joint, value in reader.mapping("max_torques").items():
                 if joint in self.max_torque_vars:
                     self.max_torque_vars[joint].set(float(value))
-            for name, value in dict(settings.get("show_joints", {})).items():
+            for name, value in reader.mapping("show_joints").items():
                 if name in self.show_vars:
                     self.show_vars[name].set(bool(value))
             component_aliases = {"x": "horizontal", "y": "vertical"}
-            for name, value in dict(settings.get("show_com_components", {})).items():
+            for name, value in reader.mapping("show_com_components").items():
                 name = component_aliases.get(str(name), str(name))
                 if name in self.com_component_vars:
                     self.com_component_vars[name].set(bool(value))
-            for name, value in dict(settings.get("show_torque_components", {})).items():
+            for name, value in reader.mapping("show_torque_components").items():
                 if name in self.torque_component_vars:
                     self.torque_component_vars[name].set(bool(value))
             self.show_torque_bounds_var.set(
-                bool(
-                    settings.get(
-                        "show_torque_bounds", self.show_torque_bounds_var.get()
-                    )
-                )
+                reader.flag("show_torque_bounds", self.show_torque_bounds_var.get())
             )
             self.angle_adapt_var.set(
-                bool(settings.get("angle_adapt", self.angle_adapt_var.get()))
+                reader.flag("angle_adapt", self.angle_adapt_var.get())
             )
             self.velocity_adapt_var.set(
-                bool(settings.get("velocity_adapt", self.velocity_adapt_var.get()))
+                reader.flag("velocity_adapt", self.velocity_adapt_var.get())
             )
             self.optimize_bar_path_var.set(
-                bool(
-                    settings.get(
-                        "optimize_bar_path_experimental",
-                        self.optimize_bar_path_var.get(),
-                    )
+                reader.flag(
+                    "optimize_bar_path_experimental",
+                    self.optimize_bar_path_var.get(),
                 )
             )
             self.show_sprite_centers_var.set(
-                bool(
-                    settings.get(
-                        "show_sprite_centers", self.show_sprite_centers_var.get()
-                    )
+                reader.flag(
+                    "show_sprite_centers", self.show_sprite_centers_var.get()
                 )
             )
             self.show_segment_com_var.set(
-                bool(settings.get("show_segment_com", self.show_segment_com_var.get()))
+                reader.flag("show_segment_com", self.show_segment_com_var.get())
             )
-            display_layers = dict(settings.get("display_layers", {}))
+            display_layers = reader.mapping("display_layers")
             layer_vars = {
                 "global_com": self.show_global_com_var,
                 "com_projection": self.show_com_projection_var,
@@ -2119,59 +2103,43 @@ class SquatGui(tk.Tk):
             for name, variable in layer_vars.items():
                 if name in display_layers:
                     variable.set(bool(display_layers[name]))
-            if "low_quality_sprites" in settings:
-                self.low_quality_sprites_var.set(bool(settings["low_quality_sprites"]))
-            else:
-                self.low_quality_sprites_var.set(
-                    not bool(settings.get("refined_sprites", True))
-                )
-            legacy_normalized = bool(settings.get("normalize_time", False))
-            legacy_mode = (
-                TimeMode.NORMALIZED.value
-                if legacy_normalized
-                else TimeMode.CENTERED.value
-            )
-            requested_mode = str(settings.get("time_mode", legacy_mode))
-            self.time_mode_var.set(
-                requested_mode
-                if requested_mode in {mode.value for mode in TimeMode}
-                else TimeMode.CENTERED.value
-            )
+            self.low_quality_sprites_var.set(reader.low_quality_sprites())
+            self.time_mode_var.set(reader.time_mode())
             self.subplot_mode_var.set(
-                bool(settings.get("subplot_mode", self.subplot_mode_var.get()))
+                reader.flag("subplot_mode", self.subplot_mode_var.get())
             )
             self.final_q = self.clamp_final_q(
                 tuple(
                     radians(value)
                     for value in self.normalized_final_q_deg(
-                        settings.get("final_q_deg")
+                        reader.raw("final_q_deg")
                     )
                 )
             )
             self.sync_pose_angle_fields_from_final_q()
             self.quantity_var.set(
-                str(settings.get("quantity", self.quantity_var.get()))
+                reader.text("quantity", self.quantity_var.get())
             )
             self.synchronized_source_var.set(
                 str(
-                    settings.get(
+                    reader.text(
                         "synchronized_source", self.synchronized_source_var.get()
                     )
                 )
             )
             self.show_phase_limits_var.set(
                 bool(
-                    settings.get("show_phase_limits", self.show_phase_limits_var.get())
+                    reader.flag("show_phase_limits", self.show_phase_limits_var.get())
                 )
             )
             self.show_phase_names_var.set(
-                bool(settings.get("show_phase_names", self.show_phase_names_var.get()))
+                reader.flag("show_phase_names", self.show_phase_names_var.get())
             )
-            plot_choice = str(settings.get("plot_choice", self.plot_choice.get()))
+            plot_choice = reader.text("plot_choice", self.plot_choice.get())
             self.update_plot_choices()
             if plot_choice in self.available_plot_choices():
                 self.plot_choice.set(plot_choice)
-            self.frame_var.set(int(settings.get("frame", self.frame_var.get())))
+            self.frame_var.set(reader.integer("frame", self.frame_var.get()))
             self.on_plot_choice_changed()
         finally:
             self._suspend_selection_clear = False
@@ -2197,27 +2165,11 @@ class SquatGui(tk.Tk):
             if answer is None:
                 return
             include_conditions = bool(answer)
-        payload = {
-            "version": 2,
-            "settings": self.current_settings(),
-            "conditions": (
-                [
-                    {
-                        "iid": iid,
-                        "label": condition["label"],
-                        "settings": condition["settings"],
-                        "final_q_deg": condition["final_q_deg"],
-                        "comparison_reference": condition.get("comparison_reference"),
-                    }
-                    for iid, condition in self.saved_conditions.items()
-                ]
-                if include_conditions
-                else []
-            ),
-        }
-        Path(path).write_text(
-            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        document = SessionDocument.from_runtime(
+            self.current_settings(),
+            self.saved_conditions if include_conditions else {},
         )
+        SessionJsonCodec.write(path, document)
         self.status_var.set(f"configuration ecrite: {path}")
 
     def load_json(self, path: str | Path | None = None) -> None:
@@ -2229,18 +2181,16 @@ class SquatGui(tk.Tk):
             if not selected:
                 return
             path = selected
-        payload = json.loads(Path(path).read_text(encoding="utf-8"))
+        document = SessionJsonCodec.read(path)
         self.clear_conditions()
-        self.apply_settings(payload.get("settings", {}))
-        for condition in payload.get("conditions", []):
+        self.apply_settings(document.settings)
+        for condition in document.conditions:
             self.add_saved_condition(
-                settings=dict(condition.get("settings", {})),
-                final_q_deg=[
-                    float(value) for value in condition.get("final_q_deg", [])
-                ],
-                label=str(condition.get("label", "")) or None,
-                iid=str(condition.get("iid", "")) or None,
-                comparison_reference=condition.get("comparison_reference"),
+                settings=dict(condition.settings),
+                final_q_deg=list(condition.final_q_deg),
+                label=condition.label or None,
+                iid=condition.iid or None,
+                comparison_reference=condition.comparison_reference,
             )
         self.status_var.set(f"configuration chargee: {path}")
         self.redraw()
@@ -5681,7 +5631,7 @@ class SquatGui(tk.Tk):
         iid: str | None = None,
         states: list[MotionState] | None = None,
         results: list[DynamicsResult] | None = None,
-        comparison_reference: dict[str, object] | None = None,
+        comparison_reference: ComparisonReference | Mapping[str, object] | None = None,
     ) -> str:
         self.saved_condition_count += 1
         condition_iid = iid or f"condition-{self.saved_condition_count}"
@@ -5720,28 +5670,29 @@ class SquatGui(tk.Tk):
         squat_angles = self.display_joint_angles(
             tuple(radians(value) for value in final_q_deg)
         )
+        typed_reference = ComparisonReference.from_object(comparison_reference)
         differences = ()
-        if comparison_reference is not None:
+        if typed_reference is not None:
             differences = parameter_differences(
-                dict(comparison_reference.get("settings", {})),
-                list(comparison_reference.get("final_q_deg", [])),
+                dict(typed_reference.settings),
+                list(typed_reference.final_q_deg),
                 settings,
                 final_q_deg,
             )
         summary = (
             difference_summary(differences)
-            if comparison_reference is not None
+            if typed_reference is not None
             else "référence indépendante"
         )
-        self.saved_conditions[condition_iid] = {
-            "label": condition_label,
-            "settings": settings,
-            "final_q_deg": final_q_deg,
-            "states": states,
-            "results": results,
-            "comparison_reference": comparison_reference,
-            "difference_summary": summary,
-        }
+        self.saved_conditions[condition_iid] = SavedCondition(
+            label=condition_label,
+            settings=dict(settings),
+            final_q_deg=list(final_q_deg),
+            states=states,
+            results=results,
+            comparison_reference=typed_reference,
+            difference_summary=summary,
+        )
         self.conditions_table.insert(
             "",
             "end",
