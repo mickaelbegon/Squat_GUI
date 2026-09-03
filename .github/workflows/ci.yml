@@ -35,6 +35,7 @@ jobs:
       - name: Verify source formatting and bytecode
         run: |
           git diff --check
+          python -m ruff check src tests packaging
           python -m compileall -q src tests packaging/squat_gui_launcher.py
 
       - name: Run test suite

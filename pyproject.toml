@@ -14,6 +14,7 @@ biomechanics = [
 ]
 dev = [
     "pytest",
+    "ruff>=0.8,<1",
 ]
 packaging = [
     "pillow",
@@ -37,3 +38,25 @@ squat_gui = ["*.mjs"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+
+[tool.ruff]
+target-version = "py39"
+line-length = 88
+extend-exclude = ["generated"]
+
+[tool.ruff.lint]
+# Première étape volontairement limitée aux erreurs certaines. Les règles de
+# style et le formatage seront activés progressivement, une fois la base
+# existante normalisée, afin de ne pas introduire une dette de violations.
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+# Dette antérieure au contrôle Ruff. Ces exceptions, volontairement localisées,
+# maintiennent la CI utile pour le nouveau code sans modifier de comportement
+# applicatif dans cette première étape.
+"src/squat_gui/cli.py" = ["F401"]
+"src/squat_gui/dynamics.py" = ["F401"]
+"src/squat_gui/export_schema.py" = ["F401"]
+"src/squat_gui/raster_segments.py" = ["F401"]
+"src/squat_gui/rendering.py" = ["F401", "F821"]
+"tests/test_app_plot.py" = ["F841"]

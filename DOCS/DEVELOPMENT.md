@@ -37,6 +37,7 @@ dépendance facultative et ne doit pas bloquer le lancement du GUI.
 ## Vérifications
 
 ```bash
+python -m ruff check src tests packaging
 python -m pytest -q
 python -m compileall -q src tests packaging/squat_gui_launcher.py
 git diff --check
@@ -44,6 +45,19 @@ git diff --check
 
 Certains tests `biorbd` sont ignorés lorsque ses extensions natives ne sont pas
 installées. Les autres tests doivent rester indépendants de ce backend.
+
+`ruff` est inclus seulement dans l'extra de développement (`.[dev]`) : il n'est
+pas requis pour lancer l'application ni pour les distributions étudiantes. La
+première règle CI couvre exclusivement les erreurs certaines d'import, de
+syntaxe et de structure. Le formatage automatique et les règles de style ne
+sont pas encore bloquants, afin d'éviter d'imposer une remise en forme massive
+du code existant. Pour normaliser ponctuellement un nouveau fichier ou un
+fichier modifié, utiliser :
+
+```bash
+python -m ruff format chemin/du_fichier.py
+python -m ruff check chemin/du_fichier.py
+```
 
 ## Ligne de commande et exports
 
