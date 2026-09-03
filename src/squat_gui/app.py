@@ -27,7 +27,8 @@ from .bar_path_optimization import (
     BarPathOptimizationResult,
     optimize_deep_squat_bar_path,
 )
-from .cli import Condition, condition_from_settings, simulate_condition, write_csv
+from .export_io import write_csv
+from .simulation_service import Condition, condition_from_settings, simulate_condition
 from .comparison import difference_summary, parameter_differences
 from .dynamics import (
     GRAVITY,
