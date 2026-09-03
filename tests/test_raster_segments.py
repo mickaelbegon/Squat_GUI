@@ -1,4 +1,6 @@
 import unittest
+from pathlib import Path
+from unittest.mock import patch
 
 from squat_gui import raster_segments
 from squat_gui.bar_com_editor import calibration_images, calibration_payload, point_relative_to_shoulder
@@ -65,6 +67,62 @@ class RasterSegmentAnchorTest(unittest.TestCase):
                 cleaned = raster_segments._load_transparent_sprite(filename, refined=True)
                 for x, y in targets:
                     self.assertEqual(cleaned.getpixel((round(x), round(y)))[3], 0)
+
+    def test_unknown_segment_reports_the_requested_name(self):
+        with self.assertRaisesRegex(
+            raster_segments.SpriteDefinitionError,
+            "Unknown sprite segment 'forearm'",
+        ):
+            raster_segments.sprite_spec("forearm")
+
+    def test_unknown_trunk_variant_reports_the_requested_variant(self):
+        with self.assertRaisesRegex(
+            raster_segments.SpriteDefinitionError,
+            "Unknown trunk sprite variant",
+        ):
+            raster_segments.sprite_spec("trunk", trunk_variant=("homme", "side"))
+
+    def test_missing_asset_reports_its_path(self):
+        with patch.object(raster_segments, "_asset_path", return_value=Path("missing.png")):
+            with self.assertRaisesRegex(raster_segments.SpriteAssetError, "missing.png"):
+                raster_segments._load_source_image("missing.png", refined=False, mode="RGBA")
+
+    def test_invalid_calibration_reports_target_count(self):
+        raster_segments.sprite_spec.cache_clear()
+        try:
+            with patch.object(raster_segments, "_component_centers", return_value=[]):
+                with self.assertRaisesRegex(
+                    raster_segments.SpriteCalibrationError,
+                    "pied.png.*one rotation target.*found 0",
+                ):
+                    raster_segments.sprite_spec("foot")
+        finally:
+            raster_segments.sprite_spec.cache_clear()
+
+    def test_blank_foot_reports_that_its_silhouette_is_missing(self):
+        from PIL import Image
+
+        blank = Image.new("RGB", (10, 10), (255, 255, 255))
+        with self.assertRaisesRegex(
+            raster_segments.SpriteCalibrationError,
+            "blank.png cannot locate the foot silhouette",
+        ):
+            raster_segments._sprite_spec_from_targets(
+                "foot", "blank.png", blank, [(4.0, 4.0)]
+            )
+
+    def test_display_cleanup_opens_each_sprite_once(self):
+        raster_segments._load_transparent_sprite.cache_clear()
+        try:
+            with patch.object(
+                raster_segments,
+                "_load_source_image",
+                wraps=raster_segments._load_source_image,
+            ) as load_source:
+                raster_segments._load_transparent_sprite("pied.png", refined=True)
+            load_source.assert_called_once_with("pied.png", True, "RGBA")
+        finally:
+            raster_segments._load_transparent_sprite.cache_clear()
 
     def test_bar_com_editor_includes_all_twelve_trunk_images(self):
         images = calibration_images()

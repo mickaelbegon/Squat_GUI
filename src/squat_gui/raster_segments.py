@@ -15,6 +15,22 @@ from .resources import asset_path
 ASSET_DIR = asset_path("raster_segments")
 
 
+class SpriteError(RuntimeError):
+    """Base exception for a sprite that cannot be prepared for rendering."""
+
+
+class SpriteDefinitionError(SpriteError, ValueError):
+    """Raised when a requested sprite or its variant is not registered."""
+
+
+class SpriteAssetError(SpriteError):
+    """Raised when a registered sprite asset cannot be opened."""
+
+
+class SpriteCalibrationError(SpriteError, ValueError):
+    """Raised when the calibration targets embedded in a sprite are invalid."""
+
+
 @dataclass(frozen=True)
 class SpriteSpec:
     name: str
@@ -56,7 +72,7 @@ def pillow_available() -> bool:
         import PIL.ImageTk  # noqa: F401
 
         return True
-    except Exception:
+    except ImportError:
         return False
 
 
@@ -73,6 +89,45 @@ def _asset_path(filename: str, refined: bool) -> Path:
     if refined:
         return ASSET_DIR / "refined" / filename
     return ASSET_DIR / filename
+
+
+def _sprite_filename(name: str, trunk_variant: tuple[str, str] | None) -> str:
+    """Resolve a public segment name to its image filename.
+
+    Keeping this lookup separate gives callers a useful error instead of the
+    opaque ``KeyError`` that used to escape from the module-level mappings.
+    """
+
+    if name == "trunk" and trunk_variant is not None:
+        try:
+            return TRUNK_VARIANTS[trunk_variant]
+        except KeyError as exc:
+            raise SpriteDefinitionError(
+                f"Unknown trunk sprite variant {trunk_variant!r}. "
+                f"Expected one of: {', '.join(map(str, TRUNK_VARIANTS))}."
+            ) from exc
+    try:
+        return SPRITE_FILES[name]
+    except KeyError as exc:
+        raise SpriteDefinitionError(
+            f"Unknown sprite segment {name!r}. Expected one of: "
+            f"{', '.join(SPRITE_FILES)}."
+        ) from exc
+
+
+def _load_source_image(filename: str, refined: bool, mode: str):
+    """Open and detach a sprite image, translating file failures to domain errors."""
+
+    from PIL import Image
+
+    source_path = _asset_path(filename, refined)
+    try:
+        with Image.open(source_path) as source:
+            return source.convert(mode)
+    except FileNotFoundError as exc:
+        raise SpriteAssetError(f"Sprite asset is missing: {source_path}") from exc
+    except OSError as exc:
+        raise SpriteAssetError(f"Sprite asset cannot be read: {source_path}") from exc
 
 
 def _is_dark(pixel: tuple[int, int, int]) -> bool:
@@ -139,7 +194,7 @@ def _component_centers(image) -> list[tuple[float, float]]:
     return sorted(centers, key=lambda center: (center[1], center[0]))
 
 
-def _toe_anchor_from_silhouette(image) -> tuple[float, float]:
+def _toe_anchor_from_silhouette(image, filename: str) -> tuple[float, float]:
     width, height = image.size
     pixels = image.load()
     rightmost = 0
@@ -153,12 +208,18 @@ def _toe_anchor_from_silhouette(image) -> tuple[float, float]:
                 elif x >= rightmost - 2:
                     y_values.append(y)
     if not y_values:
-        raise ValueError("No foreground pixels found for foot sprite")
+        raise SpriteCalibrationError(
+            f"Sprite calibration for {filename} cannot locate the foot silhouette."
+        )
     y_values.sort()
     return (float(rightmost), float(y_values[len(y_values) // 2]))
 
 
-def _trunk_anchor_from_silhouette(image, distal_anchor: tuple[float, float]) -> tuple[float, float]:
+def _trunk_anchor_from_silhouette(
+    image,
+    distal_anchor: tuple[float, float],
+    filename: str,
+) -> tuple[float, float]:
     width, height = image.size
     pixels = image.load()
     ys: list[int] = []
@@ -167,33 +228,50 @@ def _trunk_anchor_from_silhouette(image, distal_anchor: tuple[float, float]) -> 
             if _is_foreground(pixels[x, y]):
                 ys.append(y)
     if not ys:
-        raise ValueError("No foreground pixels found for trunk sprite")
+        raise SpriteCalibrationError(
+            f"Sprite calibration for {filename} cannot locate the trunk silhouette."
+        )
     top = min(ys)
     shoulder_y = top + 0.30 * (distal_anchor[1] - top)
     return (distal_anchor[0], shoulder_y)
 
 
-@lru_cache(maxsize=32)
-def sprite_spec(name: str, refined: bool = False, trunk_variant: tuple[str, str] | None = None) -> SpriteSpec:
-    from PIL import Image
+def _sprite_spec_from_targets(name: str, filename: str, image, centers: list[tuple[float, float]]) -> SpriteSpec:
+    """Build anchors from embedded calibration targets for one loaded sprite."""
 
-    filename = TRUNK_VARIANTS[trunk_variant] if name == "trunk" and trunk_variant else SPRITE_FILES[name]
-    image = _rgb_on_white(Image.open(_asset_path(filename, refined)))
-    centers = _component_centers(image)
     if name == "foot":
         if len(centers) != 1:
-            raise ValueError(f"Expected one rotation target in {filename}, found {len(centers)}")
-        return SpriteSpec(name, filename, centers[0], _toe_anchor_from_silhouette(image))
+            raise SpriteCalibrationError(
+                f"Sprite calibration for {filename} must contain one rotation target; "
+                f"found {len(centers)}."
+            )
+        return SpriteSpec(name, filename, centers[0], _toe_anchor_from_silhouette(image, filename))
 
     if name == "trunk" and len(centers) == 1:
         distal = centers[0]
-        return SpriteSpec(name, filename, distal, _trunk_anchor_from_silhouette(image, distal))
+        return SpriteSpec(
+            name,
+            filename,
+            distal,
+            _trunk_anchor_from_silhouette(image, distal, filename),
+        )
 
     if len(centers) < 2:
-        raise ValueError(f"Expected two rotation targets in {filename}, found {len(centers)}")
+        raise SpriteCalibrationError(
+            f"Sprite calibration for {filename} must contain at least two rotation "
+            f"targets; found {len(centers)}."
+        )
     proximal = centers[0]
     distal = centers[-1]
     return SpriteSpec(name, filename, distal, proximal)
+
+
+@lru_cache(maxsize=32)
+def sprite_spec(name: str, refined: bool = False, trunk_variant: tuple[str, str] | None = None) -> SpriteSpec:
+    filename = _sprite_filename(name, trunk_variant)
+    image = _rgb_on_white(_load_source_image(filename, refined, "RGBA"))
+    centers = _component_centers(image)
+    return _sprite_spec_from_targets(name, filename, image, centers)
 
 
 def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> float:
@@ -204,10 +282,12 @@ def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> flo
 
 @lru_cache(maxsize=32)
 def _load_transparent_sprite(filename: str, refined: bool):
-    from PIL import Image, ImageDraw
+    from PIL import ImageDraw
 
-    source_path = _asset_path(filename, refined)
-    image = Image.open(source_path).convert("RGBA")
+    image = _load_source_image(filename, refined, "RGBA")
+    # The calibration image must be captured before the display cleanup below.
+    # This also means the source PNG is opened only once per cached sprite.
+    calibration_image = _rgb_on_white(image)
     pixels = image.load()
     width, height = image.size
     for y in range(height):
@@ -225,7 +305,6 @@ def _load_transparent_sprite(filename: str, refined: bool):
     # misleading impression that the body is made from mixed-quality pieces.
     # Locate them from an untouched RGB copy so calibration remains entirely
     # independent from the display cleanup.
-    calibration_image = _rgb_on_white(Image.open(source_path))
     target_centers = _component_centers(calibration_image)
     target_radius = max(12, round(min(width, height) * 0.032))
     painter = ImageDraw.Draw(image)
