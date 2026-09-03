@@ -34,17 +34,65 @@ dépendance facultative et ne doit pas bloquer le lancement du GUI.
 - `packaging/` : spécification PyInstaller, scripts et recette de distribution ;
 - `.github/workflows/` : intégration continue et publication des releases.
 
+## Architecture en couches
+
+Le projet sépare volontairement l'interface, les données de session, le calcul
+et les sorties. Une couche ne doit pas contourner les contrats de la couche
+voisine : cela permet notamment d'obtenir les mêmes résultats depuis le GUI,
+la CLI et les tests.
+
+```text
+Tkinter (app.py) ─┐
+                  ├─ modèles de condition/session ─ simulation_service ─ cinématique/dynamique
+CLI (cli.py) ─────┘                  │                         │                    │
+                                     │                         └─ backend analytique / biorbd optionnel
+                                     ├─ rendu Tk / export vidéo
+                                     └─ CSV / Excel / JSON
+```
+
+| Couche | Modules principaux | Responsabilité et règle de dépendance |
+|---|---|---|
+| Interface | `app.py`, `didactics.py`, `timeline.py`, `plot_data.py` | Widgets Tkinter, interactions, parcours pédagogique et orchestration visuelle. Elle transforme les réglages en `Condition`, mais ne porte pas les règles de simulation ou de persistance. |
+| Modèles et session | `simulation_service.py`, `session_persistence.py`, `condition_store.py`, `comparison.py` | `Condition` est l'entrée immuable d'un calcul ; `GuiSettings` et `SavedCondition` forment le contrat JSON de session. Ces modules restent indépendants de Tkinter. |
+| Simulation | `anthropometry.py`, `kinematics.py`, `dynamics.py`, `observables.py`, `bar_path_optimization.py` | Construction du sujet, trajectoires, dynamique inverse, observables et optimisation expérimentale de trajectoire de barre. Le service `simulate_condition` est le point de passage partagé par le GUI et la CLI. |
+| Rendu | `rendering.py`, `scene_model.py`, `raster_segments.py`, `segment_shapes.py`, `resources.py`, `video_export.py` | Géométrie de scène, couches visuelles, sprites et rendu hors écran. Le rendu consomme des états/résultats ; il ne modifie ni la condition ni le calcul. |
+| Exports | `export_io.py`, `export_schema.py`, `workbook_model.py`, `xlsx_writers.py` | Contrats de colonnes et de feuilles, écriture CSV atomique et writers Excel. Les formats étudiants restent séparés des données diagnostiques complètes. |
+| Backends optionnels | `backend.py`, `yeadon.py` | Détection, cache et intégration `biorbd`/`biobuddy`. Le backend analytique reste disponible quand ces dépendances natives sont absentes. |
+
+Lorsqu'une fonctionnalité traverse plusieurs couches, commencer par le modèle
+ou contrat partagé, ajouter un test sans GUI, puis relier l'interface et les
+exports. Éviter de faire passer une structure Tkinter, un widget ou un chemin
+de fichier directement dans les modules de simulation.
+
+### Points d'entrée
+
+| Commande | Usage |
+|---|---|
+| `python -m squat_gui` | Lance le GUI sans argument ; délègue à la CLI si des arguments suivent. |
+| `squat-gui` | Lance explicitement l'interface Tkinter. |
+| `squat-gui-cli` | Lance explicitement la CLI (`run`, `batch`, etc.). |
+| `squat-bar-com-editor` | Ouvre l'éditeur de calibration du centre de barre. |
+
+Les scripts sont déclarés dans `pyproject.toml`. Toute nouvelle entrée doit
+être documentée ici et pouvoir s'exécuter dans l'environnement minimal indiqué
+plus haut.
+
 ## Vérifications
+
+Avant un commit ou une pull request, exécuter depuis la racine du dépôt :
 
 ```bash
 python -m ruff check src tests packaging
-python -m pytest -q
 python -m compileall -q src tests packaging/squat_gui_launcher.py
 git diff --check
+python -m pytest -q
 ```
 
 Certains tests `biorbd` sont ignorés lorsque ses extensions natives ne sont pas
-installées. Les autres tests doivent rester indépendants de ce backend.
+installées. Les tests Tkinter qui vérifient la géométrie peuvent aussi être
+ignorés sans session graphique ; les exécuter sur un poste disposant de Tk pour
+valider une modification de layout. Les autres tests doivent rester
+indépendants de ces backends et de l'affichage.
 
 `ruff` est inclus seulement dans l'extra de développement (`.[dev]`) : il n'est
 pas requis pour lancer l'application ni pour les distributions étudiantes. La
