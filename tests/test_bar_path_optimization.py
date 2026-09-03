@@ -6,6 +6,9 @@ from unittest.mock import patch
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.bar_path_optimization import (
     ANGLE_PERTURBATION_RAD,
+    BarPathFailureCode,
+    BarPathOptimizationProgress,
+    BarPathOptimizationStage,
     DEPTH_TOLERANCE_M,
     optimize_deep_squat_bar_path,
 )
@@ -134,6 +137,10 @@ class BarPathOptimizationTests(unittest.TestCase):
         self.assertEqual(result.final_q, requested)
         self.assertEqual(result.before, result.after)
         self.assertIn("aucune posture faisable", result.message)
+        self.assertIsNotNone(result.diagnostic)
+        self.assertEqual(
+            result.diagnostic.code, BarPathFailureCode.NO_FEASIBLE_START
+        )
         self.assertEqual(solver_calls, 0)
 
     def test_missing_scipy_returns_baseline_and_clear_diagnostic(self) -> None:
@@ -169,6 +176,73 @@ class BarPathOptimizationTests(unittest.TestCase):
         self.assertIs(result.states, baseline[0])
         self.assertIs(result.dynamics, baseline[1])
         self.assertIn("SciPy", result.message)
+        self.assertIsNotNone(result.diagnostic)
+        self.assertEqual(result.diagnostic.code, BarPathFailureCode.SCIPY_UNAVAILABLE)
+
+    def test_progress_callback_receives_typed_monotonic_milestones(self) -> None:
+        events: list[BarPathOptimizationProgress] = []
+        requested = tuple(math.radians(value) for value in (22.0, -58.0, 50.0))
+
+        result = optimize_deep_squat_bar_path(
+            self.anthro,
+            requested,
+            self.durations,
+            21,
+            self.max_torques,
+            True,
+            progress_callback=events.append,
+        )
+
+        self.assertTrue(result.applied, result.message)
+        self.assertTrue(all(isinstance(event, BarPathOptimizationProgress) for event in events))
+        self.assertEqual(events[0].stage, BarPathOptimizationStage.BASELINE_READY)
+        self.assertIn(
+            BarPathOptimizationStage.SOLVER_STARTED,
+            [event.stage for event in events],
+        )
+        self.assertIn(
+            BarPathOptimizationStage.CANDIDATE_EVALUATED,
+            [event.stage for event in events],
+        )
+        self.assertEqual(events[-1].stage, BarPathOptimizationStage.COMPLETED)
+        self.assertEqual(
+            [event.evaluated_candidates for event in events],
+            sorted(event.evaluated_candidates for event in events),
+        )
+
+    def test_solver_runtime_error_becomes_controlled_safe_fallback(self) -> None:
+        requested = tuple(math.radians(value) for value in (22.0, -58.0, 50.0))
+        baseline = simulate(
+            self.anthro,
+            requested,
+            self.durations,
+            21,
+            self.max_torques,
+            True,
+        )
+        events: list[BarPathOptimizationProgress] = []
+
+        def failing_solver(*_args, **_kwargs):
+            raise RuntimeError("indisponibilité native contrôlée")
+
+        result = optimize_deep_squat_bar_path(
+            self.anthro,
+            requested,
+            self.durations,
+            21,
+            self.max_torques,
+            True,
+            baseline=baseline,
+            minimize_function=failing_solver,
+            progress_callback=events.append,
+        )
+
+        self.assertFalse(result.applied)
+        self.assertIs(result.states, baseline[0])
+        self.assertIs(result.dynamics, baseline[1])
+        self.assertEqual(result.diagnostic.code, BarPathFailureCode.SOLVER_ERROR)
+        self.assertIn("indisponibilité native contrôlée", result.message)
+        self.assertEqual(events[-1].stage, BarPathOptimizationStage.FALLBACK)
 
 
 if __name__ == "__main__":
