@@ -8,10 +8,11 @@ du GUI, de la CLI, du calcul, du rendu, des exports et de la persistance. Elle
 ne doit être fusionnée qu'après la recette Windows ci-dessous ; elle ne change
 ni les hypothèses biomécaniques, ni la version distribuée (`0.2.0`).
 
-Écart vérifié le 3 septembre 2026 : `origin/main` est ancêtre de la branche ;
-la branche contient 28 commits supplémentaires et aucun commit de `main` à
-réintégrer. Le diff représente 87 fichiers (13 546 ajouts, 7 615 suppressions),
-principalement dans `src/squat_gui/` et `tests/`.
+Écart vérifié le 3 septembre 2026, avec `git diff main...HEAD` : `main` est
+ancêtre de la branche ; la branche contient 27 commits supplémentaires et aucun
+commit de `main` à réintégrer. Le diff représente exactement 83 fichiers
+(12 938 ajouts, 7 726 suppressions), principalement dans `src/squat_gui/` et
+`tests/`.
 
 ## Architecture résultante
 
@@ -43,7 +44,7 @@ Exécutées dans l'environnement Conda `squat-gui` (Python 3.11.15) :
 ```powershell
 python -m ruff check src tests packaging
 python -m compileall -q src tests packaging\squat_gui_launcher.py
-git diff --check origin/main...HEAD
+git diff --check main...HEAD
 ```
 
 Résultat : succès, sans erreur signalée. La suite complète a également été
@@ -57,14 +58,40 @@ Les tests ajoutés couvrent notamment les frontières d'architecture, les
 délégations GUI/CLI, les contrôleurs de pose/conditions/scène/graphes, les
 exports, le packaging, et les régressions numériques (`tests/test_numerical_regression.py`).
 
+## Blocages et validations non effectuées
+
+La PR doit rester en **brouillon**. Les validations suivantes n'ont pas été
+effectuées et constituent des conditions de sortie avant une demande de revue
+finale ou une fusion :
+
+- **GUI Windows/Tkinter : non effectuée.** Le build Windows crée l'exécutable,
+  mais son smoke test et la recette échouent avec
+  `ModuleNotFoundError: No module named 'tkinter'`. PyInstaller signale aussi
+  que l'installation Tkinter est cassée et qu'elle sera exclue
+  (`tkinter installation is broken. It will be excluded`). La manipulation
+  manuelle de l'interface, y compris la checklist de dimensions, pose, glisser-
+  déposer, animation, graphes et exports, n'a donc pas encore pu être validée
+  sur l'exécutable livré.
+- **biorbd : non effectuée.** Ni le backend optionnel dans un bundle Windows,
+  ni le fallback analytique dans l'exécutable n'ont été validés dans une recette
+  complète. Les tests optionnels ignorés ne constituent pas cette validation.
+- **Correctifs en attente.** Un correctif PyInstaller est en cours pour rendre
+  Tkinter disponible dans le bundle et faire réussir le smoke test. Le script
+  `packaging/build_windows.ps1` doit aussi contrôler `$LASTEXITCODE` du smoke
+  afin qu'un échec ne soit jamais masqué. Des ajustements aux façades de
+  `dynamics.py`, actuellement incomplètes, sont également en cours. Après ces
+  corrections, il faudra relancer les contrôles automatisés, le build, le smoke
+  test et la recette sur une seconde machine.
+
 ## Limites connues de validation
 
 - Tkinter : les tests sans affichage ne valident pas les dimensions de widgets,
-  polices, scroll, survol ni les gestes utilisateur. Une session graphique
-  Windows reste obligatoire.
+  polices, scroll, survol ni les gestes utilisateur. Cette session graphique
+  Windows est toujours à faire, après résolution du blocage du bundle.
 - biorbd : optionnel et natif. Son absence doit conserver le fallback
   analytique ; sa présence dans un bundle doit être validée dans le bundle, pas
-  seulement dans l'environnement de développement.
+  seulement dans l'environnement de développement. Cette validation reste à
+  faire.
 - Packaging : les tests de contrat contrôlent scripts, imports et ressources,
   mais ne remplacent ni PyInstaller ni l'essai sur une seconde machine.
 - SLSQP : les résultats sont validés au niveau biomécanique avec tolérances
@@ -73,6 +100,8 @@ exports, le packaging, et les régressions numériques (`tests/test_numerical_re
 
 ## Checklist de revue d'Aurélie
 
+- [ ] Lever les blocages indiqués ci-dessus : Tkinter dans le bundle, échec du
+      smoke propagé par `build_windows.ps1`, et façades `dynamics.py`.
 - [ ] Lire le diff par commit, en priorité les façades `app.py`, `cli.py`,
       `dynamics.py`, `kinematics.py` et les nouveaux contrats d'export.
 - [ ] Vérifier que GUI et CLI gardent leurs commandes, exports et fichiers JSON
@@ -104,7 +133,8 @@ exports, le packaging, et les régressions numériques (`tests/test_numerical_re
    La première commande de log doit rester vide. Si elle ne l'est plus,
    réactualiser la branche et refaire les contrôles avant toute fusion.
 
-2. Après les validations, intégrer via la revue habituelle (merge commit ou
+2. Après la levée des blocages et les validations, passer la PR de brouillon à
+   prête à relire, puis intégrer via la revue habituelle (merge commit ou
    fast-forward selon la politique du dépôt), puis relancer au minimum Ruff,
    pytest et la recette Windows sur le commit intégré.
 
