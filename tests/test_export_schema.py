@@ -19,6 +19,7 @@ from squat_gui.export_schema import (
     workbook_tables,
     write_xlsx,
 )
+from squat_gui.export_tables import workbook_contract
 from squat_gui.xlsx_writers import (
     write_xlsx_openpyxl as write_normalized_xlsx_openpyxl,
 )
@@ -60,10 +61,7 @@ class ExportSchemaTests(unittest.TestCase):
         )
         self.assertEqual(missing_dictionary_columns(tables), set())
         self.assertTrue(
-            all(
-                row[0] == SCHEMA_VERSION
-                for row in tables[COMBINED_SHEET]["rows"]
-            )
+            all(row[0] == SCHEMA_VERSION for row in tables[COMBINED_SHEET]["rows"])
         )
         csv_standard_definitions = {
             row[2]: row
@@ -93,7 +91,24 @@ class ExportSchemaTests(unittest.TestCase):
         )
         self.assertEqual(tables[COMBINED_SHEET]["rows"], tables["contrat"]["rows"])
 
-    def test_simulation_sheet_names_are_safe_unique_and_keep_duplicate_ids(self) -> None:
+    def test_public_facade_uses_the_explicit_contract_and_dictionary(self) -> None:
+        """The refactored façade must preserve metadata visible to students."""
+        contract = workbook_contract()
+        self.assertEqual(contract.schema_version, SCHEMA_VERSION)
+        self.assertEqual(contract.standard_csv_columns, STANDARD_CSV_COLUMNS)
+        self.assertEqual(contract.summary_columns, SUMMARY_COLUMNS)
+        self.assertEqual(
+            contract.column_definition("cheville_contact_Nm").status,
+            "compatibilité legacy",
+        )
+        self.assertEqual(
+            contract.column_definition("zmp_excursion_m").definition,
+            "Étendue max-min du point d'appui CoP/ZMP sur la trajectoire.",
+        )
+
+    def test_simulation_sheet_names_are_safe_unique_and_keep_duplicate_ids(
+        self,
+    ) -> None:
         base_rows = self.rows()
         condition_ids = [
             "Synthèse",
@@ -134,13 +149,13 @@ class ExportSchemaTests(unittest.TestCase):
             len(tables[COMBINED_SHEET]["rows"]), len(base_rows) * len(condition_ids)
         )
         duplicate_summary_ids = [
-            row[1]
-            for row in tables[SUMMARY_SHEET]["rows"]
-            if row[1] == "dup"
+            row[1] for row in tables[SUMMARY_SHEET]["rows"] if row[1] == "dup"
         ]
         self.assertEqual(duplicate_summary_ids, ["dup", "dup"])
 
-    def test_standard_csv_contract_is_explicit_and_full_mode_is_compatible(self) -> None:
+    def test_standard_csv_contract_is_explicit_and_full_mode_is_compatible(
+        self,
+    ) -> None:
         rows = self.rows()
         standard = csv_export_rows(rows)
         complete = csv_export_rows(rows, mode="full")
@@ -203,9 +218,7 @@ class ExportSchemaTests(unittest.TestCase):
                 os.environ, {"SQUAT_GUI_XLSX_WRITER": "artifact-tool"}, clear=False
             ):
                 try:
-                    report = write_xlsx(
-                        output, self.rows(), preview_directory=previews
-                    )
+                    report = write_xlsx(output, self.rows(), preview_directory=previews)
                 except RuntimeError as error:
                     self.skipTest(f"Runtime Artifact Tool indisponible: {error}")
             self.assertEqual(report["writer"], "artifact-tool")
@@ -249,9 +262,7 @@ class ExportSchemaTests(unittest.TestCase):
                     workbook[COMBINED_SHEET]["E2"].value,
                     self.rows()[0]["delta_time_s"],
                 )
-                self.assertEqual(
-                    workbook[COMBINED_SHEET]["E2"].number_format, "0.000"
-                )
+                self.assertEqual(workbook[COMBINED_SHEET]["E2"].number_format, "0.000")
                 self.assertTrue(workbook[COMBINED_SHEET].tables)
                 self.assertTrue(workbook["contrat"].tables)
                 self.assertEqual(
@@ -303,9 +314,7 @@ class ExportSchemaTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temporary:
             output = Path(temporary) / "auto.xlsx"
             with (
-                patch.dict(
-                    os.environ, {"SQUAT_GUI_XLSX_WRITER": "auto"}, clear=False
-                ),
+                patch.dict(os.environ, {"SQUAT_GUI_XLSX_WRITER": "auto"}, clear=False),
                 patch(
                     "squat_gui.export_schema._write_xlsx_artifact",
                     side_effect=RuntimeError("Node absent"),
