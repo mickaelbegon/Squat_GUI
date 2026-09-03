@@ -7,6 +7,7 @@ from math import cos, pi
 from typing import Any
 
 from .anthropometry import Anthropometry
+from .backend import resolve_biorbd_model
 from .kinematics import (
     MotionState,
     Pose,
@@ -107,6 +108,7 @@ class DynamicsResult:
     support_point_label: str = "CoP"
     support_point_source: str = "bilan dynamique analytique"
     contact_source: str = "moment géométrique de la GRF"
+    backend_diagnostic: str = "Backend analytique sélectionné."
 
 
 @dataclass(frozen=True)
@@ -605,6 +607,7 @@ def inverse_dynamics(
     adapt_max_by_angle: bool,
     biorbd_model: Any | None = None,
     adapt_max_by_velocity: bool = True,
+    backend_diagnostic: str | None = None,
 ) -> DynamicsResult:
     reaction, cop_x, com_acceleration, dynamic_moment_z = ground_reaction_and_cop(
         anthro, state
@@ -637,9 +640,12 @@ def inverse_dynamics(
                 biorbd_model, state, reaction, cop_x, inverse_dynamics_total
             )
             contact_source = "biorbd.ExternalForceSet"
-        except (AttributeError, RuntimeError, TypeError):
+        except (AttributeError, RuntimeError, TypeError, ValueError) as exc:
             contact = _contact_moments(state, reaction, cop_x)
-            contact_source = "moment géométrique de la GRF (fallback biorbd explicite)"
+            contact_source = (
+                "moment géométrique de la GRF (fallback biorbd : "
+                f"{type(exc).__name__})"
+            )
         backend = "biorbd"
     else:
         mass_acceleration, velocity, gravity = (
@@ -708,6 +714,12 @@ def inverse_dynamics(
         support_point_label=support_point_label,
         support_point_source=support_point_source,
         contact_source=contact_source,
+        backend_diagnostic=backend_diagnostic
+        or (
+            "Backend biorbd actif."
+            if biorbd_model is not None
+            else "Backend analytique sélectionné (biorbd non demandé)."
+        ),
     )
 
 
@@ -865,18 +877,30 @@ def _biorbd_angular_momentum_derivative_z(
 def _biorbd_native_cop_x(
     biorbd_model: Any, q: Any, qdot: Any, qddot: Any
 ) -> float | None:
+    cop_x, _ = _biorbd_native_cop(biorbd_model, q, qdot, qddot)
+    return cop_x
+
+
+def _biorbd_native_cop(
+    biorbd_model: Any, q: Any, qdot: Any, qddot: Any
+) -> tuple[float | None, str | None]:
+    """Try biorbd's native ZMP API and explain a compatible fallback."""
+
     zmp_function = getattr(biorbd_model, "CalcZeroMomentPoint", None)
     if zmp_function is None:
-        return None
+        return None, "CalcZeroMomentPoint absent"
     import numpy as np
 
     try:
         zmp = zmp_function(
             q, qdot, qddot, np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 0.0])
         ).to_array()
-    except Exception:
-        return None
-    return float(zmp[0])
+    except Exception as exc:
+        # biorbd's bindings do not have a stable public exception hierarchy
+        # across releases. The analytical ZMP reconstruction is intentional;
+        # retain it while exposing why the native API was unavailable.
+        return None, f"CalcZeroMomentPoint indisponible ({type(exc).__name__}: {exc})"
+    return float(zmp[0]), None
 
 
 def _biorbd_ground_reaction_and_cop(
@@ -893,7 +917,9 @@ def _biorbd_ground_reaction_and_cop(
     dynamic_moment_z = (
         hdot_com_z + float(com[0]) * reaction[1] - float(com[1]) * reaction[0]
     )
-    native_cop_x = _biorbd_native_cop_x(biorbd_model, q, qdot, qddot)
+    native_cop_x, native_cop_diagnostic = _biorbd_native_cop(
+        biorbd_model, q, qdot, qddot
+    )
     if native_cop_x is not None:
         cop_x = native_cop_x
         support_point_source = "biorbd.CalcZeroMomentPoint"
@@ -903,7 +929,10 @@ def _biorbd_ground_reaction_and_cop(
             if abs(reaction[1]) > 1e-9
             else state.pose.ankle[0]
         )
-        support_point_source = "bilan dynamique biorbd (fallback)"
+        support_point_source = (
+            "bilan dynamique biorbd (fallback : "
+            f"{native_cop_diagnostic or 'raison inconnue'})"
+        )
     return (
         reaction,
         cop_x,
@@ -927,12 +956,8 @@ def simulate(
 ) -> tuple[list[MotionState], list[DynamicsResult]]:
     states: list[MotionState] = []
     dynamics: list[DynamicsResult] = []
-    biorbd_model = None
-    if model_cache is not None:
-        try:
-            biorbd_model = model_cache.model_for(anthro)
-        except Exception:
-            biorbd_model = None
+    backend_resolution = resolve_biorbd_model(model_cache, anthro)
+    biorbd_model = backend_resolution.model
     durations = phase_durations(duration)
     for index in range(frame_count):
         time = durations.total * index / max(1, frame_count - 1)
@@ -948,6 +973,7 @@ def simulate(
                 adapt_max_by_angle,
                 biorbd_model,
                 adapt_max_by_velocity,
+                backend_resolution.diagnostic,
             )
         )
     return states, dynamics

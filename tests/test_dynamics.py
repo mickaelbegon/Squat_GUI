@@ -7,6 +7,7 @@ from squat_gui.backend import biomod_cache_key, biomod_text
 from squat_gui.dynamics import (
     GRAVITY,
     _biorbd_inverse_dynamics_decomposition,
+    _biorbd_native_cop,
     _biorbd_native_cop_x,
     athlete_reference_max_torques,
     anderson_angle_factor,
@@ -120,6 +121,26 @@ class DynamicsTests(unittest.TestCase):
             self.assertTrue(math.isfinite(result.ground_reaction[1]))
             for torque in result.torques.values():
                 self.assertTrue(math.isfinite(torque))
+
+    def test_biorbd_cache_failure_uses_analytical_backend_with_diagnostic(self) -> None:
+        class BrokenCache:
+            def model_for(self, _anthro):
+                raise RuntimeError("incompatible native extension")
+
+        _states, results = simulate(
+            Anthropometry(),
+            (math.radians(20.0), math.radians(-55.0), math.radians(-15.0)),
+            1.2,
+            3,
+            {"cheville": 180.0, "genou": 220.0, "hanche": 260.0},
+            True,
+            model_cache=BrokenCache(),
+        )
+
+        self.assertTrue(all(result.backend == "analytical" for result in results))
+        self.assertTrue(
+            all("Fallback analytique" in result.backend_diagnostic for result in results)
+        )
 
     def test_ground_reaction_weight_and_com_acceleration_close_force_balance(
         self,
@@ -547,6 +568,17 @@ class DynamicsTests(unittest.TestCase):
         self.assertAlmostEqual(_biorbd_native_cop_x(model, [0], [0], [0]), 0.123)
         self.assertEqual(list(model.normal), [0.0, 1.0, 0.0])
         self.assertEqual(list(model.point), [0.0, 0.0, 0.0])
+
+    def test_native_biorbd_zmp_failure_keeps_a_diagnostic_for_fallback(self) -> None:
+        class Model:
+            def CalcZeroMomentPoint(self, *_args):
+                raise RuntimeError("unsupported contact definition")
+
+        cop_x, diagnostic = _biorbd_native_cop(Model(), [0], [0], [0])
+
+        self.assertIsNone(cop_x)
+        self.assertIn("RuntimeError", diagnostic)
+        self.assertIn("unsupported contact definition", diagnostic)
 
 
 if __name__ == "__main__":

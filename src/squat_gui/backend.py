@@ -15,11 +15,27 @@ from pathlib import Path
 from .anthropometry import Anthropometry, SegmentSpec
 
 
+class BiorbdBackendError(RuntimeError):
+    """Raised when a requested biorbd model cannot be prepared."""
+
+
 @dataclass(frozen=True)
 class OptionalBackendStatus:
     biobuddy_available: bool
     biorbd_available: bool
     message: str
+
+
+@dataclass(frozen=True)
+class BiorbdModelResolution:
+    """The backend selected for one simulation and its human-readable reason."""
+
+    model: object | None
+    diagnostic: str
+
+    @property
+    def uses_biorbd(self) -> bool:
+        return self.model is not None
 
 
 @dataclass(frozen=True)
@@ -165,9 +181,49 @@ def write_biomod_file(path: str | Path, anthro: Anthropometry) -> Path:
 def load_biorbd_model(path: str | Path):
     os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
-    import biorbd
+    try:
+        import biorbd
 
-    return biorbd.Model(str(path))
+        return biorbd.Model(str(path))
+    except (ImportError, OSError, RuntimeError, ValueError) as exc:
+        raise BiorbdBackendError(
+            f"Impossible de charger le modèle biorbd '{path}': "
+            f"{type(exc).__name__}: {exc}"
+        ) from exc
+
+
+def resolve_biorbd_model(
+    model_cache: object | None,
+    anthro: Anthropometry,
+) -> BiorbdModelResolution:
+    """Resolve the optional model once and preserve the analytical fallback.
+
+    biorbd's native wrappers may expose different exception classes according
+    to the platform and the installed ABI.  The broad conversion below is
+    deliberate: simulation historically falls back for *any* cache/model
+    failure, and the diagnostic makes that fallback observable to callers.
+    """
+
+    if model_cache is None:
+        return BiorbdModelResolution(
+            model=None,
+            diagnostic="Backend analytique sélectionné (biorbd non demandé).",
+        )
+    try:
+        model_for = getattr(model_cache, "model_for")
+        model = model_for(anthro)
+    except Exception as exc:
+        return BiorbdModelResolution(
+            model=None,
+            diagnostic=(
+                "Fallback analytique : chargement biorbd indisponible "
+                f"({type(exc).__name__}: {exc})."
+            ),
+        )
+    return BiorbdModelResolution(
+        model=model,
+        diagnostic="Backend biorbd actif.",
+    )
 
 
 class BiorbdModelCache:
