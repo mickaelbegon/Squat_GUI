@@ -15,6 +15,7 @@ from collections.abc import Mapping
 from math import atan2, degrees, isfinite, radians
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+from typing import cast
 
 from .anthropometry import (
     ANTHROPOMETRY_MODES,
@@ -71,6 +72,15 @@ from .observables import (
     neighbor_samples,
     segment_anthropometry,
     support_margins,
+)
+from .plot_data import (
+    PlotDataset,
+    PlotSample,
+    centered_times as centered_plot_times,
+    current_plot_time as frame_plot_time,
+    plot_times as times_for_plot,
+    sample_dataset_at_time as sample_plot_dataset_at_time,
+    select_plot_datasets,
 )
 from .export_schema import write_xlsx
 from .raster_segments import draw_sprite_segment
@@ -1697,21 +1707,7 @@ class SquatGui(tk.Tk):
 
     def centered_times(self, states: list[MotionState] | None = None) -> list[float]:
         states = states or self.states
-        if not states:
-            return []
-        eccentric_times = [
-            state.time for state in states if state.phase == "excentrique"
-        ]
-        isometric_times = [
-            state.time for state in states if state.phase == "isometrique"
-        ]
-        squat_start = eccentric_times[-1] if eccentric_times else states[0].time
-        squat_time = (
-            (squat_start + isometric_times[-1]) / 2.0
-            if isometric_times
-            else squat_start
-        )
-        return [state.time - squat_time for state in states]
+        return centered_plot_times(states)
 
     def time_mode(self) -> TimeMode:
         variable = self.__dict__.get("time_mode_var")
@@ -1724,37 +1720,25 @@ class SquatGui(tk.Tk):
 
     def plot_times(self, states: list[MotionState] | None = None) -> list[float]:
         states = states or self.states
-        if not states:
-            return []
-        mode = self.time_mode()
-        if mode is TimeMode.ABSOLUTE:
-            return [state.time for state in states]
-        if mode is TimeMode.CENTERED:
-            return self.centered_times(states)
-        duration = states[-1].time - states[0].time
-        if duration <= 1e-9:
-            return [0.0 for _state in states]
-        return [100.0 * (state.time - states[0].time) / duration for state in states]
+        return times_for_plot(states, self.time_mode())
 
     def current_plot_time(self) -> float:
         datasets = self.plot_datasets()
-        times = [
-            time
-            for dataset in datasets
-            for time in self.plot_times(dataset["states"])  # type: ignore[arg-type]
-        ]
-        if not times:
-            return 0.0
-        tmin, tmax = min(times), max(times)
         frame = min(self.frame_count - 1, max(0, int(self.frame_var.get())))
-        fraction = frame / max(1, self.frame_count - 1)
-        return tmin + fraction * (tmax - tmin)
+        return frame_plot_time(
+            datasets,
+            self.time_mode(),
+            frame,
+            self.frame_count,
+        )
 
     def on_time_mode_changed(self) -> None:
         self.update_time_mode_notice(self.plot_datasets())
         self.redraw()
 
-    def time_mode_notice(self, datasets: list[dict[str, object]]) -> str:
+    def time_mode_notice(
+        self, datasets: list[PlotDataset] | list[dict[str, object]]
+    ) -> str:
         mode = self.time_mode()
         base = time_axis_label(mode)
         if mode is not TimeMode.NORMALIZED:
@@ -1768,7 +1752,7 @@ class SquatGui(tk.Tk):
             return f"Attention — {base}; les différences de durée sont masquées."
         return f"{base}; la durée réelle est masquée."
 
-    def update_time_mode_notice(self, datasets: list[dict[str, object]]) -> None:
+    def update_time_mode_notice(self, datasets: list[PlotDataset]) -> None:
         if hasattr(self, "time_mode_notice_var"):
             self.time_mode_notice_var.set(self.time_mode_notice(datasets))
 
@@ -3319,42 +3303,39 @@ class SquatGui(tk.Tk):
         datasets = self.plot_datasets()
         current_plot_time = self.current_plot_time()
         sampled = [
-            {
-                **dataset,
-                **self.sample_dataset_at_time(dataset, current_plot_time),
-            }
+            self.sample_dataset_at_time(dataset, current_plot_time)
             for dataset in datasets
         ]
         alerts: list[str] = []
         if layers.alerts:
             for item in sampled:
                 condition_alerts = self.biomechanical_alerts(
-                    item["state"], item["result"], include_com=False  # type: ignore[arg-type]
+                    item.state, item.result, include_com=False
                 )
-                alerts.extend(f"{item['label']} : {alert}" for alert in condition_alerts)
+                alerts.extend(f"{item.label} : {alert}" for alert in condition_alerts)
         self.configure_alert_canvas(canvas, alerts)
         bounds = self.scene_bounds(
             extra_x=max(0, len(sampled) - 1),
-            anthropometries=[item["anthro"] for item in sampled],  # type: ignore[list-item]
+            anthropometries=[item.anthro for item in sampled],
         )
         for index, item in enumerate(sampled):
-            state = item["state"]  # type: ignore[assignment]
+            state = item.state
             condition_alerts = (
                 self.biomechanical_alerts(
-                    state, item["result"], include_com=False  # type: ignore[arg-type]
+                    state, item.result, include_com=False
                 )
                 if layers.alerts
                 else []
             )
             self.draw_skeleton(
                 canvas,
-                state,  # type: ignore[arg-type]
-                item["result"],  # type: ignore[arg-type]
+                state,
+                item.result,
                 with_handles=False,
                 bounds=bounds,
                 x_offset=float(index),
-                render_anthro=item["anthro"],  # type: ignore[arg-type]
-                refined_sprites=bool(item["refined_sprites"]),
+                render_anthro=item.anthro,
+                refined_sprites=item.refined_sprites,
                 layers=layers,
             )
             if (
@@ -3363,27 +3344,27 @@ class SquatGui(tk.Tk):
             ):
                 self.draw_bar_trajectory(
                     canvas,
-                    item["states"],  # type: ignore[arg-type]
+                    item.states,
                     bounds,
                     float(index),
-                    str(item["color"] or "#2e7d54"),
+                    item.color or "#2e7d54",
                 )
             self.register_animation_hover_targets(
                 canvas,
                 state,
                 bounds,
                 float(index),
-                str(item["label"]),
+                item.label,
                 len(sampled) > 1,
                 layers,
             )
             self.register_segment_com_hover_targets(
                 canvas,
                 state,
-                item["anthro"],  # type: ignore[arg-type]
+                item.anthro,
                 bounds,
                 float(index),
-                str(item["label"]),
+                item.label,
                 len(sampled) > 1,
                 layers,
             )
@@ -3394,11 +3375,11 @@ class SquatGui(tk.Tk):
                 label_point = self.world_to_canvas(
                     canvas, (float(index), -0.045), bounds
                 )
-                color = str(item["color"])
+                color = item.color or "#2e7d54"
                 canvas.create_text(
                     label_point[0],
                     label_point[1],
-                    text=str(item["label"]),
+                    text=item.label,
                     anchor="n",
                     fill=color,
                     font=("Helvetica", 10, "bold"),
@@ -3412,8 +3393,8 @@ class SquatGui(tk.Tk):
                         fill=ALERT_BORDER,
                         font=("Helvetica", 12, "bold"),
                     )
-        state = sampled[0]["state"]  # type: ignore[assignment]
-        result = sampled[0]["result"]  # type: ignore[assignment]
+        state = sampled[0].state
+        result = sampled[0].result
         title = (
             f"Animation {state.phase} {self.animation_time_label(current_plot_time)}"
             if layers.time_label
@@ -3433,14 +3414,14 @@ class SquatGui(tk.Tk):
         if layers.anthropometry:
             overlay_top = self.draw_anthropometry_overlay(
                 canvas,
-                sampled[0]["anthro"],  # type: ignore[arg-type]
-                str(sampled[0]["label"]) if len(sampled) > 1 else "",
+                sampled[0].anthro,
+                sampled[0].label if len(sampled) > 1 else "",
                 overlay_top,
             )
         if layers.force_balance:
             self.draw_force_balance_overlay(
                 canvas,
-                sampled[0]["anthro"],  # type: ignore[arg-type]
+                sampled[0].anthro,
                 state,
                 result,
                 overlay_top,
@@ -3862,18 +3843,26 @@ class SquatGui(tk.Tk):
             self.animation_canvas.tag_lower(background, text_item)
 
     def draw_animation_values(
-        self, canvas: tk.Canvas, sampled: list[dict[str, object]]
+        self,
+        canvas: tk.Canvas,
+        sampled: list[PlotSample] | list[dict[str, object]],
     ) -> None:
         column_width = 155
         for index, item in enumerate(sampled):
             x = 16 + index * column_width
             y = 42
-            color = str(item["color"] or "#22312a")
-            result = item["result"]  # type: ignore[assignment]
+            if isinstance(item, PlotSample):
+                label = item.label
+                color = item.color or "#22312a"
+                result = item.result
+            else:
+                label = str(item["label"])
+                color = str(item["color"] or "#22312a")
+                result = cast(DynamicsResult, item["result"])
             canvas.create_text(
                 x,
                 y,
-                text=str(item["label"]),
+                text=label,
                 anchor="nw",
                 fill=color,
                 font=("Helvetica", 10, "bold"),
@@ -3927,8 +3916,10 @@ class SquatGui(tk.Tk):
         plotted = [
             {
                 **dataset,
-                "series": self.plot_series_for(choice, dataset["states"], dataset["results"]),  # type: ignore[arg-type]
-                "times": self.plot_times(dataset["states"]),  # type: ignore[arg-type]
+                "series": self.plot_series_for(
+                    choice, dataset.states, dataset.results
+                ),
+                "times": self.plot_times(dataset.states),
             }
             for dataset in datasets
         ]
@@ -3967,7 +3958,7 @@ class SquatGui(tk.Tk):
     def draw_synchronized_kinematics(
         self,
         canvas: tk.Canvas,
-        datasets: list[dict[str, object]],
+        datasets: list[PlotDataset],
         width: int,
         height: int,
     ) -> None:
@@ -3975,18 +3966,16 @@ class SquatGui(tk.Tk):
         quantities = ("position", "vitesse", "acceleration")
         plotted = []
         for dataset in datasets:
-            states = dataset["states"]  # type: ignore[assignment]
-            results = dataset["results"]  # type: ignore[assignment]
             plotted.append(
                 {
                     **dataset,
-                    "times": self.plot_times(states),
+                    "times": self.plot_times(dataset.states),
                     "orders": {
                         quantity: self.synchronized_series_for(
                             source,
                             quantity,
-                            states,  # type: ignore[arg-type]
-                            results,  # type: ignore[arg-type]
+                            dataset.states,
+                            dataset.results,
                         )
                         for quantity in quantities
                     },
@@ -4219,7 +4208,7 @@ class SquatGui(tk.Tk):
                         str(states[index].phase),
                     )
 
-    def plot_datasets(self) -> list[dict[str, object]]:
+    def plot_datasets(self) -> list[PlotDataset]:
         selected = [
             iid
             for iid in self.conditions_table.selection()
@@ -4227,51 +4216,51 @@ class SquatGui(tk.Tk):
         ]
         if not selected:
             settings = self.current_settings()
-            return [
-                {
-                    "label": "courant",
-                    "states": self.states,
-                    "results": self.results,
-                    "color": None,
-                    "anthro": self.anthro(),
-                    "refined_sprites": self.refined_sprites_from_settings(settings),
-                    "durations": self.phase_durations(),
-                }
-            ]
+            current = PlotDataset(
+                label="courant",
+                states=self.states,
+                results=self.results,
+                color=None,
+                anthro=self.anthro(),
+                refined_sprites=self.refined_sprites_from_settings(settings),
+                durations=self.phase_durations(),
+            )
+            return select_plot_datasets(current, {}, selected)
         total = len(selected)
-        datasets: list[dict[str, object]] = []
+        saved_datasets: dict[str, PlotDataset] = {}
         for index, iid in enumerate(selected):
             condition = self.saved_conditions[iid]
-            settings = condition["settings"]  # type: ignore[assignment]
-            datasets.append(
-                {
-                    "label": condition["label"],
-                    "states": condition["states"],
-                    "results": condition["results"],
-                    "color": self.condition_color(index, total),
-                    "anthro": self.anthro_from_settings(settings),  # type: ignore[arg-type]
-                    "refined_sprites": self.refined_sprites_from_settings(settings),  # type: ignore[arg-type]
-                    "durations": self.phase_durations_from_settings(settings),  # type: ignore[arg-type]
-                }
+            if isinstance(condition, SavedCondition):
+                label = condition.label
+                states = condition.states
+                results = condition.results
+                condition_settings = condition.settings
+            else:
+                # Transitional compatibility for extensions that still provide
+                # the historical mapping representation.
+                label = str(condition["label"])
+                states = cast(list[MotionState], condition["states"])
+                results = cast(list[DynamicsResult], condition["results"])
+                condition_settings = dict(
+                    SettingsReader.from_object(condition["settings"]).values
+                )
+            saved_datasets[iid] = PlotDataset(
+                label=label,
+                states=states,
+                results=results,
+                color=self.condition_color(index, total),
+                anthro=self.anthro_from_settings(condition_settings),
+                refined_sprites=self.refined_sprites_from_settings(
+                    condition_settings
+                ),
+                durations=self.phase_durations_from_settings(condition_settings),
             )
-        return datasets
+        return select_plot_datasets(None, saved_datasets, selected)
 
     def sample_dataset_at_time(
-        self, dataset: dict[str, object], plot_time: float
-    ) -> dict[str, object]:
-        states = dataset["states"]  # type: ignore[assignment]
-        results = dataset["results"]  # type: ignore[assignment]
-        times = self.plot_times(states)
-        if not times:
-            return {"state": self.states[0], "result": self.results[0]}
-        if plot_time <= times[0]:
-            return {"state": states[0], "result": results[0]}
-        if plot_time >= times[-1]:
-            return {"state": states[-1], "result": results[-1]}
-        index = min(
-            range(len(times)), key=lambda candidate: abs(times[candidate] - plot_time)
-        )
-        return {"state": states[index], "result": results[index]}
+        self, dataset: PlotDataset, plot_time: float
+    ) -> PlotSample:
+        return sample_plot_dataset_at_time(dataset, plot_time, self.time_mode())
 
     def animation_time_label(self, plot_time: float) -> str:
         mode = self.time_mode()
