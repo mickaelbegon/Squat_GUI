@@ -14,9 +14,20 @@ $CleanHome = Join-Path $WorkDir "home"
 try {
     New-Item -ItemType Directory -Path $ExtractDir, $CleanHome | Out-Null
     Expand-Archive -Path $ArchivePath -DestinationPath $ExtractDir
-    $Executable = Join-Path $ExtractDir "Squat GUI\Squat GUI.exe"
+    $BundleDir = Join-Path $ExtractDir "Squat GUI"
+    $Executable = Join-Path $BundleDir "Squat GUI.exe"
     if (-not (Test-Path $Executable -PathType Leaf)) {
         throw "Exécutable absent de l'archive: $Executable"
+    }
+
+    $RequiredBundleFiles = @(
+        (Join-Path $BundleDir "_internal\assets\raster_segments\pied.png"),
+        (Join-Path $BundleDir "_internal\squat_gui\build_workbook.mjs")
+    )
+    foreach ($RequiredFile in $RequiredBundleFiles) {
+        if (-not (Test-Path $RequiredFile -PathType Leaf)) {
+            throw "Ressource attendue absente de l'archive: $RequiredFile"
+        }
     }
 
     $ActualVersion = (Get-Item $Executable).VersionInfo.ProductVersion

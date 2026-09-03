@@ -4,6 +4,21 @@ Ces contrôles s'exécutent sur une machine différente de celle du build. Ils n
 remplacent pas la recette manuelle par double-clic, mais vérifient l'intégrité du
 bundle et les fonctions qui échouent le plus souvent après packaging.
 
+## Prévol automatisé avant un build complet
+
+Depuis la racine du dépôt, exécuter :
+
+```powershell
+python -m pytest -q tests/test_packaging.py
+python -m ruff check src tests packaging
+```
+
+Ces contrôles ne construisent pas PyInstaller. Ils vérifient les points d'entrée
+GUI/CLI, l'import des modules refactorés sans créer de fenêtre Tk, les ressources
+attendues du bundle (sprite et générateur Excel) et les contrats des validateurs
+de release. Le build Windows et le validateur d'archive arrêtent aussi la recette
+si ces deux ressources sont absentes du dossier extrait.
+
 ## Second Mac Apple Silicon
 
 1. Copier le ZIP candidat et le fichier `SHA256SUMS.txt` sur le Mac de recette.

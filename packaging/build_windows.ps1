@@ -34,8 +34,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & $PythonBin -m PyInstaller --clean --noconfirm packaging\squat_gui.spec
+$BundleDir = Join-Path $RootDir "dist\Squat GUI"
+$Executable = Join-Path $BundleDir "Squat GUI.exe"
+$RequiredBundleFiles = @(
+    (Join-Path $BundleDir "_internal\assets\raster_segments\pied.png"),
+    (Join-Path $BundleDir "_internal\squat_gui\build_workbook.mjs")
+)
+foreach ($RequiredFile in $RequiredBundleFiles) {
+    if (-not (Test-Path $RequiredFile -PathType Leaf)) {
+        throw "Ressource attendue absente du bundle Windows: $RequiredFile"
+    }
+}
 $env:SQUAT_GUI_SMOKE_TEST = "1"
-& "dist\Squat GUI\Squat GUI.exe"
+& $Executable
 $env:SQUAT_GUI_SMOKE_TEST = $null
 
 Write-Host ""
