@@ -56,9 +56,7 @@ from .kinematics import (
     MotionState,
     PhaseDurations,
     clinical_joint_values_from_segment_values,
-    functional_support_limits,
     frame_count_for_duration,
-    geometric_support_limits,
     joint_angles_from_pose,
     joint_values_from_segment_values,
     pose_from_angles,
@@ -85,6 +83,13 @@ from .plot_data import (
 from .export_schema import write_xlsx
 from .raster_segments import draw_sprite_segment
 from .rendering import RenderLayers
+from .scene_model import (
+    SceneGeometry,
+    ViewportTransform,
+    build_scene_geometry,
+    project_point_on_line,
+    scene_bounds as common_scene_bounds,
+)
 from .segment_shapes import draw_segment, load_segments
 from .session_persistence import (
     ComparisonReference,
@@ -2595,16 +2600,13 @@ class SquatGui(tk.Tk):
         point: tuple[float, float],
         bounds: tuple[float, float, float, float],
     ) -> tuple[float, float]:
-        width = max(1, canvas.winfo_width())
-        height = max(1, canvas.winfo_height())
-        xmin, xmax, ymin, ymax = bounds
-        pad = 42
-        scale = min(
-            (width - 2 * pad) / (xmax - xmin), (height - 2 * pad) / (ymax - ymin)
+        viewport = ViewportTransform(
+            max(1, canvas.winfo_width()),
+            max(1, canvas.winfo_height()),
+            bounds,
+            42,
         )
-        x = pad + (point[0] - xmin) * scale
-        y = height - pad - (point[1] - ymin) * scale
-        return x, y
+        return viewport.world_to_pixel(point)
 
     def canvas_to_world(
         self,
@@ -2613,30 +2615,22 @@ class SquatGui(tk.Tk):
         y: float,
         bounds: tuple[float, float, float, float],
     ) -> tuple[float, float]:
-        width = max(1, canvas.winfo_width())
-        height = max(1, canvas.winfo_height())
-        xmin, xmax, ymin, ymax = bounds
-        pad = 42
-        scale = min(
-            (width - 2 * pad) / (xmax - xmin), (height - 2 * pad) / (ymax - ymin)
+        viewport = ViewportTransform(
+            max(1, canvas.winfo_width()),
+            max(1, canvas.winfo_height()),
+            bounds,
+            42,
         )
-        return (xmin + (x - pad) / scale, ymin + (height - pad - y) / scale)
+        return viewport.pixel_to_world((x, y))
 
     def scene_bounds(
         self,
         extra_x: float = 0.0,
         anthropometries: list[Anthropometry] | None = None,
     ) -> tuple[float, float, float, float]:
-        anthropometries = anthropometries or [self.anthro()]
-        ymax = max(
-            2.22 if anthro.bar_position == "over-head" else 1.92
-            for anthro in anthropometries
+        return common_scene_bounds(
+            anthropometries or [self.anthro()], extra_x=extra_x
         )
-        xmax = max(
-            anthro.foot.length + anthro.shank.length + 0.78
-            for anthro in anthropometries
-        )
-        return (-0.36, xmax + extra_x, -0.08, ymax)
 
     def pose_editor_bounds(
         self,
@@ -2781,25 +2775,26 @@ class SquatGui(tk.Tk):
         )
         layers = layers or self.render_layers(refined_sprites=refined_sprites)
         bounds = bounds or self.scene_bounds()
-        pose = state.pose
-        joints = [pose.heel, pose.toe, pose.ankle, pose.knee, pose.hip, pose.shoulder]
-        names = ["heel", "toe", "ankle", "knee", "hip", "shoulder"]
-
-        def shifted(point: tuple[float, float]) -> tuple[float, float]:
-            return (point[0] + x_offset, point[1])
-
+        scene = build_scene_geometry(
+            render_anthro, state, result.cop_x, x_offset=x_offset
+        )
         points = {
-            name: self.world_to_canvas(canvas, shifted(point), bounds)
-            for name, point in zip(names, joints)
+            name: self.world_to_canvas(canvas, scene.point(name), bounds)
+            for name in ("heel", "toe", "ankle", "knee", "hip", "shoulder")
         }
         if not hasattr(canvas, "_sprite_images"):
             canvas._sprite_images = []
 
         def mapper(point: tuple[float, float]) -> tuple[float, float]:
-            return self.world_to_canvas(canvas, shifted(point), bounds)
+            return self.world_to_canvas(canvas, point, bounds)
 
         raster_drawn = self.draw_raster_segments(
-            canvas, state, mapper, render_anthro, refined_sprites
+            canvas,
+            state,
+            mapper,
+            render_anthro,
+            refined_sprites,
+            scene=scene,
         )
         if not raster_drawn:
             segments = load_segments()
@@ -2807,7 +2802,7 @@ class SquatGui(tk.Tk):
             draw_segment(
                 canvas,
                 segments["foot"],
-                pose.ankle,
+                scene.point("ankle"),
                 -render_anthro.wedge_angle,
                 foot_scale,
                 mapper,
@@ -2816,7 +2811,7 @@ class SquatGui(tk.Tk):
             draw_segment(
                 canvas,
                 segments["shank"],
-                pose.ankle,
+                scene.point("ankle"),
                 -state.q[0],
                 render_anthro.shank.length,
                 mapper,
@@ -2824,7 +2819,7 @@ class SquatGui(tk.Tk):
             draw_segment(
                 canvas,
                 segments["thigh"],
-                pose.knee,
+                scene.point("knee"),
                 -state.q[1],
                 render_anthro.thigh.length,
                 mapper,
@@ -2832,7 +2827,7 @@ class SquatGui(tk.Tk):
             draw_segment(
                 canvas,
                 segments["trunk_bar"],
-                pose.hip,
+                scene.point("hip"),
                 -state.q[2],
                 render_anthro.trunk.length,
                 mapper,
@@ -2846,10 +2841,10 @@ class SquatGui(tk.Tk):
             label: str,
         ) -> None:
             posterior_px = self.world_to_canvas(
-                canvas, shifted((limits[0], 0.0)), bounds
+                canvas, (limits[0], 0.0), bounds
             )
             anterior_px = self.world_to_canvas(
-                canvas, shifted((limits[1], 0.0)), bounds
+                canvas, (limits[1], 0.0), bounds
             )
             y = posterior_px[1] + vertical_offset
             canvas.create_line(
@@ -2868,21 +2863,20 @@ class SquatGui(tk.Tk):
 
         if layers.geometric_base:
             draw_support_interval(
-                geometric_support_limits(pose), 8, "#506158", "base géométrique"
+                scene.geometric_support.limits, 8, "#506158", "base géométrique"
             )
         if layers.functional_base:
             functional_offset = 24 if layers.geometric_base else 10
             draw_support_interval(
-                functional_support_limits(pose),
+                scene.functional_support.limits,
                 functional_offset,
                 "#9a5b16",
                 "zone fonctionnelle",
             )
-        if render_anthro.wedge_angle_deg:
-            heel = self.world_to_canvas(canvas, shifted(pose.heel), bounds)
-            toe = self.world_to_canvas(canvas, shifted(pose.toe), bounds)
-            floor_heel = self.world_to_canvas(
-                canvas, shifted((pose.heel[0], 0.0)), bounds
+        if scene.wedge_polygon is not None:
+            heel, toe, floor_heel = tuple(
+                self.world_to_canvas(canvas, point, bounds)
+                for point in scene.wedge_polygon
             )
             wedge_item = canvas.create_polygon(
                 heel[0],
@@ -2896,8 +2890,8 @@ class SquatGui(tk.Tk):
             )
             canvas.tag_lower(wedge_item)
 
-        com = self.world_to_canvas(canvas, shifted(pose.com), bounds)
-        projection = self.world_to_canvas(canvas, shifted((pose.com[0], 0.0)), bounds)
+        com = self.world_to_canvas(canvas, scene.point("com"), bounds)
+        projection = self.world_to_canvas(canvas, scene.com_projection, bounds)
         if layers.global_com and layers.com_projection:
             canvas.create_line(
                 com[0],
@@ -2927,8 +2921,8 @@ class SquatGui(tk.Tk):
                 outline="",
             )
         if layers.segment_com:
-            for label, point in state.pose.segment_coms.items():
-                px = self.world_to_canvas(canvas, shifted(point), bounds)
+            for segment_com in scene.segment_coms:
+                px = self.world_to_canvas(canvas, segment_com.position, bounds)
                 canvas.create_oval(
                     px[0] - 4,
                     px[1] - 4,
@@ -2940,13 +2934,13 @@ class SquatGui(tk.Tk):
                 canvas.create_text(
                     px[0] + 6,
                     px[1] - 6,
-                    text=SEGMENT_LABELS[label],
+                    text=SEGMENT_LABELS[segment_com.name],
                     anchor="sw",
                     fill="#8a1f32",
                     font=("Helvetica", 8, "bold"),
                 )
 
-        cop = self.world_to_canvas(canvas, (result.cop_x + x_offset, 0.0), bounds)
+        cop = self.world_to_canvas(canvas, scene.support_point, bounds)
         if layers.cop_zmp:
             canvas.create_oval(
                 cop[0] - 5,
@@ -2968,8 +2962,7 @@ class SquatGui(tk.Tk):
             force_end = self.world_to_canvas(
                 canvas,
                 (
-                    result.cop_x
-                    + x_offset
+                    scene.support_point[0]
                     + result.ground_reaction[0] / FORCE_DRAW_SCALE,
                     result.ground_reaction[1] / FORCE_DRAW_SCALE,
                 ),
@@ -2996,7 +2989,10 @@ class SquatGui(tk.Tk):
             weight = render_anthro.total_mass * GRAVITY
             weight_end = self.world_to_canvas(
                 canvas,
-                shifted((pose.com[0], pose.com[1] - weight / FORCE_DRAW_SCALE)),
+                (
+                    scene.point("com")[0],
+                    scene.point("com")[1] - weight / FORCE_DRAW_SCALE,
+                ),
                 bounds,
             )
             canvas.create_line(
@@ -3017,12 +3013,12 @@ class SquatGui(tk.Tk):
                 font=("Helvetica", 8, "bold"),
             )
         if layers.moment_arms:
-            for joint in (pose.knee, pose.hip):
-                projected = self.project_on_force_line(
-                    joint, (result.cop_x, 0.0), result.ground_reaction
+            for joint in (scene.point("knee"), scene.point("hip")):
+                projected = project_point_on_line(
+                    joint, scene.support_point, result.ground_reaction
                 )
-                joint_px = self.world_to_canvas(canvas, shifted(joint), bounds)
-                projected_px = self.world_to_canvas(canvas, shifted(projected), bounds)
+                joint_px = self.world_to_canvas(canvas, joint, bounds)
+                projected_px = self.world_to_canvas(canvas, projected, bounds)
                 canvas.create_line(
                     joint_px[0],
                     joint_px[1],
@@ -3049,11 +3045,11 @@ class SquatGui(tk.Tk):
                 green = int(170 * max(0.0, 1.0 - max(0.0, ratio - 0.5) * 2.0))
                 color = f"#{red:02x}{green:02x}35"
                 point = {
-                    "cheville": pose.ankle,
-                    "genou": pose.knee,
-                    "hanche": pose.hip,
+                    "cheville": scene.point("ankle"),
+                    "genou": scene.point("knee"),
+                    "hanche": scene.point("hip"),
                 }[name]
-                px = self.world_to_canvas(canvas, shifted(point), bounds)
+                px = self.world_to_canvas(canvas, point, bounds)
                 canvas.create_oval(
                     px[0] - 12,
                     px[1] - 12,
@@ -3101,54 +3097,29 @@ class SquatGui(tk.Tk):
         mapper,
         render_anthro: Anthropometry | None = None,
         refined_sprites: bool | None = None,
+        *,
+        scene: SceneGeometry | None = None,
     ) -> bool:
         try:
-            pose = state.pose
             render_anthro = render_anthro or self.anthro()
             refined = (
                 not self.low_quality_sprites_var.get()
                 if refined_sprites is None
                 else refined_sprites
             )
-            trunk_variant = (render_anthro.subject_profile, render_anthro.bar_position)
+            scene = scene or build_scene_geometry(render_anthro, state, 0.0)
             return all(
-                (
-                    draw_sprite_segment(
-                        canvas,
-                        "foot",
-                        pose.ankle,
-                        pose.toe,
-                        mapper,
-                        refined,
-                        None,
-                        0.0,
-                    ),
-                    draw_sprite_segment(
-                        canvas,
-                        "shank",
-                        pose.ankle,
-                        pose.knee,
-                        mapper,
-                        refined,
-                    ),
-                    draw_sprite_segment(
-                        canvas,
-                        "thigh",
-                        pose.knee,
-                        pose.hip,
-                        mapper,
-                        refined,
-                    ),
-                    draw_sprite_segment(
-                        canvas,
-                        "trunk",
-                        pose.hip,
-                        pose.shoulder,
-                        mapper,
-                        refined,
-                        trunk_variant,
-                    ),
+                draw_sprite_segment(
+                    canvas,
+                    segment.name,
+                    segment.distal,
+                    segment.proximal,
+                    mapper,
+                    refined,
+                    segment.variant,
+                    0.0 if segment.name == "foot" else None,
                 )
+                for segment in scene.segments
             )
         except Exception:
             return False
@@ -5510,17 +5481,9 @@ class SquatGui(tk.Tk):
         force_origin: tuple[float, float],
         force_vector: tuple[float, float],
     ) -> tuple[float, float]:
-        norm_squared = force_vector[0] ** 2 + force_vector[1] ** 2
-        if norm_squared < 1e-12:
-            return force_origin
-        relative = (joint[0] - force_origin[0], joint[1] - force_origin[1])
-        factor = (
-            relative[0] * force_vector[0] + relative[1] * force_vector[1]
-        ) / norm_squared
-        return (
-            force_origin[0] + factor * force_vector[0],
-            force_origin[1] + factor * force_vector[1],
-        )
+        """Compatibility wrapper around the renderer-independent geometry."""
+
+        return project_point_on_line(joint, force_origin, force_vector)
 
     def on_pose_release(self, _event: tk.Event) -> None:
         self.drag_target = None

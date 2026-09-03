@@ -9,13 +9,18 @@ from .anthropometry import Anthropometry
 from .dynamics import GRAVITY, DynamicsResult, force_balance
 from .kinematics import (
     MotionState,
-    functional_support_limits,
-    geometric_support_limits,
     joint_angles_from_pose,
     segment_orientations,
 )
 from .observables import segment_anthropometry, support_margins
 from .raster_segments import sprite_spec, transformed_sprite_image
+from .scene_model import (
+    SceneGeometry,
+    ViewportTransform,
+    build_scene_geometry,
+    project_point_on_line,
+    scene_bounds as common_scene_bounds,
+)
 
 FORCE_DRAW_SCALE = 3500.0 / 3.0
 
@@ -44,9 +49,9 @@ class RenderLayers:
 
 
 def scene_bounds(anthro: Anthropometry) -> tuple[float, float, float, float]:
-    ymax = 2.22 if anthro.bar_position == "over-head" else 1.92
-    xmax = anthro.foot.length + anthro.shank.length + 0.78
-    return (-0.36, xmax, -0.08, ymax)
+    """Compatibility wrapper for the historical single-subject API."""
+
+    return common_scene_bounds((anthro,))
 
 
 def _font(size: int, bold: bool = False):
@@ -60,17 +65,7 @@ def _font(size: int, bold: bool = False):
 
 
 def _mapper(width: int, height: int, bounds: tuple[float, float, float, float]):
-    xmin, xmax, ymin, ymax = bounds
-    pad = 52
-    scale = min((width - 2 * pad) / (xmax - xmin), (height - 2 * pad) / (ymax - ymin))
-
-    def world_to_pixel(point: tuple[float, float]) -> tuple[float, float]:
-        return (
-            pad + (point[0] - xmin) * scale,
-            height - pad - (point[1] - ymin) * scale,
-        )
-
-    return world_to_pixel
+    return ViewportTransform(width, height, bounds, 52).world_to_pixel
 
 
 def _arrow(draw, start, end, fill: str, width: int = 4) -> None:
@@ -83,15 +78,6 @@ def _arrow(draw, start, end, fill: str, width: int = 4) -> None:
         (end[0] - size * cos(angle + pi / 6), end[1] - size * sin(angle + pi / 6)),
     ]
     draw.polygon(points, fill=fill)
-
-
-def _project_on_force_line(joint, origin, force):
-    norm_squared = force[0] ** 2 + force[1] ** 2
-    if norm_squared < 1e-12:
-        return origin
-    relative = (joint[0] - origin[0], joint[1] - origin[1])
-    factor = (relative[0] * force[0] + relative[1] * force[1]) / norm_squared
-    return (origin[0] + factor * force[0], origin[1] + factor * force[1])
 
 
 def _draw_interval(draw, mapper, limits, offset: int, color: str, label: str) -> None:
@@ -111,25 +97,13 @@ def _draw_interval(draw, mapper, limits, offset: int, color: str, label: str) ->
 
 
 def _draw_sprites(
-    image, state: MotionState, anthro: Anthropometry, mapper, refined: bool
+    image, scene: SceneGeometry, mapper, refined: bool
 ) -> bool:
-    pose = state.pose
-    segments = (
-        ("foot", pose.ankle, pose.toe, None),
-        ("shank", pose.ankle, pose.knee, None),
-        ("thigh", pose.knee, pose.hip, None),
-        (
-            "trunk",
-            pose.hip,
-            pose.shoulder,
-            (anthro.subject_profile, anthro.bar_position),
-        ),
-    )
     try:
-        for name, distal, proximal, variant in segments:
-            spec = sprite_spec(name, refined, variant)
-            distal_px = mapper(distal)
-            proximal_px = mapper(proximal)
+        for segment in scene.segments:
+            spec = sprite_spec(segment.name, refined, segment.variant)
+            distal_px = mapper(segment.distal)
+            proximal_px = mapper(segment.proximal)
             target = (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1])
             sprite, anchor = transformed_sprite_image(spec, target, refined)
             image.alpha_composite(
@@ -169,17 +143,25 @@ def render_animation_frame(
     draw = ImageDraw.Draw(image)
     mapper = _mapper(width, height, scene_bounds(anthro))
     pose = state.pose
+    scene = build_scene_geometry(anthro, state, result.cop_x)
 
-    if not _draw_sprites(image, state, anthro, mapper, layers.refined_sprites):
-        chain = [pose.heel, pose.toe, pose.ankle, pose.knee, pose.hip, pose.shoulder]
+    if not _draw_sprites(image, scene, mapper, layers.refined_sprites):
+        chain = [
+            scene.point(name)
+            for name in ("heel", "toe", "ankle", "knee", "hip", "shoulder")
+        ]
         draw.line(
             [mapper(item) for item in chain], fill="#333333", width=10, joint="curve"
         )
-    draw.line((*mapper(pose.heel), *mapper(pose.toe)), fill="#333333", width=4)
+    draw.line(
+        (*mapper(scene.ground_line[0]), *mapper(scene.ground_line[1])),
+        fill="#333333",
+        width=4,
+    )
 
-    if anthro.wedge_angle_deg:
+    if scene.wedge_polygon is not None:
         draw.polygon(
-            [mapper(pose.heel), mapper(pose.toe), mapper((pose.heel[0], 0.0))],
+            [mapper(point) for point in scene.wedge_polygon],
             fill="#d9c39b",
             outline="#7d6542",
         )
@@ -187,7 +169,7 @@ def render_animation_frame(
         _draw_interval(
             draw,
             mapper,
-            geometric_support_limits(pose),
+            scene.geometric_support.limits,
             10,
             "#506158",
             "base geometrique",
@@ -196,14 +178,14 @@ def render_animation_frame(
         _draw_interval(
             draw,
             mapper,
-            functional_support_limits(pose),
+            scene.functional_support.limits,
             42 if layers.geometric_base else 12,
             "#9a5b16",
             "zone fonctionnelle",
         )
 
-    com = mapper(pose.com)
-    projection = mapper((pose.com[0], 0.0))
+    com = mapper(scene.point("com"))
+    projection = mapper(scene.com_projection)
     if layers.global_com and layers.com_projection:
         draw.line((*com, *projection), fill="#3d7580", width=2)
     if layers.global_com:
@@ -219,20 +201,20 @@ def render_animation_frame(
             fill="#2c9ab7",
         )
     if layers.segment_com:
-        for name, value in pose.segment_coms.items():
-            pixel = mapper(value)
+        for segment_com in scene.segment_coms:
+            pixel = mapper(segment_com.position)
             draw.ellipse(
                 (pixel[0] - 5, pixel[1] - 5, pixel[0] + 5, pixel[1] + 5), fill="#e64357"
             )
             draw.text(
                 (pixel[0] + 7, pixel[1] - 7),
-                name,
+                segment_com.name,
                 anchor="ls",
                 fill="#8a1f32",
                 font=_font(11, True),
             )
 
-    cop = mapper((result.cop_x, 0.0))
+    cop = mapper(scene.support_point)
     if layers.cop_zmp:
         draw.ellipse((cop[0] - 6, cop[1] - 6, cop[0] + 6, cop[1] + 6), fill="#c15a2b")
         draw.text(
@@ -245,7 +227,8 @@ def render_animation_frame(
     if layers.grf:
         force_end = mapper(
             (
-                result.cop_x + result.ground_reaction[0] / FORCE_DRAW_SCALE,
+                scene.support_point[0]
+                + result.ground_reaction[0] / FORCE_DRAW_SCALE,
                 result.ground_reaction[1] / FORCE_DRAW_SCALE,
             )
         )
@@ -259,21 +242,25 @@ def render_animation_frame(
         )
     if layers.weight:
         weight_end = mapper(
-            (pose.com[0], pose.com[1] - anthro.total_mass * GRAVITY / FORCE_DRAW_SCALE)
+            (
+                scene.point("com")[0],
+                scene.point("com")[1]
+                - anthro.total_mass * GRAVITY / FORCE_DRAW_SCALE,
+            )
         )
         _arrow(draw, com, weight_end, "#315f8a")
 
     if layers.moment_arms:
-        for joint in (pose.knee, pose.hip):
-            projected = _project_on_force_line(
-                joint, (result.cop_x, 0.0), result.ground_reaction
+        for joint in (scene.point("knee"), scene.point("hip")):
+            projected = project_point_on_line(
+                joint, scene.support_point, result.ground_reaction
             )
             draw.line((*mapper(joint), *mapper(projected)), fill="#1f77b4", width=2)
     if layers.capacity_rings:
         for name, joint in (
-            ("cheville", pose.ankle),
-            ("genou", pose.knee),
-            ("hanche", pose.hip),
+            ("cheville", scene.point("ankle")),
+            ("genou", scene.point("knee")),
+            ("hanche", scene.point("hip")),
         ):
             utilization = result.effort_ratios[name]
             ratio = 1.0 if utilization is None else min(1.0, utilization)
@@ -289,7 +276,12 @@ def render_animation_frame(
                 width=5,
             )
     if layers.joint_markers:
-        for joint in (pose.ankle, pose.knee, pose.hip, pose.shoulder):
+        for joint in (
+            scene.point("ankle"),
+            scene.point("knee"),
+            scene.point("hip"),
+            scene.point("shoulder"),
+        ):
             pixel = mapper(joint)
             draw.ellipse(
                 (pixel[0] - 7, pixel[1] - 7, pixel[0] + 7, pixel[1] + 7),
@@ -300,10 +292,10 @@ def render_animation_frame(
 
     if layers.joint_coordinates:
         for label, joint in (
-            ("cheville", pose.ankle),
-            ("genou", pose.knee),
-            ("hanche", pose.hip),
-            ("épaule", pose.shoulder),
+            ("cheville", scene.point("ankle")),
+            ("genou", scene.point("knee")),
+            ("hanche", scene.point("hip")),
+            ("épaule", scene.point("shoulder")),
         ):
             pixel = mapper(joint)
             draw.text(
