@@ -204,9 +204,10 @@ def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> flo
 
 @lru_cache(maxsize=32)
 def _load_transparent_sprite(filename: str, refined: bool):
-    from PIL import Image
+    from PIL import Image, ImageDraw
 
-    image = Image.open(_asset_path(filename, refined)).convert("RGBA")
+    source_path = _asset_path(filename, refined)
+    image = Image.open(source_path).convert("RGBA")
     pixels = image.load()
     width, height = image.size
     for y in range(height):
@@ -216,6 +217,28 @@ def _load_transparent_sprite(filename: str, refined: bool):
                 pixels[x, y] = (255, 255, 255, 0)
             else:
                 pixels[x, y] = (r, g, b, a)
+
+    # The black/white circles embedded in the source PNGs are calibration
+    # targets.  They are useful to locate the physical joint anchors, but
+    # they must not be part of the athlete silhouette: in the didactic mode
+    # they otherwise overlap the joint and capacity overlays, giving the
+    # misleading impression that the body is made from mixed-quality pieces.
+    # Locate them from an untouched RGB copy so calibration remains entirely
+    # independent from the display cleanup.
+    calibration_image = _rgb_on_white(Image.open(source_path))
+    target_centers = _component_centers(calibration_image)
+    target_radius = max(12, round(min(width, height) * 0.032))
+    painter = ImageDraw.Draw(image)
+    for center_x, center_y in target_centers:
+        painter.ellipse(
+            (
+                center_x - target_radius,
+                center_y - target_radius,
+                center_x + target_radius,
+                center_y + target_radius,
+            ),
+            fill=(255, 255, 255, 0),
+        )
     return image
 
 

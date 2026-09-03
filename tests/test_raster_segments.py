@@ -52,6 +52,20 @@ class RasterSegmentAnchorTest(unittest.TestCase):
         self.assertAlmostEqual(spec.distal_anchor[1], 75.4, delta=1.0)
         self.assertGreater(spec.proximal_anchor[0], 700.0)
 
+    def test_refined_calibration_targets_are_not_drawn_on_the_silhouette(self):
+        """Joint targets locate the sprite but must not appear in the GUI."""
+        from PIL import Image
+
+        for filename in ("pied.png", "jambe.png", "cuisse.png", "trunk_homme_back.png"):
+            with self.subTest(filename=filename):
+                source = Image.open(raster_segments._asset_path(filename, refined=True))
+                targets = raster_segments._component_centers(
+                    raster_segments._rgb_on_white(source)
+                )
+                cleaned = raster_segments._load_transparent_sprite(filename, refined=True)
+                for x, y in targets:
+                    self.assertEqual(cleaned.getpixel((round(x), round(y)))[3], 0)
+
     def test_bar_com_editor_includes_all_twelve_trunk_images(self):
         images = calibration_images()
 
