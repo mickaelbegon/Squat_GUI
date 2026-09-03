@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from squat_gui.anthropometry import Anthropometry
+from squat_gui.bar_path_constraints import candidate_bounds, find_feasible_start
 from squat_gui.bar_path_optimization import (
     ANGLE_PERTURBATION_RAD,
     BarPathFailureCode,
@@ -11,6 +12,10 @@ from squat_gui.bar_path_optimization import (
     BarPathOptimizationStage,
     DEPTH_TOLERANCE_M,
     optimize_deep_squat_bar_path,
+)
+from squat_gui.bar_path_solver import (
+    SLSQP_FUNCTION_TOLERANCE,
+    SLSQP_MAX_ITERATIONS,
 )
 from squat_gui.dynamics import simulate
 from squat_gui.kinematics import (
@@ -222,8 +227,10 @@ class BarPathOptimizationTests(unittest.TestCase):
             True,
         )
         events: list[BarPathOptimizationProgress] = []
+        solver_options = {}
 
-        def failing_solver(*_args, **_kwargs):
+        def failing_solver(*_args, **kwargs):
+            solver_options.update(kwargs)
             raise RuntimeError("indisponibilité native contrôlée")
 
         result = optimize_deep_squat_bar_path(
@@ -244,6 +251,39 @@ class BarPathOptimizationTests(unittest.TestCase):
         self.assertEqual(result.diagnostic.code, BarPathFailureCode.SOLVER_ERROR)
         self.assertIn("indisponibilité native contrôlée", result.message)
         self.assertEqual(events[-1].stage, BarPathOptimizationStage.FALLBACK)
+        self.assertEqual(solver_options["method"], "SLSQP")
+        self.assertEqual(
+            solver_options["options"],
+            {
+                "maxiter": SLSQP_MAX_ITERATIONS,
+                "ftol": SLSQP_FUNCTION_TOLERANCE,
+                "disp": False,
+            },
+        )
+
+    def test_candidate_bounds_combine_perturbation_and_anatomy(self) -> None:
+        requested = tuple(math.radians(value) for value in (39.0, -139.0, 119.0))
+
+        bounds = candidate_bounds(requested)
+
+        expected_degrees = ((34.0, 40.0), (-140.0, -134.0), (114.0, 120.0))
+        for actual, expected in zip(bounds, expected_degrees):
+            self.assertAlmostEqual(actual[0], math.radians(expected[0]))
+            self.assertAlmostEqual(actual[1], math.radians(expected[1]))
+
+    def test_feasible_start_search_keeps_its_deterministic_order(self) -> None:
+        requested = (0.0, 0.0, 0.0)
+        bounds = [
+            (-ANGLE_PERTURBATION_RAD, ANGLE_PERTURBATION_RAD),
+        ] * 3
+
+        result = find_feasible_start(
+            requested,
+            bounds,
+            lambda values: (float(values[0]) - 0.04,),
+        )
+
+        self.assertEqual(result, (0.5 * ANGLE_PERTURBATION_RAD, 0.0, 0.0))
 
 
 if __name__ == "__main__":
