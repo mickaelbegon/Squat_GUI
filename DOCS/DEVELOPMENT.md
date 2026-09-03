@@ -64,6 +64,14 @@ ou contrat partagé, ajouter un test sans GUI, puis relier l'interface et les
 exports. Éviter de faire passer une structure Tkinter, un widget ou un chemin
 de fichier directement dans les modules de simulation.
 
+Le test `tests/test_architecture_boundaries.py` vérifie ces frontières par
+analyse syntaxique, sans importer l'application. Il interdit notamment toute
+dépendance directe entre `app.py` et `cli.py`, ainsi que les remontées des
+modèles de session, du rendu et des exports vers les couches d'interface ou de
+simulation. Une dépendance de bas niveau vers la cinématique, la dynamique ou
+l'anthropométrie est légitime ; les writers d'export peuvent dépendre de leur
+contrat `workbook_model`, mais pas du GUI ou de la CLI.
+
 ### Points d'entrée
 
 | Commande | Usage |

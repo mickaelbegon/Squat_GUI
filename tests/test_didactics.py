@@ -3,10 +3,16 @@ import unittest
 from squat_gui.didactics import (
     CUSTOM_TEMPORAL_PRESET,
     DYNAMIC_PHASE_DURATION_OPTIONS,
+    DIDACTIC_STEPS,
+    DidacticPathState,
     ISOMETRIC_PHASE_DURATION_OPTIONS,
     TEMPORAL_PRESETS,
     RevealMode,
     bounded_phase_durations,
+    clamp_didactic_step,
+    didactic_focus_keys,
+    didactic_message,
+    didactic_step_pieces,
     layers_for_reveal,
     matching_temporal_preset,
     phase_duration_triplet,
@@ -80,6 +86,42 @@ class TemporalPresetTests(unittest.TestCase):
 
 
 class ProgressiveRevealTests(unittest.TestCase):
+    def test_guided_path_has_eleven_tagged_messages(self) -> None:
+        self.assertEqual(len(DIDACTIC_STEPS), 11)
+        self.assertEqual(
+            didactic_step_pieces(0)[1], ("sujet", "sujet")
+        )
+        self.assertIn(
+            "clic droit",
+            "".join(text for text, _tag in didactic_step_pieces(4)),
+        )
+        self.assertEqual(
+            didactic_step_pieces(10)[1], ("Variables contrôlées", "phase")
+        )
+
+    def test_guided_step_and_semantic_focus_are_clamped(self) -> None:
+        self.assertEqual(clamp_didactic_step(-5), 0)
+        self.assertEqual(clamp_didactic_step(99), 10)
+        self.assertEqual(didactic_focus_keys(-1), ("subject",))
+        self.assertEqual(didactic_focus_keys(99), ("comparison",))
+
+    def test_guided_path_navigation_preserves_transition_rules(self) -> None:
+        inactive = DidacticPathState(False, 8)
+
+        self.assertEqual(inactive.advanced(), DidacticPathState(True, 0))
+        self.assertEqual(inactive.retreated(), inactive)
+        self.assertEqual(DidacticPathState(True, 0).retreated(), DidacticPathState(True, 0))
+        self.assertEqual(DidacticPathState(True, 10).advanced(), DidacticPathState(True, 10))
+        self.assertEqual(DidacticPathState(True, 6).reveal_mode, RevealMode.KINEMATICS)
+        self.assertFalse(DidacticPathState(True, 10).can_go_forward)
+
+    def test_inactive_message_stays_outside_the_guided_step_content(self) -> None:
+        self.assertEqual(
+            didactic_message(False, 4),
+            (("Activer pour guider une exploration etape par etape.", None),),
+        )
+        self.assertEqual(didactic_message(True, 8), didactic_step_pieces(8))
+
     def test_guided_steps_reveal_observation_then_kinematics_then_dynamics(
         self,
     ) -> None:

@@ -47,11 +47,14 @@ from .dynamics import (
 )
 from .didactics import (
     DYNAMIC_PHASE_DURATION_OPTIONS,
+    DidacticPathState,
     ISOMETRIC_PHASE_DURATION_OPTIONS,
     TEMPORAL_PRESETS,
     TEMPORAL_PRESETS_BY_NAME,
     RevealMode,
     bounded_phase_durations,
+    didactic_focus_keys,
+    didactic_message,
     layers_for_reveal,
     reveal_mode_for_step,
     temporal_preset_display,
@@ -1446,130 +1449,62 @@ class SquatGui(tk.Tk):
         self.plot_canvas.configure(highlightthickness=1, highlightbackground="#c9d1c7")
 
         if self.didactic_mode_var.get():
-            focus_steps = {
-                0: (("widget", self.profile_menu, "GuideSujet.TCombobox"),),
-                1: (("widget", self.bar_menu, "GuideBarre.TCombobox"),),
-                2: (("widget", self.charge_box, "GuideCharge.TLabelframe"),),
-                3: (
+            focus_targets = {
+                "subject": (("widget", self.profile_menu, "GuideSujet.TCombobox"),),
+                "bar": (("widget", self.bar_menu, "GuideBarre.TCombobox"),),
+                "load": (("widget", self.charge_box, "GuideCharge.TLabelframe"),),
+                "phase": (
                     ("widget", self.duration_box, "GuidePhase.TLabelframe"),
                     ("widget", self.temporal_preset_menu, "GuidePhase.TCombobox"),
                 ),
-                4: (("canvas", self.pose_canvas, "#2e7d54"),),
-                5: (
+                "deep_pose": (("canvas", self.pose_canvas, "#2e7d54"),),
+                "animation": (
                     ("canvas", self.animation_canvas, "#2e7d54"),
                     ("widget", self.play_button, "GuidePose.TButton"),
                 ),
-                6: (
+                "kinematics": (
                     ("widget", self.plot_box, "GuideResults.TLabelframe"),
                     ("widget", self.table_box, "GuideResults.TLabelframe"),
                     ("plot_canvas", self.plot_canvas, "#276c92"),
                 ),
-                7: (
+                "dynamics": (
                     ("canvas", self.animation_canvas, "#b05e16"),
                     ("widget", self.plot_box, "GuideResults.TLabelframe"),
                 ),
-                8: (("widget", self.add_condition_button, "GuidePose.TButton"),),
-                9: (
+                "add": (("widget", self.add_condition_button, "GuidePose.TButton"),),
+                "duplicate": (
                     ("widget", self.duplicate_condition_button, "GuidePose.TButton"),
                     ("widget", self.parameter_box, "GuideCharge.TLabelframe"),
                     ("widget", self.add_condition_button, "GuidePose.TButton"),
                 ),
-                10: (
+                "comparison": (
                     ("widget", self.table_box, "GuidePhase.TLabelframe"),
                     ("widget", self.conditions_table, "GuidePhase.Treeview"),
                     ("widget", self.differences_table, "GuidePhase.Treeview"),
                 ),
             }
-            for target_type, widget, style_or_color in focus_steps[self.didactic_step]:
-                if target_type == "widget":
-                    widget.configure(style=style_or_color)
-                elif target_type == "canvas":
-                    self._didactic_canvas_colors[widget] = style_or_color
-                else:
-                    widget.configure(
-                        highlightthickness=4, highlightbackground=style_or_color
-                    )
+            for focus_key in didactic_focus_keys(self.didactic_step):
+                for target_type, widget, style_or_color in focus_targets[focus_key]:
+                    if target_type == "widget":
+                        widget.configure(style=style_or_color)
+                    elif target_type == "canvas":
+                        self._didactic_canvas_colors[widget] = style_or_color
+                    else:
+                        widget.configure(
+                            highlightthickness=4, highlightbackground=style_or_color
+                        )
         if self.states:
             self.redraw()
 
     def update_didactic_guide(self) -> None:
-        steps = (
-            (
-                ("1. Choisir le ", None),
-                ("sujet", "sujet"),
-                (": profil, longueurs et mode anthropométrique.", None),
-            ),
-            (
-                ("2. Selectionner la ", None),
-                ("barre", "barre"),
-                (": front, back ou over-head.", None),
-            ),
-            (
-                ("3. Regler la ", None),
-                ("charge", "charge"),
-                ("; commencer a 0 %BW.", None),
-            ),
-            (
-                ("4. Choisir un ", None),
-                ("preset temporel", "phase"),
-                (" ou régler les trois durées.", None),
-            ),
-            (
-                ("5. Glisser les articulations pour la ", None),
-                ("position basse", "pose"),
-                (
-                    ". Pour un angle précis, faire un clic droit sur cheville, "
-                    "genou ou hanche, puis valider la valeur sous l'image.",
-                    None,
-                ),
-            ),
-            (
-                ("6. Observer l'", None),
-                ("animation", "pose"),
-                (" et formuler une hypothèse; les valeurs restent masquées.", None),
-            ),
-            (
-                ("7. Révéler la ", None),
-                ("cinématique", "phase"),
-                (
-                    ": vue synchronisée, curseur, inspecteur, phases et repère temporel.",
-                    None,
-                ),
-            ),
-            (
-                ("8. Révéler la ", None),
-                ("dynamique", "barre"),
-                (
-                    ": forces, couples détaillés, capacités Anderson angle-vitesse et U demande/capacité.",
-                    None,
-                ),
-            ),
-            (
-                ("9. Cliquer sur ", None),
-                ("Ajouter", "pose"),
-                (" pour conserver l'essai.", None),
-            ),
-            (
-                ("10. ", None),
-                ("Dupliquer", "pose"),
-                (" la référence, changer un seul ", None),
-                ("paramètre", "charge"),
-                (" puis ajouter.", None),
-            ),
-            (
-                ("11. Sélectionner deux lignes et lire ", None),
-                ("Variables contrôlées", "phase"),
-                (" pour comparer.", None),
-            ),
-        )
         self.didactic_label.configure(state="normal")
         self.didactic_label.delete("1.0", "end")
         if self.didactic_mode_var.get():
             self.didactic_label.configure(bg="#e5f1e8", fg="#154a34")
-            pieces = steps[self.didactic_step]
+            pieces = didactic_message(True, self.didactic_step)
         else:
             self.didactic_label.configure(bg="#f2f4f1", fg="#506158")
-            pieces = (("Activer pour guider une exploration etape par etape.", None),)
+            pieces = didactic_message(False, self.didactic_step)
         for text, tag in pieces:
             self.didactic_label.insert("end", text, () if tag is None else (tag,))
         self.didactic_label.configure(state="disabled")
@@ -1601,42 +1536,51 @@ class SquatGui(tk.Tk):
 
     def update_didactic_navigation(self) -> None:
         self.draw_didactic_switch()
-        active = self.didactic_mode_var.get()
+        state = DidacticPathState(
+            self.didactic_mode_var.get(), self.didactic_step
+        )
         self.reveal_mode_menu.state(
-            ["disabled"] if active else ["!disabled", "readonly"]
+            ["disabled"] if state.active else ["!disabled", "readonly"]
         )
         self.didactic_previous_button.state(
-            ["!disabled"] if active and self.didactic_step > 0 else ["disabled"]
+            ["!disabled"] if state.can_go_back else ["disabled"]
         )
         self.didactic_next_button.state(
-            ["!disabled"] if not active or self.didactic_step < 10 else ["disabled"]
+            ["!disabled"] if state.can_go_forward else ["disabled"]
         )
 
     def toggle_didactic_mode(self) -> None:
-        enabling = not self.didactic_mode_var.get()
-        self.didactic_mode_var.set(enabling)
-        if enabling:
+        current = DidacticPathState(
+            self.didactic_mode_var.get(), self.didactic_step
+        )
+        updated = current.toggled()
+        self.didactic_mode_var.set(updated.active)
+        self.didactic_step = updated.step
+        if updated.active:
             self._reveal_mode_before_didactic = self.reveal_mode_var.get()
-            self.didactic_step = 0
-            self.set_reveal_mode(reveal_mode_for_step(self.didactic_step))
+            self.set_reveal_mode(updated.reveal_mode)
         else:
             self.set_reveal_mode(self._reveal_mode_before_didactic)
         self.update_didactic_guide()
 
     def advance_didactic_guide(self) -> None:
-        if not self.didactic_mode_var.get():
-            self.didactic_mode_var.set(True)
-            self.didactic_step = 0
-        else:
-            self.didactic_step = min(10, self.didactic_step + 1)
-        self.set_reveal_mode(reveal_mode_for_step(self.didactic_step))
+        updated = DidacticPathState(
+            self.didactic_mode_var.get(), self.didactic_step
+        ).advanced()
+        self.didactic_mode_var.set(updated.active)
+        self.didactic_step = updated.step
+        self.set_reveal_mode(updated.reveal_mode)
         self.update_didactic_guide()
 
     def retreat_didactic_guide(self) -> None:
-        if not self.didactic_mode_var.get():
+        current = DidacticPathState(
+            self.didactic_mode_var.get(), self.didactic_step
+        )
+        if not current.active:
             return
-        self.didactic_step = max(0, self.didactic_step - 1)
-        self.set_reveal_mode(reveal_mode_for_step(self.didactic_step))
+        updated = current.retreated()
+        self.didactic_step = updated.step
+        self.set_reveal_mode(updated.reveal_mode)
         self.update_didactic_guide()
 
     def anthro(self) -> Anthropometry:
