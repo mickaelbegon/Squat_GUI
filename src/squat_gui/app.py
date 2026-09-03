@@ -10,7 +10,6 @@ os.environ.setdefault("LC_ALL", "en_US.UTF-8")
 
 import json
 import tkinter as tk
-from copy import deepcopy
 from collections.abc import Mapping
 from math import atan2, degrees, isfinite, radians
 from pathlib import Path
@@ -31,7 +30,14 @@ from .bar_path_optimization import (
 )
 from .export_io import write_csv
 from .simulation_service import Condition, condition_from_settings, simulate_condition
-from .comparison import difference_summary, parameter_differences
+from .condition_store import (
+    ConditionComparison,
+    comparison_reference,
+    condition_table_metrics,
+    create_saved_condition,
+    resolve_condition_comparison,
+    selected_conditions,
+)
 from .dynamics import (
     GRAVITY,
     DynamicsResult,
@@ -2488,12 +2494,15 @@ class SquatGui(tk.Tk):
         compared_final_q_deg: list[float],
     ) -> None:
         self.clear_condition_differences()
-        differences = parameter_differences(
+        comparison = ConditionComparison(
+            "référence",
             reference_settings,
             reference_final_q_deg,
+            "comparée",
             compared_settings,
             compared_final_q_deg,
         )
+        differences = comparison.differences
         if not differences:
             self.differences_table.insert(
                 "",
@@ -2511,39 +2520,25 @@ class SquatGui(tk.Tk):
     def update_condition_differences(self) -> None:
         if not hasattr(self, "differences_table"):
             return
-        selected = [
-            iid
-            for iid in self.conditions_table.selection()
-            if iid in self.saved_conditions
-        ]
-        if len(selected) >= 2:
-            reference = self.saved_conditions[selected[0]]
-            compared = self.saved_conditions[selected[1]]
+        selected_ids = self.conditions_table.selection()
+        current_settings = None
+        current_final_q_deg = None
+        if not selected_ids:
+            current_settings = self.current_settings()
+            current_final_q_deg = [degrees(value) for value in self.final_q]
+        comparison = resolve_condition_comparison(
+            self.saved_conditions,
+            selected_ids,
+            pending_reference_iid=self._comparison_reference_iid,
+            current_settings=current_settings,
+            current_final_q_deg=current_final_q_deg,
+        )
+        if comparison is not None:
             self.show_condition_differences(
-                dict(reference["settings"]),
-                list(reference["final_q_deg"]),
-                dict(compared["settings"]),
-                list(compared["final_q_deg"]),
-            )
-            return
-        if len(selected) == 1:
-            condition = self.saved_conditions[selected[0]]
-            comparison_reference = condition.get("comparison_reference")
-            if isinstance(comparison_reference, dict):
-                self.show_condition_differences(
-                    dict(comparison_reference.get("settings", {})),
-                    list(comparison_reference.get("final_q_deg", [])),
-                    dict(condition["settings"]),
-                    list(condition["final_q_deg"]),
-                )
-                return
-        if not selected and self._comparison_reference_iid in self.saved_conditions:
-            reference = self.saved_conditions[self._comparison_reference_iid]
-            self.show_condition_differences(
-                dict(reference["settings"]),
-                list(reference["final_q_deg"]),
-                self.current_settings(),
-                [degrees(value) for value in self.final_q],
+                comparison.reference_settings,
+                comparison.reference_final_q_deg,
+                comparison.compared_settings,
+                comparison.compared_final_q_deg,
             )
             return
         self.clear_condition_differences()
@@ -5518,22 +5513,18 @@ class SquatGui(tk.Tk):
         self.after(round(1000 * DEFAULT_SAMPLE_PERIOD_S), self.step_animation)
 
     def record_condition(self) -> None:
-        comparison_reference = None
+        reference_snapshot = None
         if self._comparison_reference_iid in self.saved_conditions:
             reference = self.saved_conditions[self._comparison_reference_iid]
-            comparison_reference = {
-                "label": reference["label"],
-                "settings": deepcopy(reference["settings"]),
-                "final_q_deg": list(reference["final_q_deg"]),
-            }
+            reference_snapshot = comparison_reference(reference)
         condition_iid = self.add_saved_condition(
             self.current_settings(),
             [degrees(value) for value in self.final_q],
             states=list(self.states),
             results=list(self.results),
-            comparison_reference=comparison_reference,
+            comparison_reference=reference_snapshot,
         )
-        summary = str(self.saved_conditions[condition_iid]["difference_summary"])
+        summary = self.saved_conditions[condition_iid].difference_summary
         self.status_var.set(
             f"condition {self.saved_condition_count} enregistrée · {summary}"
         )
@@ -5552,17 +5543,15 @@ class SquatGui(tk.Tk):
         self.update_condition_differences()
 
     def duplicate_selected_condition(self) -> None:
-        selected = [
-            iid
-            for iid in self.conditions_table.selection()
-            if iid in self.saved_conditions
-        ]
+        selected = selected_conditions(
+            self.saved_conditions, self.conditions_table.selection()
+        )
         if len(selected) != 1:
             return
-        reference_iid = selected[0]
-        reference = self.saved_conditions[reference_iid]
-        settings = deepcopy(reference["settings"])
-        settings["final_q_deg"] = list(reference["final_q_deg"])
+        reference_iid, reference = selected[0]
+        snapshot = comparison_reference(reference)
+        settings = dict(snapshot.settings)
+        settings["final_q_deg"] = list(snapshot.final_q_deg)
         self._comparison_reference_iid = reference_iid
         self.apply_settings(settings)
         self.conditions_table.selection_remove(reference_iid)
@@ -5571,7 +5560,7 @@ class SquatGui(tk.Tk):
         self.on_table_tab_changed()
         self.update_condition_differences()
         self.status_var.set(
-            f"condition {reference['label']} dupliquée vers l'éditeur · "
+            f"condition {reference.label} dupliquée vers l'éditeur · "
             "modifiez un paramètre puis cliquez sur Ajouter"
         )
 
@@ -5594,57 +5583,19 @@ class SquatGui(tk.Tk):
         condition_label = label or str(self.saved_condition_count)
         if states is None or results is None:
             states, results = self.simulate_from_condition(settings, final_q_deg)
-        peak_torques = {
-            joint: max(abs(result.torques[joint]) for result in results)
-            for joint in ("cheville", "genou", "hanche")
-        }
-        utilization_events = [
-            (result.effort_ratios[joint], index, joint)
-            for index, result in enumerate(results)
-            for joint in ("cheville", "genou", "hanche")
-        ]
-        undefined_events = [event for event in utilization_events if event[0] is None]
-        if undefined_events:
-            limiting_ratio, limiting_index, limiting_joint = undefined_events[0]
-            utilization_label = "n.d."
-            exceeds_label = "oui"
-        else:
-            limiting_ratio, limiting_index, limiting_joint = max(
-                utilization_events, key=lambda event: float(event[0] or 0.0)
-            )
-            utilization_label = f"{100.0 * float(limiting_ratio or 0.0):.0f}%"
-            exceeds_label = "oui" if float(limiting_ratio or 0.0) > 1.0 else "non"
-        limiting_state = states[limiting_index]
-        limiting_label = (
-            f"{limiting_joint} · {limiting_state.time:.2f}s · "
-            f"{limiting_state.phase} · {exceeds_label}"
-        )
         squat_angles = self.display_joint_angles(
             tuple(radians(value) for value in final_q_deg)
         )
-        typed_reference = ComparisonReference.from_object(comparison_reference)
-        differences = ()
-        if typed_reference is not None:
-            differences = parameter_differences(
-                dict(typed_reference.settings),
-                list(typed_reference.final_q_deg),
-                settings,
-                final_q_deg,
-            )
-        summary = (
-            difference_summary(differences)
-            if typed_reference is not None
-            else "référence indépendante"
-        )
-        self.saved_conditions[condition_iid] = SavedCondition(
+        condition = create_saved_condition(
             label=condition_label,
-            settings=dict(settings),
-            final_q_deg=list(final_q_deg),
+            settings=settings,
+            final_q_deg=final_q_deg,
             states=states,
             results=results,
-            comparison_reference=typed_reference,
-            difference_summary=summary,
+            reference=comparison_reference,
         )
+        metrics = condition_table_metrics(condition)
+        self.saved_conditions[condition_iid] = condition
         self.conditions_table.insert(
             "",
             "end",
@@ -5664,12 +5615,12 @@ class SquatGui(tk.Tk):
                 f"{float(settings.get('shank_percent', 0.0)):+.1f}",
                 f"{float(settings.get('thigh_percent', 0.0)):+.1f}",
                 f"{float(settings.get('trunk_percent', 0.0)):+.1f}",
-                f"{peak_torques['cheville']:.1f}",
-                f"{peak_torques['genou']:.1f}",
-                f"{peak_torques['hanche']:.1f}",
-                utilization_label,
-                limiting_label,
-                summary,
+                f"{metrics.peak_torques['cheville']:.1f}",
+                f"{metrics.peak_torques['genou']:.1f}",
+                f"{metrics.peak_torques['hanche']:.1f}",
+                metrics.utilization_label,
+                metrics.limiting_label,
+                condition.difference_summary,
             ),
         )
         return condition_iid
