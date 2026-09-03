@@ -43,7 +43,6 @@ from .dynamics import (
     DynamicsResult,
     force_balance,
     simulate,
-    torque_presets,
 )
 from .didactics import (
     DYNAMIC_PHASE_DURATION_OPTIONS,
@@ -122,6 +121,7 @@ from .timeline import (
     time_axis_label,
     time_axis_unit,
 )
+from .torque_capacity import torque_presets
 from .video_export import export_mp4
 
 DETAILED_PLOT_CHOICE = "couples detailles"

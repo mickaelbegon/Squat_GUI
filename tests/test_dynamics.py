@@ -9,16 +9,9 @@ from squat_gui.dynamics import (
     _biorbd_inverse_dynamics_decomposition,
     _biorbd_native_cop,
     _biorbd_native_cop_x,
-    athlete_reference_max_torques,
-    anderson_angle_factor,
-    anderson_angle_domain,
-    anderson_reference_max_torques,
-    anderson_velocity_factor,
-    angle_adapted_max,
     force_balance,
     inverse_dynamics,
     simulate,
-    torque_presets,
 )
 from squat_gui.kinematics import (
     MotionState,
@@ -29,6 +22,15 @@ from squat_gui.kinematics import (
     pose_from_angles,
     zmp_in_support,
     zmp_support_limits,
+)
+from squat_gui.torque_capacity import (
+    athlete_reference_max_torques,
+    anderson_angle_factor,
+    anderson_angle_domain,
+    anderson_reference_max_torques,
+    anderson_velocity_factor,
+    angle_adapted_max,
+    torque_presets,
 )
 
 

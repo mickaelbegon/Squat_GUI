@@ -10,8 +10,9 @@ from .anthropometry import Anthropometry, scale_from_percent
 from .backend import BiorbdModelCache
 from .bar_path_optimization import optimize_deep_squat_bar_path
 from .didactics import bounded_phase_durations
-from .dynamics import simulate, torque_presets
+from .dynamics import simulate
 from .export_schema import JOINTS
+from .torque_capacity import torque_presets
 from .kinematics import PhaseDurations, frame_count_for_duration
 from .simulation_export_rows import build_export_rows, condition_summary
 

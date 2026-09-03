@@ -12,7 +12,7 @@ from squat_gui.bar_path_optimization import (
     DEPTH_TOLERANCE_M,
     optimize_deep_squat_bar_path,
 )
-from squat_gui.dynamics import simulate, torque_presets
+from squat_gui.dynamics import simulate
 from squat_gui.kinematics import (
     PhaseDurations,
     functional_support_limits,
@@ -20,6 +20,7 @@ from squat_gui.kinematics import (
     motion_state,
     pose_from_angles,
 )
+from squat_gui.torque_capacity import torque_presets
 
 
 class BarPathOptimizationTests(unittest.TestCase):

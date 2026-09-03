@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Iterable
 
 from .anthropometry import ANTHROPOMETRY_MODES
-from .dynamics import torque_presets
+from .torque_capacity import torque_presets
 from .didactics import (
     DYNAMIC_PHASE_DURATION_OPTIONS,
     ISOMETRIC_PHASE_DURATION_OPTIONS,
