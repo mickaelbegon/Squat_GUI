@@ -11,7 +11,7 @@ os.environ.setdefault("LC_ALL", "en_US.UTF-8")
 import json
 import tkinter as tk
 from collections.abc import Mapping
-from math import atan2, degrees, isfinite, radians
+from math import degrees, isfinite, radians
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 from typing import cast
@@ -57,7 +57,6 @@ from .didactics import (
     temporal_preset_display,
 )
 from .kinematics import (
-    CLINICAL_JOINT_LIMITS_DEG,
     DEFAULT_SAMPLE_PERIOD_S,
     MotionState,
     PhaseDurations,
@@ -67,7 +66,6 @@ from .kinematics import (
     joint_values_from_segment_values,
     pose_from_angles,
     segment_orientations,
-    segment_values_from_clinical_joint_values,
 )
 from .observables import (
     com_contributions,
@@ -85,6 +83,15 @@ from .plot_data import (
     plot_times as times_for_plot,
     sample_dataset_at_time as sample_plot_dataset_at_time,
     select_plot_datasets,
+)
+from .pose_editing import (
+    apply_clinical_angle,
+    clamp_segment_angles,
+    clinical_angle_editor_spec,
+    clinical_joint_angles_deg,
+    drag_updated_q,
+    format_pose_angle as format_precise_pose_angle,
+    nearest_named_point,
 )
 from .export_schema import write_xlsx
 from .raster_segments import draw_sprite_segment
@@ -5276,11 +5283,11 @@ class SquatGui(tk.Tk):
         pose = pose_from_angles(anthro, self.final_q)
         bounds = getattr(self, "_pose_editor_bounds", None) or self.scene_bounds()
         candidates = {"knee": pose.knee, "hip": pose.hip, "shoulder": pose.shoulder}
-        for name, point in candidates.items():
-            px, py = self.world_to_canvas(self.pose_canvas, point, bounds)
-            if (px - x) ** 2 + (py - y) ** 2 < 20**2:
-                return name
-        return None
+        canvas_candidates = {
+            name: self.world_to_canvas(self.pose_canvas, point, bounds)
+            for name, point in candidates.items()
+        }
+        return nearest_named_point(x, y, canvas_candidates)
 
     def nearest_joint_angle(self, x: float, y: float) -> str | None:
         """Return the clinical joint selected for a precise right-click edit."""
@@ -5291,11 +5298,11 @@ class SquatGui(tk.Tk):
             "genou": pose.knee,
             "hanche": pose.hip,
         }
-        for joint, point in candidates.items():
-            px, py = self.world_to_canvas(self.pose_canvas, point, bounds)
-            if (px - x) ** 2 + (py - y) ** 2 < 20**2:
-                return joint
-        return None
+        canvas_candidates = {
+            joint: self.world_to_canvas(self.pose_canvas, point, bounds)
+            for joint, point in candidates.items()
+        }
+        return nearest_named_point(x, y, canvas_candidates)
 
     def on_pose_context_menu(self, event: tk.Event) -> str | None:
         joint = self.nearest_joint_angle(event.x, event.y)
@@ -5323,35 +5330,24 @@ class SquatGui(tk.Tk):
             or getattr(self, "_pose_editor_bounds", None)
             or self.scene_bounds(),
         )
-        shank, thigh, trunk = self.final_q
-        if self.drag_target == "knee":
-            dx = point[0] - pose.ankle[0]
-            dy = point[1] - pose.ankle[1]
-            shank = atan2(dx, dy)
-        elif self.drag_target == "hip":
-            dx = point[0] - pose.knee[0]
-            dy = point[1] - pose.knee[1]
-            thigh = atan2(dx, dy)
-        elif self.drag_target == "shoulder":
-            dx = point[0] - pose.hip[0]
-            dy = point[1] - pose.hip[1]
-            trunk = atan2(dx, dy)
-        self.final_q = self.clamp_final_q((shank, thigh, trunk))
+        self.final_q = drag_updated_q(
+            self.final_q, self.drag_target, point, pose
+        )
         self.sync_pose_angle_fields_from_final_q()
         self.on_parameter_changed()
 
     @staticmethod
     def format_pose_angle(value: float) -> str:
         """Format a precise degree value without insignificant zeroes."""
-        return f"{value:.2f}".rstrip("0").rstrip(".")
+        return format_precise_pose_angle(value)
 
     def sync_pose_angle_fields_from_final_q(self) -> None:
         """Refresh the visible editor after a drag without committing input."""
         joint = getattr(self, "_active_pose_angle_joint", None)
         if joint is not None and hasattr(self, "pose_angle_value_var"):
-            values = clinical_joint_values_from_segment_values(self.final_q)
+            spec = clinical_angle_editor_spec(joint, self.final_q)
             self.pose_angle_value_var.set(
-                self.format_pose_angle(degrees(values[joint]))
+                self.format_pose_angle(spec.value_deg)
             )
 
     def open_pose_angle_editor(self, joint: str) -> None:
@@ -5360,22 +5356,14 @@ class SquatGui(tk.Tk):
         Selecting a new articulation always replaces the pending value.  No
         posture is changed until the user explicitly validates this editor.
         """
-        values = clinical_joint_values_from_segment_values(self.final_q)
-        lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
-        labels = {
-            "cheville": "Cheville (dorsiflexion)",
-            "genou": "Genou (flexion)",
-            "hanche": "Hanche (flexion)",
-        }
+        spec = clinical_angle_editor_spec(joint, self.final_q)
         self._active_pose_angle_joint = joint
-        self.pose_angle_joint_var.set(
-            f"{labels[joint]} — {lower:g} à {upper:g} deg"
-        )
+        self.pose_angle_joint_var.set(spec.display_label)
         self.pose_angle_value_var.set(
-            self.format_pose_angle(degrees(values[joint]))
+            self.format_pose_angle(spec.value_deg)
         )
         self.pose_angle_feedback_var.set("")
-        self.pose_angle_dialog.title(f"Angle — {labels[joint]}")
+        self.pose_angle_dialog.title(f"Angle — {spec.label}")
         self.pose_angle_dialog.deiconify()
         self.pose_angle_dialog.lift(self)
         self.pose_angle_dialog.update_idletasks()
@@ -5431,44 +5419,25 @@ class SquatGui(tk.Tk):
 
     def apply_clinical_joint_angle(self, joint: str, raw_value: str) -> bool:
         """Validate and commit one angle only after an explicit dialog action."""
-        try:
-            value = float(raw_value.strip().replace(",", "."))
-        except (AttributeError, TypeError, ValueError):
-            self.status_var.set(
-                f"angle invalide ({joint}) : entrez une valeur numérique en degrés"
-            )
+        update = apply_clinical_angle(self.final_q, joint, raw_value)
+        if not update.accepted:
+            self.status_var.set(update.error_message or "angle invalide")
             return False
-        if not isfinite(value):
-            self.status_var.set(
-                f"angle invalide ({joint}) : entrez une valeur numérique en degrés"
-            )
-            return False
-
-        lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
-        bounded = max(lower, min(upper, value))
-        values = clinical_joint_values_from_segment_values(self.final_q)
-        values[joint] = radians(bounded)
-        self.final_q = self.clamp_final_q(
-            segment_values_from_clinical_joint_values(
-                values["cheville"], values["genou"], values["hanche"]
-            )
-        )
+        if update.q is None or update.bounded_deg is None:
+            raise RuntimeError("mise à jour clinique incomplète")
+        self.final_q = update.q
         self.on_parameter_changed()
-        if bounded != value:
+        if update.was_clamped:
             self.status_var.set(
                 "limite anatomique appliquée : "
-                f"{joint} {self.format_pose_angle(bounded)}°"
+                f"{joint} {self.format_pose_angle(update.bounded_deg)}°"
             )
         return True
 
     def clamp_final_q(
         self, q: tuple[float, float, float]
     ) -> tuple[float, float, float]:
-        ankle = max(radians(-30.0), min(radians(40.0), q[0]))
-        knee = max(radians(-140.0), min(radians(0.0), q[1] - ankle))
-        thigh = ankle + knee
-        hip = max(radians(-15.0), min(radians(120.0), q[2] - thigh))
-        return (ankle, thigh, thigh + hip)
+        return clamp_segment_angles(q)
 
     def project_on_force_line(
         self,
@@ -5691,10 +5660,7 @@ class SquatGui(tk.Tk):
     def display_joint_angles(
         self, q: tuple[float, float, float]
     ) -> tuple[float, float, float]:
-        values = clinical_joint_values_from_segment_values(q)
-        return tuple(
-            degrees(values[joint]) for joint in ("cheville", "genou", "hanche")
-        )
+        return clinical_joint_angles_deg(q)
 
 
 def main() -> None:
