@@ -30,14 +30,7 @@ from .bar_path_optimization import (
 )
 from .export_io import write_csv
 from .simulation_service import Condition, condition_from_settings, simulate_condition
-from .condition_store import (
-    ConditionComparison,
-    comparison_reference,
-    condition_table_metrics,
-    create_saved_condition,
-    resolve_condition_comparison,
-    selected_conditions,
-)
+from .conditions_controller import ConditionInteractionController
 from .dynamics import (
     GRAVITY,
     DynamicsResult,
@@ -86,15 +79,32 @@ from .plot_data import (
     sample_dataset_at_time as sample_plot_dataset_at_time,
     select_plot_datasets,
 )
+from .plot_rendering import (
+    PhaseMarkerDataset,
+    blend_color as blend_plot_color,
+    component_color as torque_component_color,
+    condition_color as comparison_condition_color,
+    format_axis_value as formatted_axis_value,
+    kinematic_unit as synchronized_kinematic_unit,
+    linear_position,
+    linear_ticks,
+    padded_value_bounds,
+    phase_marker_layout,
+    plot_time_bounds as rendering_time_bounds,
+    plot_unit as rendering_plot_unit,
+    time_marker_layout,
+    torque_component_styles as detailed_torque_component_styles,
+    value_bounds_with_zero as rendering_value_bounds_with_zero,
+)
 from .pose_editing import (
     apply_clinical_angle,
     clamp_segment_angles,
-    clinical_angle_editor_spec,
     clinical_joint_angles_deg,
     drag_updated_q,
     format_pose_angle as format_precise_pose_angle,
     nearest_named_point,
 )
+from .pose_angle_dialog import PrecisePoseAngleDialog
 from .export_schema import write_xlsx
 from .raster_segments import draw_sprite_segment
 from .rendering import RenderLayers
@@ -117,7 +127,6 @@ from .session_persistence import (
 from .timeline import (
     TimeMode,
     nearest_time_index,
-    phase_windows,
     time_axis_label,
     time_axis_unit,
 )
@@ -187,7 +196,6 @@ class SquatGui(tk.Tk):
         self.final_q = (radians(22.0), radians(-58.0), radians(20.0))
         # A single non-modal angle window is reused so a second right click can
         # immediately select another articulation without blocking the canvas.
-        self._active_pose_angle_joint: str | None = None
         self._pose_editor_bounds: tuple[float, float, float, float] | None = None
         self._pose_drag_bounds: tuple[float, float, float, float] | None = None
         self.frame_count = frame_count_for_duration(PhaseDurations())
@@ -301,11 +309,12 @@ class SquatGui(tk.Tk):
         ] = []
 
         self._build_layout()
+        self._condition_controller = ConditionInteractionController(
+            self, confirm_delete=messagebox.askyesno
+        )
         self.recompute()
 
-    def _build_display_menu(
-        self, parent: tk.Misc, *, scope: str
-    ) -> ttk.Menubutton:
+    def _build_display_menu(self, parent: tk.Misc, *, scope: str) -> ttk.Menubutton:
         """Build a display menu scoped to the upper or lower figures."""
         if scope not in {"upper", "lower"}:
             raise ValueError(f"Portée d'affichage inconnue: {scope}")
@@ -339,7 +348,9 @@ class SquatGui(tk.Tk):
             add_check("Noms des phases", self.show_phase_names_var)
         else:
             add_section("ANIMATION ET REPÈRES")
-            add_check("Coordonnées articulaires (survol)", self.show_joint_coordinates_var)
+            add_check(
+                "Coordonnées articulaires (survol)", self.show_joint_coordinates_var
+            )
             add_check("Orientations segmentaires", self.show_segment_orientations_var)
             add_check("Angles articulaires", self.show_joint_angles_var)
             add_check("Informations sur les couples", self.show_animation_torques_var)
@@ -637,14 +648,10 @@ class SquatGui(tk.Tk):
         self.parameter_box.columnconfigure(0, weight=1)
         self.parameter_box.columnconfigure(1, weight=1)
         self.identity_box = ttk.Frame(self.parameter_box)
-        self.identity_box.grid(
-            row=0, column=0, sticky="nsew", padx=(4, 2), pady=3
-        )
+        self.identity_box.grid(row=0, column=0, sticky="nsew", padx=(4, 2), pady=3)
         for column in range(2):
             self.identity_box.columnconfigure(column, weight=1)
-        ttk.Label(self.identity_box, text="Sujet").grid(
-            row=0, column=0, sticky="w"
-        )
+        ttk.Label(self.identity_box, text="Sujet").grid(row=0, column=0, sticky="w")
         ttk.Label(self.identity_box, text="Prise barre").grid(
             row=0, column=1, sticky="w"
         )
@@ -695,9 +702,7 @@ class SquatGui(tk.Tk):
         self.duration_box = ttk.LabelFrame(
             self.parameter_box, text="Durée des phases (s)"
         )
-        self.duration_box.grid(
-            row=1, column=0, sticky="nsew", padx=(4, 2), pady=3
-        )
+        self.duration_box.grid(row=1, column=0, sticky="nsew", padx=(4, 2), pady=3)
         for column, (label, variable, values) in enumerate(
             (
                 (
@@ -760,9 +765,7 @@ class SquatGui(tk.Tk):
             lambda _event: self.apply_temporal_preset(),
         )
         self.lengths_box = ttk.LabelFrame(self.parameter_box, text="Longueurs (%)")
-        self.lengths_box.grid(
-            row=1, column=1, sticky="nsew", padx=(2, 4), pady=3
-        )
+        self.lengths_box.grid(row=1, column=1, sticky="nsew", padx=(2, 4), pady=3)
         for column, (label, variable) in enumerate(
             (
                 ("tibia", self.shank_var),
@@ -1196,61 +1199,25 @@ class SquatGui(tk.Tk):
             relx=1.0, rely=1.0, x=-10, y=-10, anchor="se"
         )
 
-        self.pose_angle_dialog = tk.Toplevel(self)
-        self.pose_angle_dialog.withdraw()
-        self.pose_angle_dialog.transient(self)
-        self.pose_angle_dialog.resizable(False, False)
-        self.pose_angle_dialog.protocol("WM_DELETE_WINDOW", self.close_pose_angle_editor)
-        self.pose_angle_editor = ttk.LabelFrame(
-            self.pose_angle_dialog, text="Angle articulaire", padding=(8, 5)
+        self.pose_angle_controller = PrecisePoseAngleDialog(
+            self,
+            self.pose_canvas,
+            apply_angle=self.apply_clinical_joint_angle,
+            status_message=self.status_var.get,
         )
-        self.pose_angle_editor.grid(row=0, column=0, sticky="nsew")
-        self.pose_angle_editor.columnconfigure(1, weight=1)
-        self.pose_angle_joint_var = tk.StringVar(value="")
-        self.pose_angle_value_var = tk.StringVar(value="")
-        self.pose_angle_feedback_var = tk.StringVar(value="")
-        self.pose_angle_joint_label = ttk.Label(
-            self.pose_angle_editor,
-            textvariable=self.pose_angle_joint_var,
-            font=("Helvetica", 10, "bold"),
-        )
-        self.pose_angle_joint_label.grid(row=0, column=0, columnspan=3, sticky="w")
-        ttk.Label(self.pose_angle_editor, text="Valeur précise (deg) :").grid(
-            row=1, column=0, sticky="w", pady=(4, 0)
-        )
-        self.pose_angle_entry = ttk.Entry(
-            self.pose_angle_editor,
-            textvariable=self.pose_angle_value_var,
-            width=12,
-            justify="right",
-        )
-        self.pose_angle_entry.grid(row=1, column=1, sticky="ew", padx=(6, 0), pady=(4, 0))
-        self.pose_angle_entry.bind("<Return>", self.confirm_pose_angle_editor)
-        self.pose_angle_entry.bind("<KP_Enter>", self.confirm_pose_angle_editor)
-        self.pose_angle_entry.bind(
-            "<Escape>", lambda _event: self.close_pose_angle_editor()
-        )
-        self.pose_angle_cancel_button = ttk.Button(
-            self.pose_angle_editor, text="Annuler", command=self.close_pose_angle_editor
-        )
-        self.pose_angle_cancel_button.grid(row=1, column=2, padx=(6, 0), pady=(4, 0))
-        self.pose_angle_apply_button = ttk.Button(
-            self.pose_angle_editor, text="Valider", command=self.confirm_pose_angle_editor
-        )
-        self.pose_angle_apply_button.grid(row=1, column=3, padx=(6, 0), pady=(4, 0))
-        self.pose_angle_feedback_label = ttk.Label(
-            self.pose_angle_editor,
-            textvariable=self.pose_angle_feedback_var,
-            foreground=ALERT_BORDER,
-        )
-        self.pose_angle_feedback_label.grid(
-            row=2, column=0, columnspan=4, sticky="w", pady=(3, 0)
-        )
-        self.pose_angle_dialog.bind("<Return>", self.confirm_pose_angle_editor)
-        self.pose_angle_dialog.bind("<KP_Enter>", self.confirm_pose_angle_editor)
-        self.pose_angle_dialog.bind(
-            "<Escape>", lambda _event: self.close_pose_angle_editor()
-        )
+        # Widget aliases are kept for layout tests and extensions that use the
+        # existing GUI integration points.  Lifecycle and event handling live
+        # in ``PrecisePoseAngleDialog``.
+        self.pose_angle_dialog = self.pose_angle_controller.dialog
+        self.pose_angle_editor = self.pose_angle_controller.editor
+        self.pose_angle_joint_var = self.pose_angle_controller.joint_var
+        self.pose_angle_value_var = self.pose_angle_controller.value_var
+        self.pose_angle_feedback_var = self.pose_angle_controller.feedback_var
+        self.pose_angle_joint_label = self.pose_angle_controller.joint_label
+        self.pose_angle_entry = self.pose_angle_controller.entry
+        self.pose_angle_cancel_button = self.pose_angle_controller.cancel_button
+        self.pose_angle_apply_button = self.pose_angle_controller.apply_button
+        self.pose_angle_feedback_label = self.pose_angle_controller.feedback_label
 
         right = ttk.Frame(root)
         self.animation_panel = right
@@ -1264,16 +1231,12 @@ class SquatGui(tk.Tk):
         self.animation_canvas.bind("<Configure>", self.schedule_redraw)
         self.animation_canvas.bind("<Motion>", self.on_animation_motion)
         self.animation_canvas.bind("<Leave>", self.clear_animation_tooltip)
-        self.display_menu_upper_button = self._build_display_menu(
-            right, scope="upper"
-        )
+        self.display_menu_upper_button = self._build_display_menu(right, scope="upper")
         self.display_menu_upper_button.place(relx=1.0, x=-8, y=8, anchor="ne")
 
         playback = ttk.Frame(root)
         self.playback_panel = playback
-        playback.grid(
-            row=1, column=1, columnspan=2, sticky="ew", pady=(2, 0)
-        )
+        playback.grid(row=1, column=1, columnspan=2, sticky="ew", pady=(2, 0))
         playback.columnconfigure(2, weight=1)
         self.reveal_mode_menu = ttk.Combobox(
             playback,
@@ -1338,9 +1301,7 @@ class SquatGui(tk.Tk):
             justify="left",
             anchor="w",
         )
-        self.status_label.grid(
-            row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0)
-        )
+        self.status_label.grid(row=3, column=0, columnspan=3, sticky="ew", pady=(8, 0))
         root.bind("<Configure>", self._resize_status_text)
         self.update_didactic_guide()
 
@@ -1536,9 +1497,7 @@ class SquatGui(tk.Tk):
 
     def update_didactic_navigation(self) -> None:
         self.draw_didactic_switch()
-        state = DidacticPathState(
-            self.didactic_mode_var.get(), self.didactic_step
-        )
+        state = DidacticPathState(self.didactic_mode_var.get(), self.didactic_step)
         self.reveal_mode_menu.state(
             ["disabled"] if state.active else ["!disabled", "readonly"]
         )
@@ -1550,9 +1509,7 @@ class SquatGui(tk.Tk):
         )
 
     def toggle_didactic_mode(self) -> None:
-        current = DidacticPathState(
-            self.didactic_mode_var.get(), self.didactic_step
-        )
+        current = DidacticPathState(self.didactic_mode_var.get(), self.didactic_step)
         updated = current.toggled()
         self.didactic_mode_var.set(updated.active)
         self.didactic_step = updated.step
@@ -1573,9 +1530,7 @@ class SquatGui(tk.Tk):
         self.update_didactic_guide()
 
     def retreat_didactic_guide(self) -> None:
-        current = DidacticPathState(
-            self.didactic_mode_var.get(), self.didactic_step
-        )
+        current = DidacticPathState(self.didactic_mode_var.get(), self.didactic_step)
         if not current.active:
             return
         updated = current.retreated()
@@ -1773,7 +1728,9 @@ class SquatGui(tk.Tk):
             self.update_idletasks()
         try:
             anthro = self.anthro()
-            requested_degrees = tuple(round(degrees(value), 2) for value in self.final_q)
+            requested_degrees = tuple(
+                round(degrees(value), 2) for value in self.final_q
+            )
             print(
                 "[Verticalisation] Début SLSQP — angles segmentaires "
                 f"(tibia, cuisse, tronc)={requested_degrees}°, "
@@ -1812,8 +1769,7 @@ class SquatGui(tk.Tk):
                 )
             else:
                 print(
-                    "[Verticalisation] Aucun angle modifié — "
-                    f"{optimization.message}",
+                    f"[Verticalisation] Aucun angle modifié — {optimization.message}",
                     flush=True,
                 )
             self.status_var.set(f"{self.status_var.get()} · {optimization.message}")
@@ -1824,12 +1780,7 @@ class SquatGui(tk.Tk):
                 button.configure(text="Verticaliser la barre", state="normal")
 
     def clear_condition_selection(self) -> None:
-        selected = self.conditions_table.selection()
-        if selected:
-            self.conditions_table.selection_remove(selected)
-            self.update_condition_buttons()
-            self.update_condition_differences()
-            self.update_plot_choices()
+        self._conditions().clear_selection()
 
     def recompute(self) -> None:
         old_count = self.frame_count
@@ -1969,9 +1920,7 @@ class SquatGui(tk.Tk):
             self.thigh_var.set(reader.number("thigh_percent", self.thigh_var.get()))
             self.trunk_var.set(reader.number("trunk_percent", self.trunk_var.get()))
             self.anthropometry_mode_var.set(
-                reader.text(
-                    "anthropometry_mode", self.anthropometry_mode_var.get()
-                )
+                reader.text("anthropometry_mode", self.anthropometry_mode_var.get())
             )
             eccentric, isometric, concentric = reader.phase_durations()
             self.eccentric_duration_var.set(eccentric)
@@ -2017,9 +1966,7 @@ class SquatGui(tk.Tk):
                 )
             )
             self.show_sprite_centers_var.set(
-                reader.flag(
-                    "show_sprite_centers", self.show_sprite_centers_var.get()
-                )
+                reader.flag("show_sprite_centers", self.show_sprite_centers_var.get())
             )
             self.show_segment_com_var.set(
                 reader.flag("show_segment_com", self.show_segment_com_var.get())
@@ -2057,15 +2004,11 @@ class SquatGui(tk.Tk):
             self.final_q = self.clamp_final_q(
                 tuple(
                     radians(value)
-                    for value in self.normalized_final_q_deg(
-                        reader.raw("final_q_deg")
-                    )
+                    for value in self.normalized_final_q_deg(reader.raw("final_q_deg"))
                 )
             )
             self.sync_pose_angle_fields_from_final_q()
-            self.quantity_var.set(
-                reader.text("quantity", self.quantity_var.get())
-            )
+            self.quantity_var.set(reader.text("quantity", self.quantity_var.get()))
             self.synchronized_source_var.set(
                 str(
                     reader.text(
@@ -2074,9 +2017,7 @@ class SquatGui(tk.Tk):
                 )
             )
             self.show_phase_limits_var.set(
-                bool(
-                    reader.flag("show_phase_limits", self.show_phase_limits_var.get())
-                )
+                bool(reader.flag("show_phase_limits", self.show_phase_limits_var.get()))
             )
             self.show_phase_names_var.set(
                 reader.flag("show_phase_names", self.show_phase_names_var.get())
@@ -2409,10 +2350,18 @@ class SquatGui(tk.Tk):
         self.draw_animation(frame)
 
     def on_table_selection_changed(self, _event: tk.Event | None = None) -> None:
-        self.update_condition_buttons()
-        self.update_condition_differences()
-        self.update_plot_choices()
-        self.redraw()
+        self._conditions().on_selection_changed()
+
+    def _conditions(self) -> ConditionInteractionController:
+        """Return the saved-condition controller, including for headless tests."""
+
+        controller = getattr(self, "_condition_controller", None)
+        if controller is None:
+            controller = ConditionInteractionController(
+                self, confirm_delete=messagebox.askyesno
+            )
+            self._condition_controller = controller
+        return controller
 
     def on_table_tab_changed(self, _event: tk.Event | None = None) -> None:
         """Keep condition actions in a stable position across all tabs."""
@@ -2422,20 +2371,10 @@ class SquatGui(tk.Tk):
             self.file_box.grid()
 
     def update_condition_buttons(self) -> None:
-        selected = self.conditions_table.selection()
-        if selected:
-            self.delete_condition_button.state(["!disabled"])
-        else:
-            self.delete_condition_button.state(["disabled"])
-        self.duplicate_condition_button.state(
-            ["!disabled"] if len(selected) == 1 else ["disabled"]
-        )
+        self._conditions().update_buttons()
 
     def clear_condition_differences(self) -> None:
-        if not hasattr(self, "differences_table"):
-            return
-        for iid in self.differences_table.get_children():
-            self.differences_table.delete(iid)
+        self._conditions().clear_differences()
 
     def show_condition_differences(
         self,
@@ -2444,67 +2383,18 @@ class SquatGui(tk.Tk):
         compared_settings: dict[str, object],
         compared_final_q_deg: list[float],
     ) -> None:
-        self.clear_condition_differences()
-        comparison = ConditionComparison(
-            "référence",
+        self._conditions().show_differences(
             reference_settings,
             reference_final_q_deg,
-            "comparée",
             compared_settings,
             compared_final_q_deg,
         )
-        differences = comparison.differences
-        if not differences:
-            self.differences_table.insert(
-                "",
-                "end",
-                values=("Aucun paramètre scientifique modifié", "—", "—"),
-            )
-            return
-        for difference in differences:
-            self.differences_table.insert(
-                "",
-                "end",
-                values=(difference.label, difference.reference, difference.compared),
-            )
 
     def update_condition_differences(self) -> None:
-        if not hasattr(self, "differences_table"):
-            return
-        selected_ids = self.conditions_table.selection()
-        current_settings = None
-        current_final_q_deg = None
-        if not selected_ids:
-            current_settings = self.current_settings()
-            current_final_q_deg = [degrees(value) for value in self.final_q]
-        comparison = resolve_condition_comparison(
-            self.saved_conditions,
-            selected_ids,
-            pending_reference_iid=self._comparison_reference_iid,
-            current_settings=current_settings,
-            current_final_q_deg=current_final_q_deg,
-        )
-        if comparison is not None:
-            self.show_condition_differences(
-                comparison.reference_settings,
-                comparison.reference_final_q_deg,
-                comparison.compared_settings,
-                comparison.compared_final_q_deg,
-            )
-            return
-        self.clear_condition_differences()
-        self.differences_table.insert(
-            "",
-            "end",
-            values=("Sélectionnez deux conditions ou utilisez Dupliquer", "", ""),
-        )
+        self._conditions().update_differences()
 
     def on_table_click(self, event: tk.Event) -> None:
-        if not self.conditions_table.identify_row(event.y):
-            selected = self.conditions_table.selection()
-            if selected:
-                self.conditions_table.selection_remove(selected)
-                self.on_table_selection_changed()
+        self._conditions().on_table_click(event)
 
     def on_plot_choice_changed(self) -> None:
         choice = self.plot_choice.get()
@@ -2574,9 +2464,7 @@ class SquatGui(tk.Tk):
         extra_x: float = 0.0,
         anthropometries: list[Anthropometry] | None = None,
     ) -> tuple[float, float, float, float]:
-        return common_scene_bounds(
-            anthropometries or [self.anthro()], extra_x=extra_x
-        )
+        return common_scene_bounds(anthropometries or [self.anthro()], extra_x=extra_x)
 
     def pose_editor_bounds(
         self,
@@ -2679,7 +2567,9 @@ class SquatGui(tk.Tk):
     def draw_alert_banner(self, canvas: tk.Canvas, alerts: list[str], y: int) -> None:
         if not alerts:
             return
-        text = "Problèmes biomécaniques :\n" + "\n".join(f"• {alert}" for alert in alerts)
+        text = "Problèmes biomécaniques :\n" + "\n".join(
+            f"• {alert}" for alert in alerts
+        )
         item = canvas.create_text(
             16,
             y,
@@ -2786,12 +2676,8 @@ class SquatGui(tk.Tk):
             color: str,
             label: str,
         ) -> None:
-            posterior_px = self.world_to_canvas(
-                canvas, (limits[0], 0.0), bounds
-            )
-            anterior_px = self.world_to_canvas(
-                canvas, (limits[1], 0.0), bounds
-            )
+            posterior_px = self.world_to_canvas(canvas, (limits[0], 0.0), bounds)
+            anterior_px = self.world_to_canvas(canvas, (limits[1], 0.0), bounds)
             y = posterior_px[1] + vertical_offset
             canvas.create_line(
                 posterior_px[0], y, anterior_px[0], y, fill=color, width=3
@@ -3086,8 +2972,10 @@ class SquatGui(tk.Tk):
         )
         result = min(
             self.results,
-            key=lambda item: abs(item.com[0] - state.pose.com[0])
-            + abs(item.com[1] - state.pose.com[1]),
+            key=lambda item: (
+                abs(item.com[0] - state.pose.com[0])
+                + abs(item.com[1] - state.pose.com[1])
+            ),
         )
         layers = self.render_layers(
             refined_sprites=not self.low_quality_sprites_var.get()
@@ -3144,9 +3032,7 @@ class SquatGui(tk.Tk):
         bounds = bounds or self.scene_bounds()
         joint_angles = clinical_joint_values_from_segment_values(state.q)
         width = max(1, canvas.winfo_width())
-        canvas_height = max(
-            1, getattr(canvas, "winfo_height", lambda: 480)()
-        )
+        canvas_height = max(1, getattr(canvas, "winfo_height", lambda: 480)())
         if canvas_height <= 1:
             canvas_height = 480
         # Keep the values in left/right lanes, but line each one up with its
@@ -3179,16 +3065,26 @@ class SquatGui(tk.Tk):
                 previous = placed[name]
             overflow = max(0.0, max(placed.values()) - ceiling)
             if overflow:
-                placed = {
-                    name: max(floor, y - overflow) for name, y in placed.items()
-                }
+                placed = {name: max(floor, y - overflow) for name, y in placed.items()}
             return placed
 
         left_y = separated_lane(("cheville", "hanche"))
         labels = (
-            ("cheville", degrees(joint_angles["cheville"]), 14, left_y["cheville"], "nw"),
+            (
+                "cheville",
+                degrees(joint_angles["cheville"]),
+                14,
+                left_y["cheville"],
+                "nw",
+            ),
             ("hanche", degrees(joint_angles["hanche"]), 14, left_y["hanche"], "nw"),
-            ("genou", degrees(joint_angles["genou"]), width - 14, desired_y["genou"], "ne"),
+            (
+                "genou",
+                degrees(joint_angles["genou"]),
+                width - 14,
+                desired_y["genou"],
+                "ne",
+            ),
         )
         for name, value, x, y, anchor in labels:
             item = canvas.create_text(
@@ -3238,9 +3134,7 @@ class SquatGui(tk.Tk):
         for index, item in enumerate(sampled):
             state = item.state
             condition_alerts = (
-                self.biomechanical_alerts(
-                    state, item.result, include_com=False
-                )
+                self.biomechanical_alerts(state, item.result, include_com=False)
                 if layers.alerts
                 else []
             )
@@ -3363,7 +3257,9 @@ class SquatGui(tk.Tk):
         if len(states) < 2:
             return
         color = color or "#2e7d54"
-        bottom_index = min(range(len(states)), key=lambda index: states[index].pose.bar[1])
+        bottom_index = min(
+            range(len(states)), key=lambda index: states[index].pose.bar[1]
+        )
         points = [
             self.world_to_canvas(
                 canvas,
@@ -3790,7 +3686,9 @@ class SquatGui(tk.Tk):
                     torque = result.torques[joint]
                     ratio = result.effort_ratios[joint]
                     text_color = "#8a1f17" if ratio is None or ratio > 1.0 else color
-                    utilization_text = "n.d." if ratio is None else f"{100 * ratio: .0f}%"
+                    utilization_text = (
+                        "n.d." if ratio is None else f"{100 * ratio: .0f}%"
+                    )
                     canvas.create_text(
                         x,
                         y,
@@ -3833,9 +3731,7 @@ class SquatGui(tk.Tk):
         plotted = [
             {
                 **dataset,
-                "series": self.plot_series_for(
-                    choice, dataset.states, dataset.results
-                ),
+                "series": self.plot_series_for(choice, dataset.states, dataset.results),
                 "times": self.plot_times(dataset.states),
             }
             for dataset in datasets
@@ -3866,11 +3762,7 @@ class SquatGui(tk.Tk):
         }
 
     def kinematic_unit(self, source: str, quantity: str) -> str:
-        if source == "centre de masse":
-            return {"position": "m", "vitesse": "m/s", "acceleration": "m/s²"}[quantity]
-        return {"position": "deg", "vitesse": "deg/s", "acceleration": "deg/s²"}[
-            quantity
-        ]
+        return synchronized_kinematic_unit(source, quantity)
 
     def draw_synchronized_kinematics(
         self,
@@ -3964,15 +3856,7 @@ class SquatGui(tk.Tk):
         self.draw_condition_legend(canvas, plotted, width, height)
 
     def value_bounds_with_zero(self, values: list[float]) -> tuple[float, float]:
-        finite_values = [value for value in values if isfinite(value)]
-        if not finite_values:
-            return (-1.0, 1.0)
-        ymin = min(0.0, min(finite_values))
-        ymax = max(0.0, max(finite_values))
-        if abs(ymax - ymin) < 1e-12:
-            return (-1.0, 1.0)
-        margin = 0.05 * (ymax - ymin)
-        return ymin - margin, ymax + margin
+        return rendering_value_bounds_with_zero(values)
 
     def draw_zero_line(
         self,
@@ -4167,9 +4051,7 @@ class SquatGui(tk.Tk):
                 results=results,
                 color=self.condition_color(index, total),
                 anthro=self.anthro_from_settings(condition_settings),
-                refined_sprites=self.refined_sprites_from_settings(
-                    condition_settings
-                ),
+                refined_sprites=self.refined_sprites_from_settings(condition_settings),
                 durations=self.phase_durations_from_settings(condition_settings),
             )
         return select_plot_datasets(None, saved_datasets, selected)
@@ -4188,73 +4070,34 @@ class SquatGui(tk.Tk):
         return f"temps centré={plot_time:.2f}s"
 
     def plot_time_bounds(self, plotted: list[dict[str, object]]) -> tuple[float, float]:
-        if self.time_mode() is TimeMode.NORMALIZED:
-            return (0.0, 100.0)
-        times = [
-            time
-            for dataset in plotted
-            for time in dataset.get("times", [])  # type: ignore[union-attr]
+        time_groups = [
+            cast(list[float], dataset.get("times", [])) for dataset in plotted
         ]
-        if not times:
-            durations = self.phase_durations()
-            if self.time_mode() is TimeMode.ABSOLUTE:
-                return (0.0, durations.total)
-            return (
-                -durations.squat_reference_time,
-                durations.total - durations.squat_reference_time,
-            )
-        xmin = min(times)
-        xmax = max(times)
-        if abs(xmax - xmin) < 1e-9:
-            return (xmin - 1.0, xmax + 1.0)
-        return xmin, xmax
+        mode = self.time_mode()
+        fallback_durations = (
+            self.phase_durations()
+            if mode is not TimeMode.NORMALIZED and not any(time_groups)
+            else PhaseDurations()
+        )
+        return rendering_time_bounds(
+            time_groups,
+            mode,
+            fallback_durations,
+        )
 
     def x_from_time(
         self, time: float, x0: float, x1: float, tmin: float, tmax: float
     ) -> float:
-        return x0 + (x1 - x0) * (time - tmin) / (tmax - tmin)
+        return linear_position(time, x0, x1, tmin, tmax)
 
     def condition_color(self, index: int, total: int) -> str:
-        if total <= 1:
-            return "#2e7d54"
-        fraction = index / max(1, total - 1)
-        if fraction <= 0.5:
-            local = fraction / 0.5
-            start = (198, 51, 44)
-            end = (46, 125, 84)
-        else:
-            local = (fraction - 0.5) / 0.5
-            start = (46, 125, 84)
-            end = (42, 140, 166)
-        rgb = tuple(
-            round(start[channel] + local * (end[channel] - start[channel]))
-            for channel in range(3)
-        )
-        return f"#{rgb[0]:02x}{rgb[1]:02x}{rgb[2]:02x}"
+        return comparison_condition_color(index, total)
 
     def blend_color(self, color: str, target: str, fraction: float) -> str:
-        color = color.lstrip("#")
-        target = target.lstrip("#")
-        rgb = tuple(int(color[index : index + 2], 16) for index in (0, 2, 4))
-        target_rgb = tuple(int(target[index : index + 2], 16) for index in (0, 2, 4))
-        mixed = tuple(
-            round(rgb[index] + fraction * (target_rgb[index] - rgb[index]))
-            for index in range(3)
-        )
-        return f"#{mixed[0]:02x}{mixed[1]:02x}{mixed[2]:02x}"
+        return blend_plot_color(color, target, fraction)
 
     def component_color(self, base_color: str, component: str) -> str:
-        if component == "M(q) qddot":
-            return base_color
-        if component == "termes qdot":
-            return self.blend_color(base_color, "#111111", 0.18)
-        if component == "gravité":
-            return self.blend_color(base_color, "#ffffff", 0.20)
-        if component == "total ID":
-            return self.blend_color(base_color, "#ffffff", 0.28)
-        if component == "contact externe (signé)":
-            return self.blend_color(base_color, "#ffffff", 0.48)
-        return base_color
+        return torque_component_color(base_color, component)
 
     def visible_torque_components(self) -> tuple[str, ...]:
         variables = self.__dict__.get("torque_component_vars")
@@ -4269,13 +4112,7 @@ class SquatGui(tk.Tk):
     def torque_component_styles(
         self,
     ) -> dict[str, tuple[int, tuple[int, ...] | None, str | None]]:
-        return {
-            "M(q) qddot": (2, None, None),
-            "termes qdot": (1, (2, 3), None),
-            "gravité": (1, (7, 4), None),
-            "contact externe (signé)": (1, (7, 3, 2, 3), "triangle"),
-            "total ID": (3, None, None),
-        }
+        return detailed_torque_component_styles()
 
     def selected_panel_names(
         self, plotted: list[dict[str, object]], choice: str
@@ -4411,7 +4248,9 @@ class SquatGui(tk.Tk):
             ]
             for dataset_index, dataset in enumerate(plotted):
                 multi_condition = len(plotted) > 1
-                for series_index, (name, values) in enumerate(dataset["series"].items()):  # type: ignore[union-attr]
+                for series_index, (name, values) in enumerate(
+                    dataset["series"].items()
+                ):  # type: ignore[union-attr]
                     color = (
                         str(dataset["color"])
                         if multi_condition
@@ -4424,7 +4263,22 @@ class SquatGui(tk.Tk):
                         if not multi_condition
                         else (None, (6, 4), (2, 3))[series_index % 3]
                     )
-                    self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2, dash=dash, times=dataset["times"], tmin=tmin, tmax=tmax)  # type: ignore[arg-type]
+                    self.draw_series_line(
+                        canvas,
+                        values,
+                        x0,
+                        x1,
+                        y0,
+                        y1,
+                        ymin,
+                        ymax,
+                        color,
+                        width=2,
+                        dash=dash,
+                        times=dataset["times"],
+                        tmin=tmin,
+                        tmax=tmax,
+                    )  # type: ignore[arg-type]
         self.draw_torque_bounds(canvas, x0, x1, y0, y1, ymin, ymax, tmin, tmax)
         self.draw_normalized_torque_limit(canvas, x0, x1, y0, y1, ymin, ymax)
         if choice == "force reaction sol" and "vertical" in panels:
@@ -4450,24 +4304,16 @@ class SquatGui(tk.Tk):
     def value_bounds(
         self, values: list[float], choice: str, panel_name: str | None
     ) -> tuple[float, float]:
-        all_values = [value for value in values if isfinite(value)]
-        if panel_name is not None:
-            all_values.extend(
-                value
-                for value in self.limit_values_for_plot(choice, panel_name)
-                if isfinite(value)
-            )
-        if choice == "couples normalises":
-            all_values.append(100.0)
-        if not all_values:
-            return (-1.0, 1.0)
-        ymin = min(all_values)
-        ymax = max(all_values)
-        if abs(ymax - ymin) < 1e-9:
-            ymin -= 1.0
-            ymax += 1.0
-        margin = 0.05 * (ymax - ymin)
-        return ymin - margin, ymax + margin
+        additional_values = (
+            self.limit_values_for_plot(choice, panel_name)
+            if panel_name is not None
+            else ()
+        )
+        return padded_value_bounds(
+            values,
+            additional_values,
+            include_hundred=choice == "couples normalises",
+        )
 
     def limit_values_for_plot(self, choice: str, panel_name: str) -> list[float]:
         if (
@@ -4543,7 +4389,21 @@ class SquatGui(tk.Tk):
                 if multi_condition
                 else JOINT_COLORS.get(panel_name, "#2e7d54")
             )
-            self.draw_series_line(canvas, values, x0, x1, y0, y1, ymin, ymax, color, width=2, times=dataset["times"], tmin=tmin, tmax=tmax)  # type: ignore[arg-type]
+            self.draw_series_line(
+                canvas,
+                values,
+                x0,
+                x1,
+                y0,
+                y1,
+                ymin,
+                ymax,
+                color,
+                width=2,
+                times=dataset["times"],
+                tmin=tmin,
+                tmax=tmax,
+            )  # type: ignore[arg-type]
 
     def draw_panel_limits(
         self,
@@ -4598,10 +4458,9 @@ class SquatGui(tk.Tk):
         grid_right: float | None = None,
     ) -> None:
         grid_right = grid_right if grid_right is not None else canvas.winfo_width() - 18
-        for index in range(5):
-            fraction = index / 4
-            value = ymin + fraction * (ymax - ymin)
-            y = y0 - (y0 - y1) * fraction
+        for tick in linear_ticks(ymin, ymax, y0, y1):
+            value = tick.value
+            y = tick.coordinate
             canvas.create_line(x0 - 4, y, x0, y, fill="#69746e")
             canvas.create_line(x0, y, grid_right, y, fill="#edf0ec")
             canvas.create_text(
@@ -4622,10 +4481,9 @@ class SquatGui(tk.Tk):
         tmin: float,
         tmax: float,
     ) -> None:
-        for index in range(5):
-            fraction = index / 4
-            x = x0 + (x1 - x0) * fraction
-            value = tmin + (tmax - tmin) * fraction
+        for tick in linear_ticks(tmin, tmax, x0, x1):
+            value = tick.value
+            x = tick.coordinate
             canvas.create_line(x, y0, x, y0 + 4, fill="#69746e")
             canvas.create_text(
                 x,
@@ -4646,19 +4504,33 @@ class SquatGui(tk.Tk):
         tmin: float,
         tmax: float,
     ) -> None:
-        if (
-            self.show_phase_limits_var.get()
-            and self.time_mode() is TimeMode.CENTERED
-            and tmin <= 0.0 <= tmax
-        ):
-            squat_x = self.x_from_time(0.0, x0, x1, tmin, tmax)
+        markers = time_marker_layout(
+            mode=self.time_mode(),
+            show_phase_limits=self.show_phase_limits_var.get(),
+            current_time=self.current_plot_time(),
+            x0=x0,
+            x1=x1,
+            tmin=tmin,
+            tmax=tmax,
+        )
+        if markers.squat_reference_x is not None:
             canvas.create_line(
-                squat_x, y0, squat_x, y1, fill="#59645e", width=1, dash=(6, 5)
+                markers.squat_reference_x,
+                y0,
+                markers.squat_reference_x,
+                y1,
+                fill="#59645e",
+                width=1,
+                dash=(6, 5),
             )
-
-        current_time = min(tmax, max(tmin, self.current_plot_time()))
-        animation_x = self.x_from_time(current_time, x0, x1, tmin, tmax)
-        canvas.create_line(animation_x, y0, animation_x, y1, fill="#c9332c", width=2)
+        canvas.create_line(
+            markers.current_time_x,
+            y0,
+            markers.current_time_x,
+            y1,
+            fill="#c9332c",
+            width=2,
+        )
 
     def draw_phase_markers(
         self,
@@ -4673,47 +4545,49 @@ class SquatGui(tk.Tk):
     ) -> None:
         if not self.show_phase_limits_var.get() and not self.show_phase_names_var.get():
             return
-        for dataset_index, dataset in enumerate(plotted):
-            durations = dataset.get("durations")
-            if not isinstance(durations, PhaseDurations):
-                continue
-            windows = phase_windows(
-                durations,
-                mode=self.time_mode(),
+        marker_datasets = [
+            PhaseMarkerDataset(
+                label=str(dataset.get("label", "")),
+                durations=durations,
+                color=(str(dataset["color"]) if dataset.get("color") else None),
+                row=dataset_index,
             )
-            color = str(dataset.get("color") or "#6d5ea8")
-            if self.show_phase_limits_var.get():
-                for boundary in (windows[0].end, windows[1].end):
-                    if not tmin <= boundary <= tmax:
-                        continue
-                    x = self.x_from_time(boundary, x0, x1, tmin, tmax)
-                    canvas.create_line(
-                        x,
-                        y0,
-                        x,
-                        y1,
-                        fill=color,
-                        width=1,
-                        dash=(3, 3),
-                    )
-            if self.show_phase_names_var.get():
-                for window in windows:
-                    start = max(tmin, window.start)
-                    end = min(tmax, window.end)
-                    if end - start <= 1e-9:
-                        continue
-                    x = self.x_from_time((start + end) / 2.0, x0, x1, tmin, tmax)
-                    label = window.name
-                    if len(plotted) > 1:
-                        label = f"{dataset['label']}: {label}"
-                    canvas.create_text(
-                        x,
-                        y1 + 3 + 10 * dataset_index,
-                        text=label,
-                        anchor="n",
-                        fill=color,
-                        font=("Helvetica", 7, "bold"),
-                    )
+            for dataset_index, dataset in enumerate(plotted)
+            if isinstance(
+                durations := dataset.get("durations"),
+                PhaseDurations,
+            )
+        ]
+        markers = phase_marker_layout(
+            marker_datasets,
+            mode=self.time_mode(),
+            show_limits=self.show_phase_limits_var.get(),
+            show_names=self.show_phase_names_var.get(),
+            x0=x0,
+            x1=x1,
+            tmin=tmin,
+            tmax=tmax,
+            comparison_count=len(plotted),
+        )
+        for marker in markers.boundaries:
+            canvas.create_line(
+                marker.x,
+                y0,
+                marker.x,
+                y1,
+                fill=marker.color,
+                width=1,
+                dash=(3, 3),
+            )
+        for marker in markers.labels:
+            canvas.create_text(
+                marker.x,
+                y1 + 3 + 10 * marker.row,
+                text=marker.text,
+                anchor="n",
+                fill=marker.color,
+                font=("Helvetica", 7, "bold"),
+            )
 
     def on_plot_cursor_event(self, event: tk.Event) -> None:
         if self.reveal_mode() is RevealMode.OBSERVATION or not self._plot_hit_regions:
@@ -4732,31 +4606,10 @@ class SquatGui(tk.Tk):
         self.redraw()
 
     def format_axis_value(self, value: float) -> str:
-        abs_value = abs(value)
-        if abs_value >= 100:
-            return f"{value:.0f}"
-        if abs_value >= 10:
-            return f"{value:.1f}"
-        if abs_value >= 1:
-            return f"{value:.2f}"
-        return f"{value:.3f}".rstrip("0").rstrip(".")
+        return formatted_axis_value(value)
 
     def plot_unit(self, choice: str) -> str:
-        if choice == "cinematique articulaire":
-            return {"position": "deg", "vitesse": "deg/s", "acceleration": "deg/s2"}[
-                self.quantity_var.get()
-            ]
-        if choice == "centre de masse":
-            return {"position": "m", "vitesse": "m/s", "acceleration": "m/s2"}[
-                self.quantity_var.get()
-            ]
-        if choice == "force reaction sol":
-            return "N"
-        if choice in ("couples articulaires", "couples detailles"):
-            return "Nm"
-        if choice == "couples normalises":
-            return "% max"
-        return "W"
+        return rendering_plot_unit(choice, self.quantity_var.get())
 
     def draw_torque_bounds(
         self,
@@ -5248,6 +5101,12 @@ class SquatGui(tk.Tk):
         }
         return nearest_named_point(x, y, canvas_candidates)
 
+    @property
+    def _active_pose_angle_joint(self) -> str | None:
+        """Compatibility view of the precise-editor selection state."""
+
+        return self.pose_angle_controller.active_joint
+
     def on_pose_context_menu(self, event: tk.Event) -> str | None:
         joint = self.nearest_joint_angle(event.x, event.y)
         if joint is None:
@@ -5274,9 +5133,7 @@ class SquatGui(tk.Tk):
             or getattr(self, "_pose_editor_bounds", None)
             or self.scene_bounds(),
         )
-        self.final_q = drag_updated_q(
-            self.final_q, self.drag_target, point, pose
-        )
+        self.final_q = drag_updated_q(self.final_q, self.drag_target, point, pose)
         self.sync_pose_angle_fields_from_final_q()
         self.on_parameter_changed()
 
@@ -5287,71 +5144,21 @@ class SquatGui(tk.Tk):
 
     def sync_pose_angle_fields_from_final_q(self) -> None:
         """Refresh the visible editor after a drag without committing input."""
-        joint = getattr(self, "_active_pose_angle_joint", None)
-        if joint is not None and hasattr(self, "pose_angle_value_var"):
-            spec = clinical_angle_editor_spec(joint, self.final_q)
-            self.pose_angle_value_var.set(
-                self.format_pose_angle(spec.value_deg)
-            )
+        self.pose_angle_controller.synchronize(self.final_q)
 
     def open_pose_angle_editor(self, joint: str) -> None:
-        """Show one non-modal editor above the GUI for ``joint``.
+        """Show the precise-angle editor for ``joint``."""
 
-        Selecting a new articulation always replaces the pending value.  No
-        posture is changed until the user explicitly validates this editor.
-        """
-        spec = clinical_angle_editor_spec(joint, self.final_q)
-        self._active_pose_angle_joint = joint
-        self.pose_angle_joint_var.set(spec.display_label)
-        self.pose_angle_value_var.set(
-            self.format_pose_angle(spec.value_deg)
-        )
-        self.pose_angle_feedback_var.set("")
-        self.pose_angle_dialog.title(f"Angle — {spec.label}")
-        self.pose_angle_dialog.deiconify()
-        self.pose_angle_dialog.lift(self)
-        self.pose_angle_dialog.update_idletasks()
-        x = self.pose_canvas.winfo_rootx() + max(
-            16,
-            (self.pose_canvas.winfo_width() - self.pose_angle_dialog.winfo_reqwidth())
-            // 2,
-        )
-        y = self.pose_canvas.winfo_rooty() + max(
-            32, self.pose_canvas.winfo_height() - 52
-        )
-        self.pose_angle_dialog.geometry(f"+{x}+{y}")
+        self.pose_angle_controller.open(joint, self.final_q)
 
-        def focus_editor() -> None:
-            if (
-                self._active_pose_angle_joint == joint
-                and self.pose_angle_dialog.winfo_viewable()
-            ):
-                self.pose_angle_dialog.focus_force()
-                self.pose_angle_entry.focus_force()
-                self.pose_angle_entry.selection_range(0, tk.END)
+    def confirm_pose_angle_editor(self, _event: tk.Event | None = None) -> str | None:
+        """Delegate explicit validation to the precise-angle controller."""
 
-        self.after_idle(focus_editor)
-
-    def confirm_pose_angle_editor(
-        self, _event: tk.Event | None = None
-    ) -> str | None:
-        """Commit the currently selected joint only on Valider or Enter."""
-        joint = self._active_pose_angle_joint
-        if joint is None:
-            return "break"
-        if self.apply_clinical_joint_angle(joint, self.pose_angle_value_var.get()):
-            self.close_pose_angle_editor()
-            return "break"
-        self.pose_angle_feedback_var.set(self.status_var.get())
-        self.pose_angle_entry.focus_set()
-        self.pose_angle_entry.selection_range(0, tk.END)
-        return "break"
+        return self.pose_angle_controller.confirm(_event)
 
     def close_pose_angle_editor(self) -> None:
         """Discard the pending value and hide the angle window."""
-        self._active_pose_angle_joint = None
-        self.pose_angle_feedback_var.set("")
-        self.pose_angle_dialog.withdraw()
+        self.pose_angle_controller.close()
 
     # Compatibility entry point for callers that use the former dialog name.
     def open_pose_angle_dialog(self, joint: str) -> None:
@@ -5426,56 +5233,17 @@ class SquatGui(tk.Tk):
         self.after(round(1000 * DEFAULT_SAMPLE_PERIOD_S), self.step_animation)
 
     def record_condition(self) -> None:
-        reference_snapshot = None
-        if self._comparison_reference_iid in self.saved_conditions:
-            reference = self.saved_conditions[self._comparison_reference_iid]
-            reference_snapshot = comparison_reference(reference)
-        condition_iid = self.add_saved_condition(
-            self.current_settings(),
-            [degrees(value) for value in self.final_q],
-            states=list(self.states),
-            results=list(self.results),
-            comparison_reference=reference_snapshot,
-        )
-        summary = self.saved_conditions[condition_iid].difference_summary
-        self.status_var.set(
-            f"condition {self.saved_condition_count} enregistrée · {summary}"
-        )
-        self._comparison_reference_iid = None
+        self._conditions().record()
         if self.didactic_mode_var.get() and self.didactic_step < 9:
             self.didactic_step = 9
             self.set_reveal_mode(reveal_mode_for_step(self.didactic_step))
             self.update_didactic_guide()
 
     def clear_conditions(self) -> None:
-        self.saved_conditions.clear()
-        self.saved_condition_count = 0
-        self._comparison_reference_iid = None
-        for iid in self.conditions_table.get_children():
-            self.conditions_table.delete(iid)
-        self.update_condition_differences()
+        self._conditions().clear()
 
     def duplicate_selected_condition(self) -> None:
-        selected = selected_conditions(
-            self.saved_conditions, self.conditions_table.selection()
-        )
-        if len(selected) != 1:
-            return
-        reference_iid, reference = selected[0]
-        snapshot = comparison_reference(reference)
-        settings = dict(snapshot.settings)
-        settings["final_q_deg"] = list(snapshot.final_q_deg)
-        self._comparison_reference_iid = reference_iid
-        self.apply_settings(settings)
-        self.conditions_table.selection_remove(reference_iid)
-        self.update_condition_buttons()
-        self.table_notebook.select(self.differences_tab)
-        self.on_table_tab_changed()
-        self.update_condition_differences()
-        self.status_var.set(
-            f"condition {reference.label} dupliquée vers l'éditeur · "
-            "modifiez un paramètre puis cliquez sur Ajouter"
-        )
+        self._conditions().duplicate_selected()
 
     def add_saved_condition(
         self,
@@ -5487,76 +5255,18 @@ class SquatGui(tk.Tk):
         results: list[DynamicsResult] | None = None,
         comparison_reference: ComparisonReference | Mapping[str, object] | None = None,
     ) -> str:
-        self.saved_condition_count += 1
-        condition_iid = iid or f"condition-{self.saved_condition_count}"
-        if condition_iid in self.saved_conditions:
-            condition_iid = f"condition-{self.saved_condition_count}"
-        if not final_q_deg:
-            final_q_deg = [degrees(value) for value in self.final_q]
-        condition_label = label or str(self.saved_condition_count)
-        if states is None or results is None:
-            states, results = self.simulate_from_condition(settings, final_q_deg)
-        squat_angles = self.display_joint_angles(
-            tuple(radians(value) for value in final_q_deg)
-        )
-        condition = create_saved_condition(
-            label=condition_label,
-            settings=settings,
-            final_q_deg=final_q_deg,
+        return self._conditions().add_saved_condition(
+            settings,
+            final_q_deg,
+            label=label,
+            iid=iid,
             states=states,
             results=results,
-            reference=comparison_reference,
+            comparison_reference=comparison_reference,
         )
-        metrics = condition_table_metrics(condition)
-        self.saved_conditions[condition_iid] = condition
-        self.conditions_table.insert(
-            "",
-            "end",
-            iid=condition_iid,
-            values=(
-                condition_label,
-                str(settings.get("subject_profile", "homme")),
-                str(settings.get("bar_position", "back")),
-                f"{squat_angles[0]:.0f}/{squat_angles[1]:.0f}/{squat_angles[2]:.0f}",
-                f"{float(settings.get('load_percent_bw', 100.0 * float(settings.get('load_kg', 0.0)) / 70.0)):.0f}",
-                (
-                    f"{float(settings.get('duration_excentrique_s', settings.get('duration_phase_s', 4.0))):.1f}/"
-                    f"{float(settings.get('duration_isometrique_s', 2.0)):.1f}/"
-                    f"{float(settings.get('duration_concentrique_s', settings.get('duration_phase_s', 4.0))):.1f}"
-                ),
-                "20" if bool(settings.get("wedge_20_deg", False)) else "0",
-                f"{float(settings.get('shank_percent', 0.0)):+.1f}",
-                f"{float(settings.get('thigh_percent', 0.0)):+.1f}",
-                f"{float(settings.get('trunk_percent', 0.0)):+.1f}",
-                f"{metrics.peak_torques['cheville']:.1f}",
-                f"{metrics.peak_torques['genou']:.1f}",
-                f"{metrics.peak_torques['hanche']:.1f}",
-                metrics.utilization_label,
-                metrics.limiting_label,
-                condition.difference_summary,
-            ),
-        )
-        return condition_iid
 
     def delete_selected_conditions(self) -> None:
-        selected = list(self.conditions_table.selection())
-        if not selected:
-            return
-        answer = messagebox.askyesno(
-            "Supprimer",
-            f"Supprimer {len(selected)} condition(s) selectionnee(s) ?",
-            parent=self,
-        )
-        if not answer:
-            return
-        for iid in selected:
-            self.saved_conditions.pop(iid, None)
-            if self.conditions_table.exists(iid):
-                self.conditions_table.delete(iid)
-            if iid == self._comparison_reference_iid:
-                self._comparison_reference_iid = None
-        self.on_table_selection_changed()
-        self.status_var.set(f"{len(selected)} condition(s) supprimee(s)")
+        self._conditions().delete_selected()
 
     def simulate_from_condition(
         self,
