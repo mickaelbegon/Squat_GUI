@@ -64,24 +64,24 @@ La PR doit rester en **brouillon**. Les validations suivantes n'ont pas été
 effectuées et constituent des conditions de sortie avant une demande de revue
 finale ou une fusion :
 
-- **GUI Windows/Tkinter : non effectuée.** Le build Windows crée l'exécutable,
-  mais son smoke test et la recette échouent avec
-  `ModuleNotFoundError: No module named 'tkinter'`. PyInstaller signale aussi
-  que l'installation Tkinter est cassée et qu'elle sera exclue
-  (`tkinter installation is broken. It will be excluded`). La manipulation
-  manuelle de l'interface, y compris la checklist de dimensions, pose, glisser-
-  déposer, animation, graphes et exports, n'a donc pas encore pu être validée
-  sur l'exécutable livré.
+- **GUI Windows/Tkinter : non effectuée.** Le build de release reste bloqué
+  par une incompatibilité entre PyInstaller et Tcl/Tk dans l'environnement
+  Conda `squat-gui`; il ne s'agit pas d'une absence de `tkinter` dans le code
+  ou dans l'environnement. Les améliorations sûres du build sont en cours de
+  nettoyage, mais une reconstruction dans un Python officiel ou un
+  environnement Conda-forge propre est nécessaire avant toute release. La
+  manipulation manuelle de l'interface, y compris la checklist de dimensions,
+  pose, glisser-déposer, animation, graphes et exports, n'a donc pas encore pu
+  être validée sur l'exécutable livré.
 - **biorbd : non effectuée.** Ni le backend optionnel dans un bundle Windows,
   ni le fallback analytique dans l'exécutable n'ont été validés dans une recette
   complète. Les tests optionnels ignorés ne constituent pas cette validation.
-- **Correctifs en attente.** Un correctif PyInstaller est en cours pour rendre
-  Tkinter disponible dans le bundle et faire réussir le smoke test. Le script
-  `packaging/build_windows.ps1` doit aussi contrôler `$LASTEXITCODE` du smoke
-  afin qu'un échec ne soit jamais masqué. Des ajustements aux façades de
-  `dynamics.py`, actuellement incomplètes, sont également en cours. Après ces
-  corrections, il faudra relancer les contrôles automatisés, le build, le smoke
-  test et la recette sur une seconde machine.
+- **Correctifs en attente.** Les améliorations sûres du build sont en cours de
+  nettoyage. La compatibilité historique de la façade `dynamics.py` est
+  désormais corrigée et validée. Après la reconstruction dans un Python
+  officiel ou un environnement Conda-forge propre, il faudra relancer les
+  contrôles automatisés, le build, le smoke test et la recette sur une seconde
+  machine.
 
 ## Limites connues de validation
 
@@ -100,8 +100,9 @@ finale ou une fusion :
 
 ## Checklist de revue d'Aurélie
 
-- [ ] Lever les blocages indiqués ci-dessus : Tkinter dans le bundle, échec du
-      smoke propagé par `build_windows.ps1`, et façades `dynamics.py`.
+- [ ] Reconstruire le bundle dans un Python officiel ou un environnement
+      Conda-forge propre, puis vérifier que le smoke test est exécuté et que
+      son échec est propagé par `build_windows.ps1`.
 - [ ] Lire le diff par commit, en priorité les façades `app.py`, `cli.py`,
       `dynamics.py`, `kinematics.py` et les nouveaux contrats d'export.
 - [ ] Vérifier que GUI et CLI gardent leurs commandes, exports et fichiers JSON
@@ -111,7 +112,8 @@ finale ou une fusion :
       [checklist GUI](DEVELOPMENT.md#checklist-manuelle-gui-windows) : tailles
       1480×920 et 1024×700, pose/drag/dialogue, animation/survol, graphes,
       conditions, JSON, CSV et XLSX.
-- [ ] Construire et tester un ZIP Windows sur une seconde machine selon la
+- [ ] Construire et tester un ZIP Windows depuis cet environnement reconstruit
+      sur une seconde machine selon la
       [recette de distribution](../packaging/RECETTE_DISTRIBUTION.md), avec et
       sans `-IncludeBiorbd` selon le bundle cible.
 - [ ] Si biorbd est inclus, confirmer le backend réellement annoncé et les

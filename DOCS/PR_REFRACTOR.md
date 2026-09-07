@@ -1,13 +1,13 @@
 # PR (brouillon) — Refactorisation de maintenabilité du GUI et du calcul
 
-> **Statut : brouillon — ne pas fusionner.** Le build Windows génère l'EXE,
-> mais le smoke test et la recette échouent actuellement avec
-> `ModuleNotFoundError: No module named 'tkinter'`. PyInstaller indique que
-> l'installation Tkinter est cassée et l'exclut
-> (`tkinter installation is broken. It will be excluded`). Un correctif
-> PyInstaller et les ajustements des façades `dynamics.py` sont en cours. La PR
-> ne deviendra prête à relire qu'après build, smoke test et recette Windows
-> réussis, ainsi que les validations GUI et biorbd ci-dessous.
+> **Statut : brouillon — ne pas fusionner.** Le build Windows de release reste
+> bloqué par une incompatibilité PyInstaller/Tcl dans l'environnement Conda
+> `squat-gui`, et non par l'absence de `tkinter`. Les améliorations sûres du
+> build sont en cours de nettoyage ; une reconstruction dans un Python officiel
+> ou un environnement Conda-forge propre est nécessaire avant une release. La
+> compatibilité historique de `dynamics.py` est désormais corrigée et validée.
+> La PR ne deviendra prête à relire qu'après build, smoke test et recette
+> Windows réussis, ainsi que les validations GUI et biorbd ci-dessous.
 
 ## Titre proposé
 
@@ -55,21 +55,24 @@ SLSQP.
   version distribuée (`0.2.0`).
 - La validation automatisée ne remplace pas la recette graphique Tkinter sous
   Windows ni l'essai d'un bundle PyInstaller sur une seconde machine.
-- Cette recette GUI n'a pas encore été effectuée : elle est bloquée par
-  l'absence de `tkinter` dans l'exécutable produit. Le correctif doit aussi
-  faire échouer `build_windows.ps1` lorsque son smoke échoue (contrôle de
-  `$LASTEXITCODE`).
+- Cette recette GUI n'a pas encore été effectuée : le build de release est
+  bloqué par l'incompatibilité PyInstaller/Tcl de Conda `squat-gui`, non par
+  l'absence de `tkinter`. Les améliorations sûres du build sont en cours de
+  nettoyage. La release exige une reconstruction dans un Python officiel ou un
+  environnement Conda-forge propre; le smoke doit y être exécuté et son échec
+  propagé par `build_windows.ps1`.
 - La validation du backend optionnel biorbd, de même que celle du fallback
   analytique dans le bundle, n'a pas encore été effectuée.
-- Les façades `dynamics.py` font l'objet de corrections en cours ; les
-  contrôles et la revue doivent être rejoints une fois celles-ci intégrées.
+- La compatibilité historique de la façade `dynamics.py` est corrigée et
+  validée.
 - Les itérations SLSQP peuvent varier selon SciPy/BLAS ; les références
   valident les résultats physiques avec des tolérances définies.
 
 ## Checklist de validation — Aurélie
 
-- [ ] Attendre et vérifier les correctifs Tkinter/PyInstaller, la propagation
-      de l'échec du smoke par `build_windows.ps1` et les façades `dynamics.py`.
+- [ ] Préparer un Python officiel ou un environnement Conda-forge propre,
+      reconstruire le bundle, puis vérifier l'exécution du smoke et la
+      propagation de son échec par `build_windows.ps1`.
 - [ ] Relire le diff, en priorité les façades `app.py`, `cli.py`,
       `dynamics.py`, `kinematics.py` et les contrats d'export.
 - [ ] Dans un arbre propre, exécuter les quatre commandes de contrôle
@@ -82,10 +85,10 @@ SLSQP.
 - [ ] Vérifier dans le classeur XLSX `Synthèse`, `Données combinées`, une
       feuille par simulation et `Définitions`, puis confirmer que la
       comparaison de conditions indique la variable modifiée.
-- [ ] Construire le bundle Windows depuis l'environnement `squat-gui` :
+- [ ] Construire le bundle Windows depuis le Python officiel ou
+      l'environnement Conda-forge propre préparé ci-dessus :
 
       ```powershell
-      conda activate squat-gui
       $env:SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS = "1"
       powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
       Compress-Archive -Path "dist\Squat GUI" -DestinationPath "Squat_GUI-0.2.0-Windows-x64.zip"
