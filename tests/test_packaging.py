@@ -72,6 +72,9 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn('"imageio_ffmpeg"', spec)
         self.assertIn('"openpyxl"', spec)
         self.assertIn('"scipy"', spec)
+        self.assertIn("hookspath=[]", spec)
+        self.assertFalse((ROOT / "packaging" / "pyinstaller_hooks").exists())
+        self.assertFalse((ROOT / "packaging" / "tcl_probe").exists())
 
     def test_frozen_smoke_test_encodes_video_and_checks_optional_backends(self) -> None:
         launcher = (ROOT / "packaging" / "squat_gui_launcher.py").read_text(
@@ -82,6 +85,10 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn('import_module("biorbd")', launcher)
         self.assertIn('result.backend == "biorbd"', launcher)
         self.assertIn('excel_report["writer"] == "openpyxl"', launcher)
+        self.assertIn("root = tk.Tk()", launcher)
+        self.assertIn('root.tk.call("package", "require", "Tk")', launcher)
+        self.assertIn('os.environ.get("SQUAT_GUI_SMOKE_LOG")', launcher)
+        self.assertIn("traceback.format_exc()", launcher)
 
     def test_external_release_validators_cover_clean_profiles_and_exports(self) -> None:
         macos = (ROOT / "packaging" / "validate_macos_release.sh").read_text(
@@ -108,6 +115,18 @@ class PackagingContractTests(unittest.TestCase):
             self.assertIn("_internal\\assets\\raster_segments\\pied.png", script)
             self.assertIn("_internal\\squat_gui\\build_workbook.mjs", script)
             self.assertIn("RequiredBundleFiles", script)
+        self.assertIn('throw "$Description a échoué avec le code', build)
+        self.assertIn('$StagingRoot = Join-Path $env:LOCALAPPDATA', build)
+        self.assertIn("Invoke-PyInstallerChecked", build)
+        self.assertIn("Publish-Bundle -SourceDir $BundleDir", build)
+        self.assertNotIn("_tcl_data", build)
+        self.assertNotIn("_tk_data", build)
+        self.assertIn("Start-Process -FilePath $Executable -Wait -PassThru", build)
+        self.assertIn('$SmokeProcess.ExitCode -ne 0', build)
+        self.assertIn("Start-Process -FilePath $Executable -Wait -PassThru", validator)
+        self.assertIn('$SmokeProcess.ExitCode -ne 0', validator)
+        self.assertIn("SQUAT_GUI_SMOKE_LOG", build)
+        self.assertIn("SQUAT_GUI_SMOKE_LOG", validator)
 
     def test_refactored_runtime_modules_import_without_starting_tk(self) -> None:
         # Exercise the desktop import graph without constructing a Tk root/window.

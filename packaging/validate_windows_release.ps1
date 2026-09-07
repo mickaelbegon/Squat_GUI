@@ -29,7 +29,6 @@ try {
             throw "Ressource attendue absente de l'archive: $RequiredFile"
         }
     }
-
     $ActualVersion = (Get-Item $Executable).VersionInfo.ProductVersion
     if (-not $ActualVersion.StartsWith($ExpectedVersion)) {
         throw "Version inattendue: $ActualVersion (attendu: $ExpectedVersion)"
@@ -37,23 +36,31 @@ try {
 
     $PreviousHome = $env:USERPROFILE
     $PreviousSmoke = $env:SQUAT_GUI_SMOKE_TEST
+    $PreviousSmokeLog = $env:SQUAT_GUI_SMOKE_LOG
     $PreviousBackend = $env:SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS
     $PreviousNode = $env:SQUAT_GUI_NODE
     $PreviousNodeModules = $env:SQUAT_GUI_NODE_MODULES
     try {
         $env:USERPROFILE = $CleanHome
         $env:SQUAT_GUI_SMOKE_TEST = "1"
+        $env:SQUAT_GUI_SMOKE_LOG = Join-Path $WorkDir "smoke-error.log"
         $env:SQUAT_GUI_NODE = $null
         $env:SQUAT_GUI_NODE_MODULES = $null
         $env:SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS = if ($IncludeBiorbd) { "1" } else { "0" }
-        & $Executable
-        if ($LASTEXITCODE -ne 0) {
-            throw "Le smoke test figé a échoué avec le code $LASTEXITCODE"
+        $SmokeProcess = Start-Process -FilePath $Executable -Wait -PassThru -WindowStyle Hidden
+        if ($SmokeProcess.ExitCode -ne 0) {
+            $SmokeDetails = if (Test-Path -LiteralPath $env:SQUAT_GUI_SMOKE_LOG) {
+                Get-Content -LiteralPath $env:SQUAT_GUI_SMOKE_LOG -Raw
+            } else {
+                "Aucune traceback n'a été produite."
+            }
+            throw "Le smoke test figé a échoué avec le code $($SmokeProcess.ExitCode).`n$SmokeDetails"
         }
     }
     finally {
         $env:USERPROFILE = $PreviousHome
         $env:SQUAT_GUI_SMOKE_TEST = $PreviousSmoke
+        $env:SQUAT_GUI_SMOKE_LOG = $PreviousSmokeLog
         $env:SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS = $PreviousBackend
         $env:SQUAT_GUI_NODE = $PreviousNode
         $env:SQUAT_GUI_NODE_MODULES = $PreviousNodeModules

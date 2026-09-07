@@ -21,7 +21,6 @@ ROOT = next(
     for candidate in ROOT_CANDIDATES
     if (candidate / "pyproject.toml").exists() and (candidate / "src" / "squat_gui").exists()
 )
-
 datas = [
     (str(ROOT / "assets"), "assets"),
     (str(ROOT / "examples"), "examples"),
@@ -73,6 +72,9 @@ a = Analysis(
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
+    # Use PyInstaller's maintained Tcl/Tk hook.  Conda-specific layout hooks
+    # made the resulting bundle less portable and are deliberately not patched
+    # here; a broken collection must fail during the frozen smoke test.
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
