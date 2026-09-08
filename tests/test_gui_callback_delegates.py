@@ -77,6 +77,7 @@ def test_plot_and_scene_facades_delegate_once_without_tcl() -> None:
     assert app.on_plot_cursor_event(event) == "on_plot_cursor_event-result"
     assert app.world_to_canvas(canvas, (0.2, 0.4), bounds) == "world_to_canvas-result"
     assert app.draw_pose_editor() is None
+    assert app.draw_pose_drag_preview() is None
 
     assert plot_controller.calls == [
         ("draw_plot", ()),
@@ -85,6 +86,7 @@ def test_plot_and_scene_facades_delegate_once_without_tcl() -> None:
     assert scene_controller.calls == [
         ("world_to_canvas", (canvas, (0.2, 0.4), bounds)),
         ("draw_pose_editor", ()),
+        ("draw_pose_drag_preview", ()),
     ]
 
 

@@ -49,6 +49,7 @@ class PoseConditionActionsController:
 
     def __init__(self, app: Any) -> None:
         self.app = app
+        self._drag_start_q: tuple[float, float, float] | None = None
 
     @staticmethod
     def format_pose_angle(value: float) -> str:
@@ -95,6 +96,7 @@ class PoseConditionActionsController:
             getattr(self.app, "_pose_editor_bounds", None) or self.app.scene_bounds()
         )
         self.app.drag_target = self.nearest_handle(event.x, event.y)
+        self._drag_start_q = self.app.final_q if self.app.drag_target else None
 
     def on_pose_drag(self, event: tk.Event) -> None:
         if not self.app.drag_target:
@@ -109,11 +111,17 @@ class PoseConditionActionsController:
             or getattr(self.app, "_pose_editor_bounds", None)
             or self.app.scene_bounds(),
         )
-        self.app.final_q = drag_updated_q(
+        updated_q = drag_updated_q(
             self.app.final_q, self.app.drag_target, point, pose
         )
+        if updated_q == self.app.final_q:
+            return
+        self.app.final_q = updated_q
         self.app.sync_pose_angle_fields_from_final_q()
-        self.app.on_parameter_changed()
+        # Mouse motion can arrive much faster than the scientific simulation
+        # can run.  Keep the gesture responsive by redrawing only the editable
+        # pose here; plots, animation and dynamics are committed on release.
+        self.app.draw_pose_drag_preview()
 
     def synchronize_pose_angle_fields(self) -> None:
         """Refresh an open precise editor after a drag without committing it."""
@@ -154,8 +162,16 @@ class PoseConditionActionsController:
         return clamp_segment_angles(q)
 
     def on_pose_release(self, _event: tk.Event) -> None:
+        pose_changed = (
+            self.app.drag_target is not None
+            and self._drag_start_q is not None
+            and self.app.final_q != self._drag_start_q
+        )
         self.app.drag_target = None
         self.app._pose_drag_bounds = None
+        self._drag_start_q = None
+        if pose_changed:
+            self.app.on_parameter_changed()
 
     def toggle_play(self, *, clock: Callable[[], float] = perf_counter) -> None:
         self.app.playing = not self.app.playing

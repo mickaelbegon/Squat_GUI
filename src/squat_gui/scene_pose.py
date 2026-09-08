@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tkinter as tk
+from dataclasses import replace
 from math import degrees
 
 from .anthropometry import Anthropometry
@@ -23,13 +24,15 @@ class ScenePoseRendererMixin:
         self,
         canvas: tk.Canvas,
         state: MotionState,
-        result: DynamicsResult,
+        result: DynamicsResult | None,
         with_handles: bool,
         bounds: tuple[float, float, float, float] | None = None,
         x_offset: float = 0.0,
         render_anthro: Anthropometry | None = None,
         refined_sprites: bool | None = None,
         layers: RenderLayers | None = None,
+        *,
+        use_raster_sprites: bool = True,
     ) -> None:
         render_anthro = render_anthro or self.anthro()
         refined_sprites = (
@@ -39,9 +42,12 @@ class ScenePoseRendererMixin:
         )
         layers = layers or self.render_layers(refined_sprites=refined_sprites)
         bounds = bounds or self.app.scene_bounds()
-        scene = build_scene_geometry(
-            render_anthro, state, result.cop_x, x_offset=x_offset
+        support_x = (
+            result.cop_x
+            if result is not None
+            else (state.pose.heel[0] + state.pose.toe[0]) / 2.0
         )
+        scene = build_scene_geometry(render_anthro, state, support_x, x_offset=x_offset)
         points = {
             name: self.app.world_to_canvas(canvas, scene.point(name), bounds)
             for name in ("heel", "toe", "ankle", "knee", "hip", "shoulder")
@@ -52,7 +58,7 @@ class ScenePoseRendererMixin:
         def mapper(point: tuple[float, float]) -> tuple[float, float]:
             return self.app.world_to_canvas(canvas, point, bounds)
 
-        raster_drawn = self.app.draw_raster_segments(
+        raster_drawn = use_raster_sprites and self.app.draw_raster_segments(
             canvas,
             state,
             mapper,
@@ -201,7 +207,7 @@ class ScenePoseRendererMixin:
                 )
 
         cop = self.app.world_to_canvas(canvas, scene.support_point, bounds)
-        if layers.cop_zmp:
+        if layers.cop_zmp and result is not None:
             canvas.create_oval(
                 cop[0] - 5,
                 cop[1] - 5,
@@ -218,7 +224,7 @@ class ScenePoseRendererMixin:
                 fill="#8a3f1f",
                 font=("Helvetica", 8, "bold"),
             )
-        if layers.grf:
+        if layers.grf and result is not None:
             force_end = self.app.world_to_canvas(
                 canvas,
                 (
@@ -272,7 +278,7 @@ class ScenePoseRendererMixin:
                 fill="#315f8a",
                 font=("Helvetica", 8, "bold"),
             )
-        if layers.moment_arms:
+        if layers.moment_arms and result is not None:
             for joint in (scene.point("knee"), scene.point("hip")):
                 projected = project_point_on_line(
                     joint, scene.support_point, result.ground_reaction
@@ -297,7 +303,7 @@ class ScenePoseRendererMixin:
                     outline="",
                 )
 
-        if layers.capacity_rings:
+        if layers.capacity_rings and result is not None:
             for name in ("cheville", "genou", "hanche"):
                 utilization = result.effort_ratios[name]
                 ratio = 1.0 if utilization is None else min(1.0, utilization)
@@ -450,6 +456,69 @@ class ScenePoseRendererMixin:
         )
         if layers.alerts:
             self.app.draw_alert_banner(canvas, alerts, 74)
+
+    def draw_pose_drag_preview(self) -> None:
+        """Draw a fast pose-only preview without stale dynamics or raster work."""
+
+        canvas = self.pose_canvas
+        canvas.delete("all")
+        canvas._sprite_images = []
+        anthro = self.anthro()
+        pose = pose_from_angles(anthro, self.final_q)
+        state = MotionState(
+            self.phase_durations().squat_reference_time,
+            self.final_q,
+            (0.0, 0.0, 0.0),
+            (0.0, 0.0, 0.0),
+            pose,
+            "isometrique",
+        )
+        layers = replace(
+            self.render_layers(refined_sprites=False),
+            cop_zmp=False,
+            grf=False,
+            weight=False,
+            force_balance=False,
+            moment_arms=False,
+            capacity_rings=False,
+            alerts=False,
+            time_label=False,
+            refined_sprites=False,
+        )
+        bounds = (
+            self.app._pose_drag_bounds
+            or getattr(self.app, "_pose_editor_bounds", None)
+            or self.app.scene_bounds()
+        )
+        self.app.configure_alert_canvas(canvas, [])
+        self.app.draw_skeleton(
+            canvas,
+            state,
+            None,
+            with_handles=True,
+            bounds=bounds,
+            render_anthro=anthro,
+            refined_sprites=False,
+            layers=layers,
+            use_raster_sprites=False,
+        )
+        if layers.joint_angles:
+            self.app.draw_squat_angle_labels(canvas, state, bounds)
+        canvas.create_text(
+            16,
+            16,
+            text="Position de squat",
+            anchor="nw",
+            fill="#22312a",
+            font=("Helvetica", 13, "bold"),
+        )
+        canvas.create_text(
+            16,
+            38,
+            text="Aperçu cinématique · calcul au relâchement",
+            anchor="nw",
+            fill="#506158",
+        )
 
     def draw_squat_angle_labels(
         self,

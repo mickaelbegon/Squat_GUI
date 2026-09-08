@@ -885,13 +885,15 @@ class SquatGui(tk.Tk):
         self,
         canvas: tk.Canvas,
         state: MotionState,
-        result: DynamicsResult,
+        result: DynamicsResult | None,
         with_handles: bool,
         bounds: tuple[float, float, float, float] | None = None,
         x_offset: float = 0.0,
         render_anthro: Anthropometry | None = None,
         refined_sprites: bool | None = None,
         layers: RenderLayers | None = None,
+        *,
+        use_raster_sprites: bool = True,
     ) -> None:
         self._scene_canvas().draw_skeleton(
             canvas,
@@ -903,6 +905,7 @@ class SquatGui(tk.Tk):
             render_anthro,
             refined_sprites,
             layers,
+            use_raster_sprites=use_raster_sprites,
         )
 
     def draw_raster_segments(
@@ -927,6 +930,11 @@ class SquatGui(tk.Tk):
 
     def draw_pose_editor(self) -> None:
         self._scene_canvas().draw_pose_editor()
+
+    def draw_pose_drag_preview(self) -> None:
+        """Redraw only the lightweight kinematic pose during a drag."""
+
+        self._scene_canvas().draw_pose_drag_preview()
 
     def draw_squat_angle_labels(
         self,
