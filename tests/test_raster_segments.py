@@ -1,4 +1,5 @@
 import unittest
+from math import cos, hypot, radians, sin
 from pathlib import Path
 from unittest.mock import patch
 
@@ -176,6 +177,148 @@ class RasterSegmentAnchorTest(unittest.TestCase):
         self.assertGreaterEqual(shank.size[0], 55)
         self.assertGreater(thigh.size[0], 85)
         self.assertGreater(foot.size[0], 130)
+
+    def test_refined_transform_cache_reuses_pil_result(self):
+        from PIL import Image
+
+        raster_segments.transformed_sprite_cache_clear()
+        try:
+            spec = raster_segments.sprite_spec("shank", refined=True)
+            target = (23.0, -160.0)
+            with patch.object(
+                raster_segments,
+                "_render_transformed_sprite",
+                wraps=raster_segments._render_transformed_sprite,
+            ) as render:
+                first_image, first_anchor = raster_segments.transformed_sprite_image(
+                    spec, target, refined=True
+                )
+                second_image, second_anchor = raster_segments.transformed_sprite_image(
+                    spec, target, refined=True
+                )
+
+            self.assertIsInstance(first_image, Image.Image)
+            self.assertIs(first_image, second_image)
+            self.assertEqual(first_anchor, second_anchor)
+            self.assertEqual(render.call_count, 1)
+            info = raster_segments.transformed_sprite_cache_info()
+            self.assertEqual((info.hits, info.misses, info.curr_entries), (1, 1, 1))
+        finally:
+            raster_segments.transformed_sprite_cache_clear()
+
+    def test_transform_cache_canonicalization_stays_below_one_pixel(self):
+        length = 160.0
+        angle = -80.0
+        target = (length * cos(radians(angle)), length * sin(radians(angle)))
+        canonical, length_step, angle_step = (
+            raster_segments._canonical_target_vector(target)
+        )
+
+        self.assertLess(hypot(canonical[0] - target[0], canonical[1] - target[1]), 0.2)
+        self.assertEqual(
+            length_step,
+            round(length / raster_segments.TRANSFORMED_SPRITE_LENGTH_STEP_PX),
+        )
+        self.assertEqual(
+            angle_step,
+            round(angle / raster_segments.TRANSFORMED_SPRITE_ANGLE_STEP_DEGREES),
+        )
+
+    def test_cached_transform_preserves_pixels_and_distal_alignment(self):
+        raster_segments.transformed_sprite_cache_clear()
+        try:
+            spec = raster_segments.sprite_spec("thigh", refined=True)
+            target = (0.0, -160.0)
+            expected_image, expected_anchor = (
+                raster_segments._render_transformed_sprite(spec, target, True)
+            )
+            image, anchor = raster_segments.transformed_sprite_image(
+                spec, target, refined=True
+            )
+
+            self.assertEqual(image.size, expected_image.size)
+            self.assertEqual(image.tobytes(), expected_image.tobytes())
+            self.assertEqual(anchor, expected_anchor)
+            distal = (123.25, 456.75)
+            image_origin = (distal[0] - anchor[0], distal[1] - anchor[1])
+            self.assertEqual(
+                (image_origin[0] + anchor[0], image_origin[1] + anchor[1]),
+                distal,
+            )
+        finally:
+            raster_segments.transformed_sprite_cache_clear()
+
+    def test_refined_cache_separates_asset_variants(self):
+        raster_segments.transformed_sprite_cache_clear()
+        try:
+            front = raster_segments.sprite_spec(
+                "trunk", refined=True, trunk_variant=("homme", "front")
+            )
+            back = raster_segments.sprite_spec(
+                "trunk", refined=True, trunk_variant=("homme", "back")
+            )
+            target = (0.0, -180.0)
+            with patch.object(
+                raster_segments,
+                "_render_transformed_sprite",
+                wraps=raster_segments._render_transformed_sprite,
+            ) as render:
+                raster_segments.transformed_sprite_image(front, target, refined=True)
+                raster_segments.transformed_sprite_image(back, target, refined=True)
+
+            self.assertEqual(render.call_count, 2)
+            self.assertEqual(
+                raster_segments.transformed_sprite_cache_info().curr_entries,
+                2,
+            )
+        finally:
+            raster_segments.transformed_sprite_cache_clear()
+
+    def test_low_quality_transform_bypasses_refined_cache(self):
+        raster_segments.transformed_sprite_cache_clear()
+        spec = raster_segments.sprite_spec("foot", refined=False)
+        with patch.object(
+            raster_segments,
+            "_render_transformed_sprite",
+            wraps=raster_segments._render_transformed_sprite,
+        ) as render:
+            raster_segments.transformed_sprite_image(spec, (100.0, 0.0))
+            raster_segments.transformed_sprite_image(spec, (100.0, 0.0))
+
+        self.assertEqual(render.call_count, 2)
+        self.assertEqual(
+            raster_segments.transformed_sprite_cache_info().curr_entries,
+            0,
+        )
+
+    def test_transform_cache_is_lru_and_bounded_by_count_and_bytes(self):
+        from PIL import Image
+
+        image = Image.new("RGBA", (2, 2), (0, 0, 0, 0))
+        value = (image, (0.0, 0.0))
+        cache = raster_segments._TransformedSpriteCache(
+            max_entries=2,
+            max_bytes=32,
+        )
+        cache.put("first", value)
+        cache.put("second", value)
+        self.assertIsNotNone(cache.get("first"))
+        cache.put("third", value)
+
+        self.assertIsNone(cache.get("second"))
+        self.assertEqual(cache.info().curr_entries, 2)
+        self.assertEqual(cache.info().curr_bytes, 32)
+        self.assertEqual(cache.info().evictions, 1)
+
+        byte_bounded = raster_segments._TransformedSpriteCache(
+            max_entries=10,
+            max_bytes=20,
+        )
+        byte_bounded.put("first", value)
+        byte_bounded.put("second", value)
+        self.assertEqual(byte_bounded.info().curr_entries, 1)
+        self.assertEqual(byte_bounded.info().curr_bytes, 16)
+        self.assertEqual(byte_bounded.info().evictions, 1)
 
     def test_foot_sprite_is_clipped_at_floor_without_moving_ankle_anchor(self):
         for refined in (False, True):

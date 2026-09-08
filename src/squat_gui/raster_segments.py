@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict, namedtuple
 from dataclasses import dataclass
 from functools import lru_cache
-from math import atan2, degrees, hypot
+from math import atan2, cos, degrees, hypot, radians, sin
 from pathlib import Path
+from threading import RLock
 from typing import Callable
 
 from .kinematics import Vector
@@ -64,6 +66,114 @@ DISPLAY_WIDTH_SCALE = {
 DISPLAY_EXTENSION_SCALE = {
     "foot": 1.16,
 }
+
+# The transformed refined sprites are expensive (LANCZOS resize followed by a
+# BICUBIC rotation), but they are immutable throughout rendering.  Cache only
+# these PIL images: ImageTk.PhotoImage instances remain owned by their canvas
+# and are never retained here.
+TRANSFORMED_SPRITE_CACHE_MAX_ENTRIES = 96
+TRANSFORMED_SPRITE_CACHE_MAX_BYTES = 64 * 1024 * 1024
+
+# Canonical transforms make keys stable across harmless floating-point noise.
+# At a 300 px segment length, half an angular step displaces the proximal end
+# by at most 0.13 px; half a length step is 0.03 px.  This stays below raster
+# sampling precision while allowing repeated renders to share their result.
+TRANSFORMED_SPRITE_ANGLE_STEP_DEGREES = 0.05
+TRANSFORMED_SPRITE_LENGTH_STEP_PX = 1.0 / 16.0
+
+
+TransformedSpriteCacheInfo = namedtuple(
+    "TransformedSpriteCacheInfo",
+    "hits misses max_entries curr_entries max_bytes curr_bytes evictions",
+)
+
+
+@dataclass(frozen=True)
+class _TransformedSpriteKey:
+    spec: SpriteSpec
+    refined: bool
+    target_length_step: int
+    target_angle_step: int
+
+
+class _TransformedSpriteCache:
+    """Thread-safe LRU bounded by both entry count and estimated pixel bytes."""
+
+    def __init__(self, max_entries: int, max_bytes: int) -> None:
+        if max_entries < 0 or max_bytes < 0:
+            raise ValueError("Sprite cache limits cannot be negative.")
+        self.max_entries = max_entries
+        self.max_bytes = max_bytes
+        self._items = OrderedDict()
+        self._bytes = 0
+        self._hits = 0
+        self._misses = 0
+        self._evictions = 0
+        self._lock = RLock()
+
+    @staticmethod
+    def _image_bytes(image) -> int:
+        return image.width * image.height * len(image.getbands())
+
+    def get(self, key):
+        with self._lock:
+            try:
+                image, anchor, image_bytes = self._items.pop(key)
+            except KeyError:
+                self._misses += 1
+                return None
+            self._items[key] = (image, anchor, image_bytes)
+            self._hits += 1
+            return image, anchor
+
+    def put(self, key, value) -> None:
+        image, anchor = value
+        image_bytes = self._image_bytes(image)
+        with self._lock:
+            previous = self._items.pop(key, None)
+            if previous is not None:
+                self._bytes -= previous[2]
+            if (
+                self.max_entries == 0
+                or self.max_bytes == 0
+                or image_bytes > self.max_bytes
+            ):
+                return
+            self._items[key] = (image, anchor, image_bytes)
+            self._bytes += image_bytes
+            while (
+                len(self._items) > self.max_entries
+                or self._bytes > self.max_bytes
+            ):
+                _, (_, _, evicted_bytes) = self._items.popitem(last=False)
+                self._bytes -= evicted_bytes
+                self._evictions += 1
+
+    def clear(self) -> None:
+        with self._lock:
+            self._items.clear()
+            self._bytes = 0
+            self._hits = 0
+            self._misses = 0
+            self._evictions = 0
+
+    def info(self) -> TransformedSpriteCacheInfo:
+        with self._lock:
+            return TransformedSpriteCacheInfo(
+                self._hits,
+                self._misses,
+                self.max_entries,
+                len(self._items),
+                self.max_bytes,
+                self._bytes,
+                self._evictions,
+            )
+
+
+_transformed_sprite_cache = _TransformedSpriteCache(
+    TRANSFORMED_SPRITE_CACHE_MAX_ENTRIES,
+    TRANSFORMED_SPRITE_CACHE_MAX_BYTES,
+)
 
 
 def pillow_available() -> bool:
@@ -338,7 +448,33 @@ def _stretch_horizontal_about_distal(source, spec: SpriteSpec, factor: float, ex
     return stretched, distal, proximal
 
 
-def transformed_sprite_image(spec: SpriteSpec, target_vector_px: Vector, refined: bool = False):
+def _canonical_target_vector(target_vector_px: Vector) -> tuple[Vector, int, int]:
+    """Return a deterministic sub-pixel transform and its integer cache steps."""
+
+    target_length = max(1.0, hypot(target_vector_px[0], target_vector_px[1]))
+    length_step = round(target_length / TRANSFORMED_SPRITE_LENGTH_STEP_PX)
+    canonical_length = max(
+        1.0,
+        length_step * TRANSFORMED_SPRITE_LENGTH_STEP_PX,
+    )
+
+    target_angle = degrees(atan2(target_vector_px[1], target_vector_px[0]))
+    target_angle = (target_angle + 180.0) % 360.0 - 180.0
+    angle_step = round(target_angle / TRANSFORMED_SPRITE_ANGLE_STEP_DEGREES)
+    canonical_angle = angle_step * TRANSFORMED_SPRITE_ANGLE_STEP_DEGREES
+    angle_radians = radians(canonical_angle)
+    canonical_vector = (
+        canonical_length * cos(angle_radians),
+        canonical_length * sin(angle_radians),
+    )
+    return canonical_vector, length_step, angle_step
+
+
+def _render_transformed_sprite(
+    spec: SpriteSpec,
+    target_vector_px: Vector,
+    refined: bool,
+):
     from PIL import Image
 
     source = _load_transparent_sprite(spec.filename, refined)
@@ -372,6 +508,44 @@ def transformed_sprite_image(spec: SpriteSpec, target_vector_px: Vector, refined
     cropped = rotated_layer.crop(bbox)
     anchor = (pivot[0] - bbox[0], pivot[1] - bbox[1])
     return cropped, anchor
+
+
+def transformed_sprite_cache_clear() -> None:
+    """Discard cached PIL transforms, for example after replacing an asset."""
+
+    _transformed_sprite_cache.clear()
+
+
+def transformed_sprite_cache_info() -> TransformedSpriteCacheInfo:
+    """Expose bounded-cache statistics for diagnostics and regression tests."""
+
+    return _transformed_sprite_cache.info()
+
+
+def transformed_sprite_image(
+    spec: SpriteSpec,
+    target_vector_px: Vector,
+    refined: bool = False,
+):
+    if not refined:
+        return _render_transformed_sprite(spec, target_vector_px, refined)
+
+    canonical_vector, length_step, angle_step = _canonical_target_vector(
+        target_vector_px
+    )
+    key = _TransformedSpriteKey(
+        spec,
+        refined,
+        length_step,
+        angle_step,
+    )
+    cached = _transformed_sprite_cache.get(key)
+    if cached is not None:
+        return cached
+
+    transformed = _render_transformed_sprite(spec, canonical_vector, refined)
+    _transformed_sprite_cache.put(key, transformed)
+    return transformed
 
 
 def transformed_sprite(spec: SpriteSpec, target_vector_px: Vector, refined: bool = False):
