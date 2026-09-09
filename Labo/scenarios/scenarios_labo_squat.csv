@@ -1,12 +1,12 @@
 condition_id,subject_profile,bar_position,load_percent_bw,wedge_20_deg,shank_percent,thigh_percent,trunk_percent,duration_excentrique_s,duration_isometrique_s,duration_concentrique_s,frames,backend,torque_preset,angle_adapt,velocity_adapt,ankle_deg,knee_flexion_deg,hip_flexion_deg,anthropometry_mode
-baseline,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,25,90,120,longueur seule
-limited_ankle_flexion,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,10,90,120,longueur seule
-wedge_20_deg,homme,back,0,true,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,10,90,120,longueur seule
-posture_knee_dominant,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,35,105,80,longueur seule
-posture_hip_dominant,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,15,80,100,longueur seule
-balance_long_thigh_back,homme,back,40,false,0,5,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,80,78,longueur seule
-balance_long_thigh_front,homme,front,40,false,0,5,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,80,78,longueur seule
-balance_pregnant_back,femme enceinte,back,40,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,80,78,longueur seule
-balance_pregnant_front,femme enceinte,front,40,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,80,78,longueur seule
-load_100bw,homme,back,100,false,0,0,0,4.0,1.0,4.0,181,biorbd,anderson,true,true,22,80,78,longueur seule
-duration_fast,homme,back,40,false,0,0,0,0.5,0.5,0.5,31,biorbd,anderson,true,true,22,80,78,longueur seule
+baseline,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,25,90,120,longueur seule
+limited_ankle_flexion,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,10,90,120,longueur seule
+wedge_20_deg,homme,back,0,true,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,10,90,120,longueur seule
+posture_knee_dominant,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,35,105,80,longueur seule
+posture_hip_dominant,homme,back,0,false,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,15,80,100,longueur seule
+balance_long_thigh_back,homme,back,50,false,0,5,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,22,80,78,longueur seule
+balance_long_thigh_front,homme,front,50,false,0,5,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,22,80,78,longueur seule
+balance_pregnant_back,femme enceinte,back,50,false,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,22,80,78,longueur seule
+balance_pregnant_front,femme enceinte,front,50,false,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,22,80,78,longueur seule
+load_100bw,homme,back,100,false,0,0,0,4.0,1.0,4.0,181,biorbd,sportifs,true,true,22,80,78,longueur seule
+duration_fast,homme,back,50,false,0,0,0,0.5,0.5,0.5,31,biorbd,sportifs,true,true,22,80,78,longueur seule

@@ -132,7 +132,7 @@ Lien littérature attendu : Fry et al. (2003), Straub & Powers (2024).
 
 ### Bloc 3 — Équilibre postural : morphologie et prise de barre
 
-Le principe de ce bloc est de tenir la pose basse constante au début de la comparaison. La charge est exprimée en pourcentage du poids de corps et vaut 40 % BW dans les essais fournis.
+Le principe de ce bloc est de tenir la pose basse constante au début de la comparaison. La charge est exprimée en pourcentage du poids de corps et vaut 50 % BW dans les essais fournis.
 
 Comparer d’abord :
 

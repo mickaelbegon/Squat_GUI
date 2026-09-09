@@ -118,6 +118,25 @@ class TemporalSamplingTests(unittest.TestCase):
             with self.subTest(condition_id=condition_id):
                 self.assertEqual(actual, expected)
 
+    def test_public_lab_scenarios_use_sportifs_preset_and_supported_loads(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "Labo/scenarios/scenarios_labo_squat.csv"
+        with path.open(newline="", encoding="utf-8") as handle:
+            rows = list(csv.DictReader(handle))
+
+        self.assertTrue(rows)
+        self.assertTrue(all(row["torque_preset"] == "sportifs" for row in rows))
+        self.assertNotIn("40", {row["load_percent_bw"] for row in rows})
+        self.assertEqual(
+            {row["condition_id"] for row in rows if row["load_percent_bw"] == "50"},
+            {
+                "balance_long_thigh_back",
+                "balance_long_thigh_front",
+                "balance_pregnant_back",
+                "balance_pregnant_front",
+                "duration_fast",
+            },
+        )
+
     def test_batch_parser_preserves_legacy_signed_joint_angle_compatibility(self) -> None:
         defaults = build_parser().parse_args(["batch", "legacy.csv"])
         clinical = condition_from_row(
