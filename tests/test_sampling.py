@@ -1,18 +1,23 @@
 import csv
 import unittest
 from dataclasses import replace
-from math import radians
+from math import degrees, radians
 from pathlib import Path
 
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.app import SquatGui
-from squat_gui.cli import build_parser, read_conditions_csv, simulate_condition
+from squat_gui.cli import (
+    build_parser,
+    condition_from_row,
+    read_conditions_csv,
+    simulate_condition,
+)
 from squat_gui.dynamics import simulate
 from squat_gui.kinematics import (
     DEFAULT_SAMPLE_PERIOD_S,
     PhaseDurations,
+    clinical_joint_values_from_segment_values,
     frame_count_for_duration,
-    joint_values_from_segment_values,
 )
 
 
@@ -51,35 +56,116 @@ class TemporalSamplingTests(unittest.TestCase):
                     int(row["frames"]), frame_count_for_duration(durations)
                 )
 
-    def test_reference_and_stability_lab_presets_are_plausible_and_supported(self) -> None:
+    def test_public_lab_scenarios_use_the_gui_joint_angle_convention(self) -> None:
+        path = Path(__file__).resolve().parents[1] / "Labo/scenarios/scenarios_labo_squat.csv"
+        with path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            rows = list(reader)
+        self.assertEqual(
+            [row["condition_id"] for row in rows],
+            [
+                "baseline",
+                "limited_ankle_flexion",
+                "wedge_20_deg",
+                "posture_knee_dominant",
+                "posture_hip_dominant",
+                "balance_long_thigh_back",
+                "balance_long_thigh_front",
+                "balance_pregnant_back",
+                "balance_pregnant_front",
+                "load_100bw",
+                "duration_fast",
+            ],
+        )
+        self.assertTrue(
+            {"ankle_deg", "knee_flexion_deg", "hip_flexion_deg"}.issubset(
+                reader.fieldnames or ()
+            )
+        )
+        self.assertTrue(
+            {"q_shank_deg", "q_thigh_deg", "q_trunk_deg"}.isdisjoint(
+                reader.fieldnames or ()
+            )
+        )
+
+        defaults = build_parser().parse_args(["batch", str(path)])
+        conditions = {
+            condition.condition_id: condition
+            for condition in read_conditions_csv(path, defaults)
+        }
+        expected_gui_angles = {
+            "baseline": (25.0, 90.0, 120.0),
+            "limited_ankle_flexion": (10.0, 90.0, 120.0),
+            "wedge_20_deg": (10.0, 90.0, 120.0),
+            "posture_knee_dominant": (35.0, 105.0, 80.0),
+            "posture_hip_dominant": (15.0, 80.0, 100.0),
+            "balance_long_thigh_back": (22.0, 80.0, 78.0),
+            "balance_long_thigh_front": (22.0, 80.0, 78.0),
+            "balance_pregnant_back": (22.0, 80.0, 78.0),
+            "balance_pregnant_front": (22.0, 80.0, 78.0),
+            "load_100bw": (22.0, 80.0, 78.0),
+            "duration_fast": (22.0, 80.0, 78.0),
+        }
+        for condition_id, expected in expected_gui_angles.items():
+            condition = conditions[condition_id]
+            joint_values = clinical_joint_values_from_segment_values(
+                tuple(radians(value) for value in condition.q_segment_deg)
+            )
+            actual = tuple(
+                round(degrees(joint_values[joint]), 6)
+                for joint in ("cheville", "genou", "hanche")
+            )
+            with self.subTest(condition_id=condition_id):
+                self.assertEqual(actual, expected)
+
+    def test_batch_parser_preserves_legacy_signed_joint_angle_compatibility(self) -> None:
+        defaults = build_parser().parse_args(["batch", "legacy.csv"])
+        clinical = condition_from_row(
+            {
+                "ankle_deg": "20",
+                "knee_flexion_deg": "70",
+                "hip_flexion_deg": "60",
+            },
+            1,
+            defaults,
+        )
+        legacy = condition_from_row(
+            {"ankle_deg": "20", "knee_deg": "-70", "hip_deg": "60"},
+            1,
+            defaults,
+        )
+
+        self.assertEqual(clinical.q_segment_deg, legacy.q_segment_deg)
+
+    def test_lab_ankle_sequence_has_intended_analytical_support_contrast(self) -> None:
         path = Path(__file__).resolve().parents[1] / "Labo/scenarios/scenarios_labo_squat.csv"
         defaults = build_parser().parse_args(["batch", str(path)])
         conditions = {
             condition.condition_id: condition
             for condition in read_conditions_csv(path, defaults)
         }
-        expected_joint_angles = {
-            "baseline": (25.0, -90.0, 120.0),
-            "stability_forward": (30.0, -95.0, 115.0),
-            "stability_backward": (25.0, -85.0, 105.0),
-        }
-        for condition_id, expected in expected_joint_angles.items():
-            condition = conditions[condition_id]
-            joint_values = joint_values_from_segment_values(
-                tuple(radians(value) for value in condition.q_segment_deg)
+        baseline = conditions["baseline"]
+        limited = conditions["limited_ankle_flexion"]
+        wedge = conditions["wedge_20_deg"]
+
+        self.assertEqual(limited.q_segment_deg, wedge.q_segment_deg)
+        self.assertFalse(limited.wedge_20_deg)
+        self.assertTrue(wedge.wedge_20_deg)
+
+        support_by_condition = {}
+        for condition in (baseline, limited, wedge):
+            rows, _summary = simulate_condition(
+                replace(condition, backend="analytical")
             )
-            actual = tuple(
-                round(joint_values[joint] * 180.0 / 3.141592653589793, 6)
-                for joint in ("cheville", "genou", "hanche")
-            )
-            with self.subTest(condition_id=condition_id):
-                self.assertEqual(actual, expected)
-                rows, _summary = simulate_condition(
-                    replace(condition, backend="analytical")
-                )
-                self.assertTrue(
-                    all(row["support_point_in_functional_base"] for row in rows)
-                )
+            support_by_condition[condition.condition_id] = [
+                bool(row["support_point_in_functional_base"]) for row in rows
+            ]
+
+        self.assertTrue(all(support_by_condition["baseline"]))
+        self.assertTrue(all(support_by_condition["wedge_20_deg"]))
+        self.assertTrue(
+            any(not in_support for in_support in support_by_condition["limited_ankle_flexion"])
+        )
 
     def test_centered_time_is_exactly_zero_at_squat_midpoint(self) -> None:
         durations = PhaseDurations(4.0, 2.0, 4.0)

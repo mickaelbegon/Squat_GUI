@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import OrderedDict, namedtuple
 from dataclasses import dataclass
 from functools import lru_cache
-from math import atan2, cos, degrees, hypot, radians, sin
+from math import atan2, ceil, cos, degrees, hypot, radians, sin
 from pathlib import Path
 from threading import RLock
 from typing import Callable
@@ -496,9 +496,7 @@ def _render_transformed_sprite(
     scaled_anchor = (display_distal[0] * scale, display_distal[1] * scale)
     scaled_anchor_vector = (anchor_vector[0] * scale, anchor_vector[1] * scale)
     angle_deg = sprite_rotation_degrees(scaled_anchor_vector, target_vector_px)
-    margin = int(max(scaled.size) * 1.5)
-    pivot = (margin, margin)
-    canvas_size = (scaled.size[0] + 2 * margin, scaled.size[1] + 2 * margin)
+    canvas_size, pivot = _rotation_workspace(scaled.size, scaled_anchor)
     layer = Image.new("RGBA", canvas_size, (255, 255, 255, 0))
     layer.alpha_composite(scaled, (round(pivot[0] - scaled_anchor[0]), round(pivot[1] - scaled_anchor[1])))
     rotated_layer = layer.rotate(angle_deg, resample=Image.Resampling.BICUBIC, center=pivot, expand=False)
@@ -508,6 +506,28 @@ def _render_transformed_sprite(
     cropped = rotated_layer.crop(bbox)
     anchor = (pivot[0] - bbox[0], pivot[1] - bbox[1])
     return cropped, anchor
+
+
+def _rotation_workspace(
+    image_size: tuple[int, int],
+    anchor: Vector,
+) -> tuple[tuple[int, int], tuple[int, int]]:
+    """Return the smallest safe square for a full rotation around ``anchor``.
+
+    Refined source images are resized before rotation.  The former workspace
+    added a 150% margin on every side, so BICUBIC filtering spent most of its
+    time visiting pixels which were guaranteed to stay transparent.  A square
+    enclosing the farthest source corner preserves the exact filter and pivot
+    while substantially reducing that temporary image.
+    """
+
+    width, height = image_size
+    farthest_x = max(anchor[0], width - anchor[0])
+    farthest_y = max(anchor[1], height - anchor[1])
+    # Two transparent pixels retain the complete BICUBIC support at the edge.
+    radius = ceil(hypot(farthest_x, farthest_y)) + 2
+    side = 2 * radius + 1
+    return (side, side), (radius, radius)
 
 
 def transformed_sprite_cache_clear() -> None:

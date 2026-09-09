@@ -56,6 +56,9 @@ class GuiCliCharacterizationTests(unittest.TestCase):
             "analytical",
         )
 
+        self.assertEqual(gui_condition.torque_preset, "Sportifs")
+        self.assertFalse(gui_condition.angle_adapt)
+        self.assertFalse(gui_condition.velocity_adapt)
         self.assert_equivalent_simulation(gui_condition, cli_condition)
 
     def test_gui_settings_match_cli_with_timing_morphology_and_torques(self) -> None:

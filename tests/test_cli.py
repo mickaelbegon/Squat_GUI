@@ -33,6 +33,54 @@ class CliExportTests(unittest.TestCase):
         self.assertEqual(condition.frames, 2)
         self.assertEqual(condition.backend, "analytical")
 
+    def test_default_capacity_settings_are_neutral_and_exported(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "defaults.csv"
+
+            with redirect_stdout(StringIO()):
+                code = main(
+                    [
+                        "run",
+                        "--backend",
+                        "analytical",
+                        "--frames",
+                        "3",
+                        "--csv-mode",
+                        "full",
+                        "--out",
+                        str(out),
+                    ]
+                )
+
+            self.assertEqual(code, 0)
+            with out.open(newline="", encoding="utf-8") as handle:
+                row = next(csv.DictReader(handle))
+            self.assertEqual(row["torque_preset"], "Sportifs")
+            self.assertEqual(row["angle_adapt"], "False")
+            self.assertEqual(row["velocity_adapt"], "False")
+            for joint in ("cheville", "genou", "hanche"):
+                self.assertEqual(float(row[f"{joint}_capacity_angle_factor"]), 1.0)
+                self.assertEqual(float(row[f"{joint}_capacity_velocity_factor"]), 1.0)
+
+    def test_anderson_modulations_remain_explicitly_available(self) -> None:
+        args = build_parser().parse_args(
+            [
+                "run",
+                "--torque-preset",
+                "anderson",
+                "--angle-adapt",
+                "true",
+                "--velocity-adapt",
+                "true",
+            ]
+        )
+
+        condition = condition_from_args(args)
+
+        self.assertEqual(condition.torque_preset, "Anderson actif x2")
+        self.assertTrue(condition.angle_adapt)
+        self.assertTrue(condition.velocity_adapt)
+
     def test_csv_replacement_is_atomic_when_writing_fails(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             output = Path(tmp) / "existing.csv"

@@ -6,6 +6,9 @@ from squat_gui.anthropometry import Anthropometry
 from squat_gui.app import SquatGui
 from squat_gui.dynamics import DynamicsResult
 from squat_gui.kinematics import MotionState, pose_from_angles
+from squat_gui.kinematics import PhaseDurations
+from squat_gui.rendering import RenderLayers
+from squat_gui.scene_canvas import SceneCanvasController
 
 
 class _Canvas:
@@ -18,6 +21,26 @@ class _Canvas:
 
     def winfo_height(self) -> int:
         return self.height
+
+
+class _RecordingDragCanvas:
+    def __init__(self) -> None:
+        self.deleted: list[str] = []
+        self.texts: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+    def delete(self, tag: str) -> None:
+        self.deleted.append(tag)
+
+    def create_text(self, *args: object, **kwargs: object) -> None:
+        self.texts.append((args, kwargs))
+
+
+class _Var:
+    def __init__(self, value: object) -> None:
+        self.value = value
+
+    def get(self) -> object:
+        return self.value
 
 
 class _ViewportOwner:
@@ -60,3 +83,55 @@ def test_pose_editor_viewport_centres_crouched_subject_and_reduces_dead_space():
     assert bounds[0] < xmin < xmax < bounds[1]
     assert bounds[2] <= -0.16
     assert bounds[1] - bounds[0] < 1.46 - (-0.36)
+
+
+def test_drag_preview_keeps_refined_raster_sprites_enabled():
+    anthro = Anthropometry()
+    q = (radians(22.0), radians(-58.0), radians(20.0))
+    canvas = _RecordingDragCanvas()
+    skeleton_calls: list[dict[str, object]] = []
+
+    class _DragPreviewApp:
+        pose_canvas = canvas
+        final_q = q
+        low_quality_sprites_var = _Var(False)
+        _pose_drag_bounds = (-0.5, 1.5, -0.2, 2.0)
+        _pose_editor_bounds = None
+
+        @staticmethod
+        def anthro() -> Anthropometry:
+            return anthro
+
+        @staticmethod
+        def phase_durations() -> PhaseDurations:
+            return PhaseDurations()
+
+        @staticmethod
+        def render_layers(*, refined_sprites: bool | None = None) -> RenderLayers:
+            return RenderLayers(refined_sprites=bool(refined_sprites))
+
+        @staticmethod
+        def configure_alert_canvas(_canvas: object, _alerts: list[object]) -> None:
+            pass
+
+        @staticmethod
+        def draw_skeleton(*_args: object, **kwargs: object) -> None:
+            skeleton_calls.append(kwargs)
+
+        @staticmethod
+        def draw_squat_angle_labels(*_args: object) -> None:
+            pass
+
+        @staticmethod
+        def scene_bounds() -> tuple[float, float, float, float]:
+            return (-0.5, 1.5, -0.2, 2.0)
+
+    SceneCanvasController(_DragPreviewApp()).draw_pose_drag_preview()
+
+    assert canvas.deleted == ["all"]
+    assert len(skeleton_calls) == 1
+    assert skeleton_calls[0]["refined_sprites"] is True
+    assert skeleton_calls[0]["use_raster_sprites"] is True
+    layers = skeleton_calls[0]["layers"]
+    assert isinstance(layers, RenderLayers)
+    assert layers.refined_sprites is True

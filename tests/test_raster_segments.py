@@ -224,6 +224,26 @@ class RasterSegmentAnchorTest(unittest.TestCase):
             round(angle / raster_segments.TRANSFORMED_SPRITE_ANGLE_STEP_DEGREES),
         )
 
+    def test_rotation_workspace_encloses_sprite_with_less_transparent_area(self):
+        image_size = (180, 300)
+        anchor = (72.5, 245.25)
+
+        workspace, pivot = raster_segments._rotation_workspace(image_size, anchor)
+        radius = pivot[0]
+        corner_distances = (
+            hypot(x - anchor[0], y - anchor[1])
+            for x in (0.0, float(image_size[0]))
+            for y in (0.0, float(image_size[1]))
+        )
+        legacy_margin = int(max(image_size) * 1.5)
+        legacy_area = (image_size[0] + 2 * legacy_margin) * (
+            image_size[1] + 2 * legacy_margin
+        )
+
+        self.assertEqual(workspace, (2 * radius + 1, 2 * radius + 1))
+        self.assertGreaterEqual(radius - 2, max(corner_distances))
+        self.assertLess(workspace[0] * workspace[1], legacy_area * 0.6)
+
     def test_cached_transform_preserves_pixels_and_distal_alignment(self):
         raster_segments.transformed_sprite_cache_clear()
         try:

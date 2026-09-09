@@ -9,6 +9,11 @@ from .cli_conversion import DEFAULT_SEGMENT_ANGLES_DEG, parse_bool
 from .cli_handlers import run_batch, run_condition
 from .didactics import DYNAMIC_PHASE_DURATION_OPTIONS, ISOMETRIC_PHASE_DURATION_OPTIONS
 from .kinematics import DEFAULT_SAMPLE_PERIOD_S
+from .torque_capacity import (
+    DEFAULT_ANGLE_ADAPT,
+    DEFAULT_TORQUE_PRESET,
+    DEFAULT_VELOCITY_ADAPT,
+)
 
 
 def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
@@ -29,12 +34,16 @@ def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--frames", type=int, default=0, help=f"Nombre de frames; 0 utilise automatiquement Δt={DEFAULT_SAMPLE_PERIOD_S:.2f} s.")
     parser.add_argument("--q-segment-deg", type=float, nargs=3, default=DEFAULT_SEGMENT_ANGLES_DEG, metavar=("SHANK", "THIGH", "TRUNK"))
     parser.add_argument("--joint-angles-deg", type=float, nargs=3, metavar=("ANKLE", "KNEE", "HIP"), help="Angles articulaires finaux en degres. Prioritaire sur --q-segment-deg.")
-    parser.add_argument("--torque-preset", default="anderson", help="anderson ou sportifs.")
+    parser.add_argument(
+        "--torque-preset",
+        default=DEFAULT_TORQUE_PRESET.lower(),
+        help="anderson ou sportifs (défaut: sportifs).",
+    )
     parser.add_argument("--max-cheville", type=float)
     parser.add_argument("--max-genou", type=float)
     parser.add_argument("--max-hanche", type=float)
-    parser.add_argument("--angle-adapt", type=parse_bool, default=True)
-    parser.add_argument("--velocity-adapt", type=parse_bool, default=True)
+    parser.add_argument("--angle-adapt", type=parse_bool, default=DEFAULT_ANGLE_ADAPT)
+    parser.add_argument("--velocity-adapt", type=parse_bool, default=DEFAULT_VELOCITY_ADAPT)
     parser.add_argument("--optimize-bar-path", action="store_true", help="Activer la stabilisation expérimentale SLSQP de la trajectoire horizontale de la barre (±5 deg, contraintes CoP).")
     parser.add_argument("--backend", choices=("auto", "analytical", "biorbd"), default="auto")
 

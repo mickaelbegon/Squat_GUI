@@ -41,7 +41,7 @@ class SessionPersistenceTests(unittest.TestCase):
             torque_preset="manuel",
             show_torque_bounds=True,
             angle_adapt=False,
-            velocity_adapt=True,
+            velocity_adapt=False,
             optimize_bar_path_experimental=False,
             show_sprite_centers=False,
             show_segment_com=True,
@@ -59,6 +59,8 @@ class SessionPersistenceTests(unittest.TestCase):
         self.assertTrue(settings["refined_sprites"])
         self.assertTrue(settings["normalize_time"])
         self.assertEqual(settings["final_q_deg"], [22.0, -58.0, 20.0])
+        self.assertFalse(settings["angle_adapt"])
+        self.assertFalse(settings["velocity_adapt"])
 
     def test_reader_centralizes_legacy_aliases(self) -> None:
         reader = SettingsReader.from_object(

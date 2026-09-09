@@ -148,7 +148,10 @@ utilisation = abs(couple requis) / capacité
 
 Le preset `Anderson actif x2` additionne les deux membres du modèle 2D. Le preset
 `Sportifs` combine plusieurs publications et reste une proposition de travail,
-pas une norme physiologique homogène.
+pas une norme physiologique homogène. Par défaut, le preset `Sportifs` est retenu
+et les modulations angle-vitesse Anderson sont désactivées : les deux facteurs
+restent donc neutres (= 1). Elles restent activables séparément dans l'interface,
+les réglages sauvegardés et la CLI.
 
 ## Limites d'interprétation
 

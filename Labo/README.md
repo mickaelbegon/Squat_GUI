@@ -1,13 +1,13 @@
 # Laboratoire Squat_GUI
 
-Ce dossier contient les fichiers publics du laboratoire de biomecanique du squat. Le protocole inclut maintenant un volet d'equilibre postural : les etudiants analysent comment les proportions segmentaires, le profil du sujet et la prise de barre deplacent le CoM et le CoP/ZMP. Les corriges, banques de questions avec reponses et jeux de valeurs numeriques resolues ne doivent pas etre distribues aux etudiants.
+Ce dossier contient les fichiers publics du laboratoire de biomecanique du squat. Le protocole inclut une comparaison clinique cheville–talonnette et un volet d'equilibre postural : les etudiants analysent comment une restriction de dorsiflexion, les proportions segmentaires, le profil du sujet et la prise de barre deplacent le CoM et le CoP/ZMP. Les corriges, banques de questions avec reponses et jeux de valeurs numeriques resolues ne doivent pas etre distribues aux etudiants.
 
 ## Contenu versionne
 
 - `Guide_etudiant_labo_squat.docx` : guide étudiant prêt à distribuer, incluant le tutoriel GUI F17-F41.
 - `docs/Guide_etudiant_labo_squat.md` : source Markdown du guide etudiant et de son tutoriel.
 - `docs/references_litterature.md` : references de depart.
-- `scenarios/scenarios_labo_squat.csv` : conditions de simulation sans resultats attendus, incluant la serie d'equilibre `balance_*`.
+- `scenarios/scenarios_labo_squat.csv` : les 11 conditions publiques sans resultats attendus, incluant la serie clinique `baseline` / `limited_ankle_flexion` / `wedge_20_deg` et les paires d'equilibre `balance_*`.
 - `scripts/run_squat_batch.py` : lance les scenarios avec `python -m squat_gui batch`.
 - `scripts/analyse_squat_results.py` : extrait les metriques de synthese depuis les CSV exportes, dont CoM/CoP au squat et les trois composantes de couples affichees par le GUI.
 - `docs/PILOTE_PEDAGOGIQUE.md` : protocole de pilote avec tâches, mesures et critères d'acceptation avant déploiement en laboratoire.
@@ -26,23 +26,25 @@ python scripts/analyse_squat_results.py --results results_labo_squat/results.csv
 
 Les scenarios publics demandent le backend `biorbd`, afin que les couples de dynamique inverse et le CoP/ZMP soient ceux du modele utilise dans le GUI.
 
-Les deux scenarios de durée suivent les presets GUI révisés : `duration_slow` vaut `4/2/2 s` (161 frames) et `duration_fast` `0,5/0,5/0,5 s` (31 frames). Les phases de descente et de montée utilisent uniquement `0,5`, `1`, `2` ou `4 s`; la pause isométrique ne propose plus `1,5 s`.
+Les angles du CSV suivent directement la convention positive affichée par le GUI : `ankle_deg`, `knee_flexion_deg` et `hip_flexion_deg`. Le parseur conserve la lecture des anciens fichiers qui utilisaient les orientations segmentaires ou la flexion du genou signée.
 
-Pour lancer seulement le volet d'equilibre postural:
+Le scenario `duration_fast` suit le preset GUI rapide `0,5/0,5/0,5 s` (31 frames). Les phases de descente et de montée utilisent uniquement `0,5`, `1`, `2` ou `4 s`; la pause isométrique ne propose plus `1,5 s`.
+
+Pour lancer seulement la comparaison clinique de cheville :
 
 ```bash
-python scripts/run_squat_batch.py --conditions scenarios/scenarios_labo_squat.csv --out results_equilibre --only balance_bar_back balance_bar_front balance_bar_overhead balance_long_thigh_front balance_pregnant_front
-python scripts/analyse_squat_results.py --results results_equilibre/results.csv --out results_equilibre/summary_metrics.csv
+python scripts/run_squat_batch.py --conditions scenarios/scenarios_labo_squat.csv --out results_cheville --only baseline limited_ankle_flexion wedge_20_deg
+python scripts/analyse_squat_results.py --results results_cheville/results.csv --out results_cheville/summary_metrics.csv
 ```
 
 Le fichier `results_labo_squat/results.csv` contient toutes les frames, y compris le mode et la table anthropométriques effectifs, la capacité active angle-vitesse et l'utilisation `U`. Le résumé JSON canonique identifie `U max`, l'articulation limitante, le temps, la phase et le dépassement éventuel. Ces sorties décrivent une faisabilité mécanique dans les hypothèses du modèle. Le fichier `summary_metrics.csv` conserve les indicateurs historiques du script de laboratoire.
 
-## Principe du volet equilibre
+## Principe des comparaisons
 
-1. Comparer `balance_bar_back`, `balance_bar_front` et `balance_bar_overhead` avec la meme pose et une charge de 40 % du poids de corps.
-2. Comparer ensuite une modification morphologique (`balance_long_thigh_*`) ou du profil du sujet (`balance_pregnant_*`) avec la meme prise.
-3. Observer `squat_com_x_m`, `squat_support_point_x_m` et `zmp_outside_support_frames`.
-4. Dans le GUI, modifier la position basse pour retrouver un appui acceptable, puis enregistrer cette condition adaptee.
+1. Comparer `baseline` (25/90/120°), `limited_ankle_flexion` (10/90/120°) et `wedge_20_deg` (10/90/120° avec talonnette). Avec le backend analytique de référence, le point d'appui reste dans la zone fonctionnelle pour `baseline` et `wedge_20_deg`, tandis que la restriction seule produit des sorties de zone pendant une partie du mouvement.
+2. Comparer une modification morphologique (`balance_long_thigh_back/front`) ou du profil du sujet (`balance_pregnant_back/front`) à prise identique.
+3. Comparer enfin `load_100bw` et `duration_fast` aux conditions de référence pertinentes.
+4. Observer `squat_com_x_m`, `squat_support_point_x_m` et `zmp_outside_support_frames`, puis interpréter les résultats dans les hypothèses du backend utilisé.
 
 Le CSV public donne uniquement les conditions de depart; il ne contient ni la posture corrigee ni les reponses numeriques.
 

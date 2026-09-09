@@ -12,6 +12,7 @@ from .didactics import bounded_phase_durations
 from .kinematics import (
     PhaseDurations,
     frame_count_for_duration,
+    segment_values_from_clinical_joint_values,
     segment_values_from_joint_values,
 )
 from .simulation_service import Condition
@@ -51,8 +52,17 @@ def preset_key(name: str) -> str:
 def segment_angles_from_joint_angles(
     ankle_deg: float, knee_deg: float, hip_deg: float
 ) -> tuple[float, float, float]:
-    """Compatibility wrapper for the canonical kinematic conversion."""
+    """Convert legacy signed joint values to segment orientations."""
     return segment_values_from_joint_values(ankle_deg, knee_deg, hip_deg)
+
+
+def segment_angles_from_clinical_joint_angles(
+    ankle_deg: float, knee_flexion_deg: float, hip_flexion_deg: float
+) -> tuple[float, float, float]:
+    """Convert the GUI's positive-flexion convention to segment orientations."""
+    return segment_values_from_clinical_joint_values(
+        ankle_deg, knee_flexion_deg, hip_flexion_deg
+    )
 
 
 def _max_torques(preset_name: str, overrides: dict[str, float | None]) -> dict[str, float]:
@@ -133,9 +143,20 @@ def row_str(row: dict[str, str], key: str, default: str) -> str:
 def _row_segment_angles(
     row: dict[str, str], defaults: argparse.Namespace
 ) -> tuple[float, float, float]:
+    clinical_columns = (
+        "ankle_deg",
+        "knee_flexion_deg",
+        "hip_flexion_deg",
+    )
+    if all(row.get(column, "") for column in clinical_columns):
+        return segment_angles_from_clinical_joint_angles(
+            *(float(row[column]) for column in clinical_columns)
+        )
     segment_columns = ("q_shank_deg", "q_thigh_deg", "q_trunk_deg")
     if all(row.get(column, "") for column in segment_columns):
         return tuple(float(row[column]) for column in segment_columns)  # type: ignore[return-value]
+    # Compatibility for early batch files that used the internal signed knee
+    # convention under generic joint column names.
     joint_columns = ("ankle_deg", "knee_deg", "hip_deg")
     if all(row.get(column, "") for column in joint_columns):
         return segment_angles_from_joint_angles(

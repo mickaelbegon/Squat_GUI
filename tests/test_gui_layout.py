@@ -129,6 +129,9 @@ class GuiLayoutTests(unittest.TestCase):
         self.assertTrue(button.winfo_ismapped())
 
     def test_torque_preset_and_checks_use_the_compact_grid(self):
+        self.assertEqual(self.app.torque_preset_var.get(), "Sportifs")
+        self.assertFalse(self.app.angle_adapt_var.get())
+        self.assertFalse(self.app.velocity_adapt_var.get())
         self.assertIs(self.app.torque_preset_menu.master, self.app.torque_box)
         self.assertEqual(self.app.torque_preset_menu.grid_info()["rowspan"], 2)
         torque_checks = next(

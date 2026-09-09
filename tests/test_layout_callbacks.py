@@ -70,6 +70,7 @@ def test_pose_canvas_bindings_and_verticalize_command_are_preserved() -> None:
         on_pose_context_menu=lambda _event: "break",
         verticalize_bar=lambda: None,
         apply_clinical_joint_angle=lambda _joint, _value: True,
+        pose_joint_limits=lambda: {},
         status_var=SimpleNamespace(get=lambda: ""),
     )
     root = RecordingWidget()

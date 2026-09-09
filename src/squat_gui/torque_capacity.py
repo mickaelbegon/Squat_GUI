@@ -20,6 +20,12 @@ from .kinematics import (
 GRAVITY = 9.80665
 JOINTS = ("cheville", "genou", "hanche")
 
+# The application starts from a neutral capacity model.  Anderson's published
+# angle-velocity surface remains available through the explicit UI/CLI toggles.
+DEFAULT_TORQUE_PRESET = "Sportifs"
+DEFAULT_ANGLE_ADAPT = False
+DEFAULT_VELOCITY_ADAPT = False
+
 
 @dataclass(frozen=True)
 class AndersonTorqueParameters:

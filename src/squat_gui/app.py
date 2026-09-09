@@ -20,6 +20,7 @@ from .anthropometry import (
 )
 from .backend import BiorbdModelCache, detect_optional_backends
 from .bar_path_optimization import (
+    BarPathOptimizationStage,
     BarPathOptimizationResult,
     optimize_deep_squat_bar_path,
 )
@@ -66,7 +67,12 @@ from .timeline import (
     TimeMode,
     time_axis_label,
 )
-from .torque_capacity import torque_presets
+from .torque_capacity import (
+    DEFAULT_ANGLE_ADAPT,
+    DEFAULT_TORQUE_PRESET,
+    DEFAULT_VELOCITY_ADAPT,
+    torque_presets,
+)
 from .ui_state_controller import UiStateController
 
 # La charge est volontairement discrète dans le GUI : cinq niveaux couvrent
@@ -141,7 +147,7 @@ class SquatGui(tk.Tk):
         }
         self.quantity_controls: list[tk.Widget] = []
         self.com_controls: list[tk.Widget] = []
-        self.torque_preset_var = tk.StringVar(value="Anderson actif x2")
+        self.torque_preset_var = tk.StringVar(value=DEFAULT_TORQUE_PRESET)
         reference_torques = torque_presets(70.0, 1.70)[
             self.torque_preset_var.get()
         ].torques
@@ -175,8 +181,8 @@ class SquatGui(tk.Tk):
         self.show_phase_limits_var = tk.BooleanVar(value=True)
         self.show_phase_names_var = tk.BooleanVar(value=True)
         self.low_quality_sprites_var = tk.BooleanVar(value=False)
-        self.angle_adapt_var = tk.BooleanVar(value=True)
-        self.velocity_adapt_var = tk.BooleanVar(value=True)
+        self.angle_adapt_var = tk.BooleanVar(value=DEFAULT_ANGLE_ADAPT)
+        self.velocity_adapt_var = tk.BooleanVar(value=DEFAULT_VELOCITY_ADAPT)
         self.subplot_mode_var = tk.BooleanVar(value=True)
         self.time_mode_var = tk.StringVar(value=TimeMode.CENTERED.value)
         self.time_mode_notice_var = tk.StringVar(
@@ -493,6 +499,26 @@ class SquatGui(tk.Tk):
                 f"frames={self.frame_count}, bornes=±5°, contraintes CoP/GRF.",
                 flush=True,
             )
+            optimization_started_at = perf_counter()
+            last_progress_refresh_at = 0.0
+
+            def show_optimization_progress(progress: object) -> None:
+                nonlocal last_progress_refresh_at
+                if button is None:
+                    return
+                stage = getattr(progress, "stage", None)
+                if stage is not BarPathOptimizationStage.CANDIDATE_EVALUATED:
+                    return
+                now = perf_counter()
+                if now - last_progress_refresh_at < 0.1:
+                    return
+                last_progress_refresh_at = now
+                candidate_count = int(
+                    getattr(progress, "evaluated_candidates", 0)
+                )
+                button.configure(text=f"Calcul… {candidate_count} postures")
+                self.update_idletasks()
+
             optimization = optimize_deep_squat_bar_path(
                 anthro,
                 self.final_q,
@@ -503,6 +529,10 @@ class SquatGui(tk.Tk):
                 self.model_cache,
                 self.velocity_adapt_var.get(),
                 baseline=(self.states, self.results),
+                progress_callback=show_optimization_progress,
+            )
+            self._last_verticalization_duration_s = (
+                perf_counter() - optimization_started_at
             )
             self.bar_path_optimization = optimization
             self.states = optimization.states
@@ -520,7 +550,8 @@ class SquatGui(tk.Tk):
                     f"{100 * optimization.after.horizontal_excursion_m:.1f} cm; "
                     f"énergie vₓ² {optimization.before.horizontal_velocity_energy_m2_s:.4g} → "
                     f"{optimization.after.horizontal_velocity_energy_m2_s:.4g} m²/s; "
-                    f"marge CoP minimale={100 * optimization.after.minimum_cop_margin_m:.1f} cm.",
+                    f"marge CoP minimale={100 * optimization.after.minimum_cop_margin_m:.1f} cm; "
+                    f"durée={self._last_verticalization_duration_s:.2f} s.",
                     flush=True,
                 )
             else:

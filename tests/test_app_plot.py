@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from squat_gui.anthropometry import Anthropometry
+from squat_gui.bar_path_optimization import BarPathOptimizationStage
 from squat_gui.app import (
     LOAD_PERCENT_OPTIONS,
     PLOT_CHOICES,
@@ -519,8 +520,17 @@ class PlotSeriesTests(unittest.TestCase):
             ),
         )
 
+        def optimize_with_progress(*_args, **kwargs):
+            kwargs["progress_callback"](
+                SimpleNamespace(
+                    stage=BarPathOptimizationStage.CANDIDATE_EVALUATED,
+                    evaluated_candidates=7,
+                )
+            )
+            return result
+
         with (
-            patch("squat_gui.app.optimize_deep_squat_bar_path", return_value=result) as optimize,
+            patch("squat_gui.app.optimize_deep_squat_bar_path", side_effect=optimize_with_progress) as optimize,
             patch("builtins.print") as terminal_output,
         ):
             gui.verticalize_bar()
@@ -532,6 +542,10 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(optimize.call_args_list[1].args[1], updated_q)
         self.assertIn(
             {"text": "Calcul…", "state": "disabled"},
+            gui.optimize_bar_path_button.history,
+        )
+        self.assertIn(
+            {"text": "Calcul… 7 postures"},
             gui.optimize_bar_path_button.history,
         )
         self.assertEqual(

@@ -12,7 +12,12 @@ from .bar_path_optimization import optimize_deep_squat_bar_path
 from .didactics import bounded_phase_durations
 from .dynamics import simulate
 from .export_schema import JOINTS
-from .torque_capacity import torque_presets
+from .torque_capacity import (
+    DEFAULT_ANGLE_ADAPT,
+    DEFAULT_TORQUE_PRESET,
+    DEFAULT_VELOCITY_ADAPT,
+    torque_presets,
+)
 from .kinematics import PhaseDurations, frame_count_for_duration
 from .simulation_export_rows import build_export_rows, condition_summary
 
@@ -69,9 +74,9 @@ def condition_from_settings(settings: dict[str, object], final_q_deg: Iterable[f
     """Build a simulation condition from GUI-compatible settings."""
     legacy_duration = float(settings.get("duration_phase_s", 4.0))
     load_percent_bw = float(settings.get("load_percent_bw", 100.0 * float(settings.get("load_kg", 0.0)) / 70.0))
-    preset_name = str(settings.get("torque_preset", "Anderson actif x2"))
+    preset_name = str(settings.get("torque_preset", DEFAULT_TORQUE_PRESET))
     presets = torque_presets(70.0, 1.70)
-    default_torques = presets.get(preset_name, presets["Anderson actif x2"]).torques
+    default_torques = presets.get(preset_name, presets[DEFAULT_TORQUE_PRESET]).torques
     max_torques = {joint: float(dict(settings.get("max_torques", {})).get(joint, default_torques[joint])) for joint in JOINTS}
     q_values = tuple(float(value) for value in final_q_deg)
     if len(q_values) != 3:
@@ -90,8 +95,10 @@ def condition_from_settings(settings: dict[str, object], final_q_deg: Iterable[f
         trunk_percent=float(settings.get("trunk_percent", 0.0)), anthropometry_mode=str(settings.get("anthropometry_mode", "longueur seule")),
         duration_excentrique_s=durations.excentrique, duration_isometrique_s=durations.isometrique,
         duration_concentrique_s=durations.concentrique, q_segment_deg=(q_values[0], q_values[1], q_values[2]),
-        torque_preset=preset_name, max_torques=max_torques, angle_adapt=bool(settings.get("angle_adapt", True)),
-        velocity_adapt=bool(settings.get("velocity_adapt", True)), frames=max(2, frame_count), backend=backend,
+        torque_preset=preset_name, max_torques=max_torques,
+        angle_adapt=bool(settings.get("angle_adapt", DEFAULT_ANGLE_ADAPT)),
+        velocity_adapt=bool(settings.get("velocity_adapt", DEFAULT_VELOCITY_ADAPT)),
+        frames=max(2, frame_count), backend=backend,
         optimize_bar_path_experimental=bool(settings.get("optimize_bar_path_experimental", False)),
     )
 
