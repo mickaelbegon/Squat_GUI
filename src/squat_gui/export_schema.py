@@ -21,6 +21,7 @@ from .export_contract import (
     JOINTS,
     KINEMATIC_COLUMNS,
     ORIENTATION_COLUMNS,
+    PATELLOFEMORAL_COLUMNS,
     POINTS,
     ROW_KEYS,
     SCHEMA_VERSION,

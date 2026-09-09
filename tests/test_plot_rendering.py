@@ -136,6 +136,9 @@ class PlotRenderingTests(unittest.TestCase):
         self.assertEqual(kinematic_unit("angles articulaires", "vitesse"), "deg/s")
         self.assertEqual(plot_unit("cinematique articulaire", "acceleration"), "deg/s2")
         self.assertEqual(plot_unit("couples articulaires", "position"), "Nm")
+        self.assertEqual(
+            plot_unit("contrainte femoro-patellaire", "position"), "MPa"
+        )
         self.assertEqual(format_axis_value(123.4), "123")
         self.assertEqual(format_axis_value(12.34), "12.3")
         self.assertEqual(format_axis_value(1.234), "1.23")

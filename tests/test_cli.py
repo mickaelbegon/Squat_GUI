@@ -24,7 +24,19 @@ class CliExportTests(unittest.TestCase):
 
     def test_argument_conversion_stays_independent_from_export_handler(self) -> None:
         args = build_parser().parse_args(
-            ["run", "--load", "35", "--frames", "1", "--backend", "analytical"]
+            [
+                "run",
+                "--load",
+                "35",
+                "--frames",
+                "1",
+                "--backend",
+                "analytical",
+                "--student-name",
+                "  Marie  Curie ",
+                "--student-id",
+                "  123  456 ",
+            ]
         )
 
         condition = condition_from_args(args)
@@ -32,6 +44,8 @@ class CliExportTests(unittest.TestCase):
         self.assertEqual(condition.load_percent_bw, 50.0)
         self.assertEqual(condition.frames, 2)
         self.assertEqual(condition.backend, "analytical")
+        self.assertEqual(condition.student_name, "Marie Curie")
+        self.assertEqual(condition.student_id, "123 456")
 
     def test_default_capacity_settings_are_neutral_and_exported(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

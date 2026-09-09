@@ -20,6 +20,7 @@ from .torque_capacity import (
 )
 from .kinematics import PhaseDurations, frame_count_for_duration
 from .simulation_export_rows import build_export_rows, condition_summary
+from .student_identity import StudentIdentity
 
 
 @dataclass(frozen=True)
@@ -46,6 +47,8 @@ class Condition:
     frames: int
     backend: str
     optimize_bar_path_experimental: bool = False
+    student_name: str = ""
+    student_id: str = ""
 
     @property
     def load_kg(self) -> float:
@@ -72,6 +75,9 @@ def anthropometry(condition: Condition) -> Anthropometry:
 
 def condition_from_settings(settings: dict[str, object], final_q_deg: Iterable[float], condition_id: str, *, frames: int | None = None, backend: str = "auto") -> Condition:
     """Build a simulation condition from GUI-compatible settings."""
+    identity = StudentIdentity.normalized(
+        settings.get("student_name", ""), settings.get("student_id", "")
+    )
     legacy_duration = float(settings.get("duration_phase_s", 4.0))
     load_percent_bw = float(settings.get("load_percent_bw", 100.0 * float(settings.get("load_kg", 0.0)) / 70.0))
     preset_name = str(settings.get("torque_preset", DEFAULT_TORQUE_PRESET))
@@ -100,6 +106,8 @@ def condition_from_settings(settings: dict[str, object], final_q_deg: Iterable[f
         velocity_adapt=bool(settings.get("velocity_adapt", DEFAULT_VELOCITY_ADAPT)),
         frames=max(2, frame_count), backend=backend,
         optimize_bar_path_experimental=bool(settings.get("optimize_bar_path_experimental", False)),
+        student_name=identity.name,
+        student_id=identity.student_id,
     )
 
 

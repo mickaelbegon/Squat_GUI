@@ -148,8 +148,10 @@ def _condition_summary_rows(
             )
         )
 
+        computed_columns_start = contract.summary_columns.index("squat_com_x_m")
         summary: dict[str, object] = {
-            column: first.get(column) for column in contract.summary_columns[:18]
+            column: first.get(column)
+            for column in contract.summary_columns[:computed_columns_start]
         }
         summary.update(
             {
@@ -171,6 +173,48 @@ def _condition_summary_rows(
                 "peak_grf_y_N": max(
                     abs(_number(row, "grf_y_N")) for row in condition_rows
                 ),
+            }
+        )
+        peak_patellofemoral_row = max(
+            condition_rows,
+            key=lambda row: _number(row, "patellofemoral_stress_MPa"),
+        )
+        extrapolated_frames = sum(
+            1
+            for row in condition_rows
+            if bool(row.get("patellofemoral_extrapolated"))
+        )
+        summary.update(
+            {
+                "peak_patellofemoral_reaction_force_per_side_N": max(
+                    _number(row, "patellofemoral_reaction_force_per_side_N")
+                    for row in condition_rows
+                ),
+                "peak_patellofemoral_reaction_force_body_weight_ratio": max(
+                    _number(
+                        row,
+                        "patellofemoral_reaction_force_body_weight_ratio",
+                    )
+                    for row in condition_rows
+                ),
+                "peak_patellofemoral_stress_MPa": _number(
+                    peak_patellofemoral_row,
+                    "patellofemoral_stress_MPa",
+                ),
+                "peak_patellofemoral_stress_frame": peak_patellofemoral_row.get(
+                    "frame"
+                ),
+                "peak_patellofemoral_stress_time_s": peak_patellofemoral_row.get(
+                    "time_s"
+                ),
+                "peak_patellofemoral_stress_knee_flexion_deg": _number(
+                    peak_patellofemoral_row,
+                    "patellofemoral_knee_flexion_deg",
+                ),
+                "patellofemoral_extrapolated_frames": extrapolated_frames,
+                "patellofemoral_extrapolated_percent": 100.0
+                * extrapolated_frames
+                / frame_count,
             }
         )
 

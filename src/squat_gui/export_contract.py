@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-SCHEMA_VERSION = "2.0.0"
+SCHEMA_VERSION = "2.2.0"
 SEGMENTS = ("foot", "shank", "thigh", "trunk", "bar")
 JOINTS = ("cheville", "genou", "hanche")
 POINTS = ("heel", "toe", "ankle", "knee", "hip", "shoulder", "bar")
@@ -29,6 +29,8 @@ class ColumnDefinition:
 CONDITION_COLUMNS = (
     "schema_version",
     "condition_id",
+    "student_name",
+    "student_id",
     "backend",
     "subject_profile",
     "bar_position",
@@ -169,6 +171,19 @@ DYNAMIC_COLUMNS = (
         )
     )
 )
+PATELLOFEMORAL_COLUMNS = ROW_KEYS + (
+    "patellofemoral_knee_flexion_deg",
+    "patellofemoral_knee_extension_moment_per_side_Nm",
+    "patellofemoral_quadriceps_moment_arm_m",
+    "patellofemoral_quadriceps_force_per_side_N",
+    "patellofemoral_reaction_force_per_side_N",
+    "patellofemoral_reaction_force_body_weight_ratio",
+    "patellofemoral_contact_area_mm2",
+    "patellofemoral_stress_MPa",
+    "patellofemoral_extrapolated",
+    "patellofemoral_validity",
+    "patellofemoral_model",
+)
 
 # Stable, student-facing CSV contract. The complete row remains available from
 # the opt-in ``full`` mode for diagnostics and backwards compatibility.
@@ -176,6 +191,8 @@ STANDARD_CSV_COLUMNS = (
     (
         "schema_version",
         "condition_id",
+        "student_name",
+        "student_id",
         "subject_profile",
         "bar_position",
         "load_percent_bw",
@@ -229,6 +246,10 @@ STANDARD_CSV_COLUMNS = (
         "support_point_in_geometric_base",
         "support_point_in_functional_base",
         "grf_y_N",
+        "patellofemoral_reaction_force_per_side_N",
+        "patellofemoral_reaction_force_body_weight_ratio",
+        "patellofemoral_stress_MPa",
+        "patellofemoral_extrapolated",
     )
 )
 
@@ -236,6 +257,8 @@ SUMMARY_COLUMNS = (
     (
         "schema_version",
         "condition_id",
+        "student_name",
+        "student_id",
         "subject_profile",
         "bar_position",
         "load_percent_bw",
@@ -264,6 +287,14 @@ SUMMARY_COLUMNS = (
         "cop_outside_foot_percent",
         "over_limit_frames",
         "peak_grf_y_N",
+        "peak_patellofemoral_reaction_force_per_side_N",
+        "peak_patellofemoral_reaction_force_body_weight_ratio",
+        "peak_patellofemoral_stress_MPa",
+        "peak_patellofemoral_stress_frame",
+        "peak_patellofemoral_stress_time_s",
+        "peak_patellofemoral_stress_knee_flexion_deg",
+        "patellofemoral_extrapolated_frames",
+        "patellofemoral_extrapolated_percent",
     )
     + tuple(
         f"{joint}_{quantity}"

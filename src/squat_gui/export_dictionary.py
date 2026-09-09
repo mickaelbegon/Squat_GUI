@@ -8,6 +8,8 @@ from .export_contract import ColumnDefinition, JOINTS
 DESCRIPTION_OVERRIDES = {
     "schema_version": "Version du contrat d'export Squat GUI.",
     "condition_id": "Identifiant stable de la condition simulée.",
+    "student_name": "Nom facultatif de l'étudiant ayant produit la simulation.",
+    "student_id": "Matricule facultatif de l'étudiant ayant produit la simulation.",
     "frame": "Indice entier de l'échantillon, à partir de zéro.",
     "time_s": "Temps physique écoulé depuis le début de la simulation.",
     "delta_time_s": "Pas de temps local entre échantillons adjacents.",
@@ -31,6 +33,25 @@ DESCRIPTION_OVERRIDES = {
     "cop_outside_foot_percent": "Pourcentage de frames où le point d'appui sort de la base géométrique du pied.",
     "over_limit_frames": "Nombre de frames où au moins une demande articulaire dépasse la capacité active.",
     "peak_grf_y_N": "Valeur absolue maximale de la force de réaction verticale.",
+    "patellofemoral_knee_flexion_deg": "Flexion positive du genou fournie au modèle fémoro-patellaire.",
+    "patellofemoral_knee_extension_moment_per_side_Nm": "Part du moment net extenseur attribuée à un genou sous l'hypothèse d'un squat bilatéral symétrique.",
+    "patellofemoral_quadriceps_moment_arm_m": "Bras de levier effectif générique du quadriceps, fonction de la flexion du genou.",
+    "patellofemoral_quadriceps_force_per_side_N": "Force du quadriceps estimée pour un genou à partir du moment net extenseur.",
+    "patellofemoral_reaction_force_per_side_N": "Force de réaction fémoro-patellaire estimée pour un genou.",
+    "patellofemoral_reaction_force_body_weight_ratio": "Force fémoro-patellaire d'un genou divisée par le poids corporel total, sans la barre.",
+    "patellofemoral_contact_area_mm2": "Aire de contact fémoro-patellaire générique estimée à partir de la flexion du genou.",
+    "patellofemoral_stress_MPa": "Contrainte fémoro-patellaire moyenne estimée: force de réaction divisée par l'aire de contact.",
+    "patellofemoral_extrapolated": "Vrai lorsque la flexion dépasse 90 degrés et que les régressions sont extrapolées.",
+    "patellofemoral_validity": "Statut de validité angulaire du modèle fémoro-patellaire.",
+    "patellofemoral_model": "Nom du modèle fémoro-patellaire expérimental utilisé.",
+    "peak_patellofemoral_reaction_force_per_side_N": "Maximum de la force fémoro-patellaire estimée pour un genou.",
+    "peak_patellofemoral_reaction_force_body_weight_ratio": "Maximum de la force fémoro-patellaire d'un genou normalisée au poids corporel.",
+    "peak_patellofemoral_stress_MPa": "Maximum de la contrainte fémoro-patellaire moyenne estimée.",
+    "peak_patellofemoral_stress_frame": "Frame du maximum de contrainte fémoro-patellaire estimée.",
+    "peak_patellofemoral_stress_time_s": "Temps du maximum de contrainte fémoro-patellaire estimée.",
+    "peak_patellofemoral_stress_knee_flexion_deg": "Flexion du genou au maximum de contrainte fémoro-patellaire estimée.",
+    "patellofemoral_extrapolated_frames": "Nombre de frames où la flexion dépasse la plage directe de 0 à 90 degrés.",
+    "patellofemoral_extrapolated_percent": "Pourcentage de frames où le modèle fémoro-patellaire est extrapolé.",
     "peak_abs_torque_Nm": "Valeur absolue maximale du moment articulaire.",
     "peak_abs_torque_body_mass_normalized_Nm_kg": "Valeur absolue maximale du moment articulaire normalisé par la masse corporelle.",
     "peak_abs_power_W": "Valeur absolue maximale de la puissance articulaire.",
@@ -98,6 +119,8 @@ LEGACY_COLUMNS = {
 
 def _unit(column: str) -> str:
     suffixes = (
+        ("_mm2", "mm²"),
+        ("_MPa", "MPa"),
         ("_kg_m2", "kg·m²"),
         ("_kg_m", "kg·m"),
         ("_Nm_kg", "N·m/kg"),
@@ -179,9 +202,13 @@ def column_definition(column: str) -> ColumnDefinition:
         definition=description,
         sign_convention=_sign_convention(column),
         status=(
-            "compatibilité legacy"
-            if column in LEGACY_COLUMNS
-            or any(column.endswith(f"_{legacy}") for legacy in LEGACY_COLUMNS)
-            else "canonique"
+            "expérimental"
+            if "patellofemoral" in column
+            else (
+                "compatibilité legacy"
+                if column in LEGACY_COLUMNS
+                or any(column.endswith(f"_{legacy}") for legacy in LEGACY_COLUMNS)
+                else "canonique"
+            )
         ),
     )

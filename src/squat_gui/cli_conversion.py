@@ -16,6 +16,7 @@ from .kinematics import (
     segment_values_from_joint_values,
 )
 from .simulation_service import Condition
+from .student_identity import StudentIdentity
 from .torque_capacity import torque_presets
 
 DEFAULT_SEGMENT_ANGLES_DEG = (22.0, -58.0, 20.0)
@@ -83,6 +84,7 @@ def _frames(durations: PhaseDurations, requested_frames: int) -> int:
 
 def condition_from_args(args: argparse.Namespace) -> Condition:
     """Convert the parsed ``run`` arguments to the simulation condition."""
+    identity = StudentIdentity.normalized(args.student_name, args.student_id)
     q_segment_deg = tuple(args.q_segment_deg)
     if args.joint_angles_deg is not None:
         q_segment_deg = segment_angles_from_joint_angles(*args.joint_angles_deg)
@@ -122,6 +124,8 @@ def condition_from_args(args: argparse.Namespace) -> Condition:
         frames=_frames(durations, args.frames),
         backend=args.backend,
         optimize_bar_path_experimental=args.optimize_bar_path,
+        student_name=identity.name,
+        student_id=identity.student_id,
     )
 
 
@@ -169,6 +173,10 @@ def condition_from_row(
     row: dict[str, str], index: int, defaults: argparse.Namespace
 ) -> Condition:
     """Convert one legacy-compatible batch CSV row to a condition."""
+    identity = StudentIdentity.normalized(
+        row_str(row, "student_name", defaults.student_name),
+        row_str(row, "student_id", defaults.student_id),
+    )
     preset_name = preset_key(row_str(row, "torque_preset", defaults.torque_preset))
     overrides = {
         joint: float(row[column]) if row.get(column, "") else None
@@ -220,4 +228,6 @@ def condition_from_row(
                 row, "optimize_bar_path_experimental", str(defaults.optimize_bar_path)
             )
         ),
+        student_name=identity.name,
+        student_id=identity.student_id,
     )

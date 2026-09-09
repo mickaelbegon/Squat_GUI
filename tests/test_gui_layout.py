@@ -118,6 +118,24 @@ class GuiLayoutTests(unittest.TestCase):
         self.assertEqual(self.app.temporal_preset_var.get(), "")
         self.assertEqual(self.app.temporal_preset_display_var.get(), "")
 
+    def test_student_identity_fields_update_the_capture_title_without_recompute(self):
+        previous_name = self.app.student_name_var.get()
+        previous_id = self.app.student_id_var.get()
+        try:
+            self.app.student_name_var.set("  Marie  Curie ")
+            self.app.student_id_var.set(" A-123 ")
+            self.app.refresh_student_identity(redraw=False)
+
+            self.assertEqual(self.app.student_name_var.get(), "Marie Curie")
+            self.assertEqual(self.app.student_id_var.get(), "A-123")
+            self.assertIn("Marie Curie · matricule A-123", self.app.title())
+            self.assertIs(self.app.student_name_entry.master, self.app.student_box)
+            self.assertIs(self.app.student_id_entry.master, self.app.student_box)
+        finally:
+            self.app.student_name_var.set(previous_name)
+            self.app.student_id_var.set(previous_id)
+            self.app.refresh_student_identity(redraw=False)
+
     def test_bar_verticalization_is_an_explicit_pose_action(self):
         self.assertFalse(self.app.optimize_bar_path_var.get())
         button = self.app.optimize_bar_path_button

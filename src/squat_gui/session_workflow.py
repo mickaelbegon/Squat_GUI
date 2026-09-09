@@ -162,7 +162,10 @@ class SessionWorkflowController:
 
     def current_settings(self) -> dict[str, object]:
         app = self.app
+        identity = app.student_identity()
         return GuiSettings(
+            student_name=identity.name,
+            student_id=identity.student_id,
             subject_profile=app.subject_profile_var.get(),
             bar_position=app.bar_position_var.get(),
             load_percent_bw=app.load_var.get(),
@@ -234,6 +237,12 @@ class SessionWorkflowController:
         reader = SettingsReader.from_object(settings)
         app._suspend_selection_clear = True
         try:
+            app.student_name_var.set(
+                reader.text("student_name", app.student_name_var.get())
+            )
+            app.student_id_var.set(
+                reader.text("student_id", app.student_id_var.get())
+            )
             app.subject_profile_var.set(reader.text("subject_profile", app.subject_profile_var.get()))
             app.bar_position_var.set(reader.text("bar_position", app.bar_position_var.get()))
             if reader.has("load_percent_bw") or reader.has("load_kg"):
@@ -283,6 +292,7 @@ class SessionWorkflowController:
             app.on_plot_choice_changed()
         finally:
             app._suspend_selection_clear = False
+        app.refresh_student_identity(redraw=False)
         self.app.recompute()
 
     @staticmethod
@@ -327,9 +337,19 @@ class SessionWorkflowController:
 
     def save_session(self, path: str | Path, *, include_conditions: bool) -> Path:
         output = Path(path)
+        current_settings = self.current_settings()
+        saved_conditions = {
+            iid: {
+                **dict(condition),
+                "settings": self._settings_with_student_identity(
+                    dict(condition["settings"]), current_settings
+                ),
+            }
+            for iid, condition in self.app.saved_conditions.items()
+        }
         document = SessionDocument.from_runtime(
-            self.current_settings(),
-            self.app.saved_conditions if include_conditions else {},
+            current_settings,
+            saved_conditions if include_conditions else {},
         )
         SessionJsonCodec.write(output, document)
         return output
@@ -348,6 +368,17 @@ class SessionWorkflowController:
                 comparison_reference=condition.comparison_reference,
             )
         return source
+
+    @staticmethod
+    def _settings_with_student_identity(
+        settings: Mapping[str, object], session_settings: Mapping[str, object]
+    ) -> dict[str, object]:
+        """Attach the session owner to current and previously saved conditions."""
+
+        merged = dict(settings)
+        merged["student_name"] = session_settings.get("student_name", "")
+        merged["student_id"] = session_settings.get("student_id", "")
+        return merged
 
     @staticmethod
     def _condition_export_signature(condition: Condition) -> str:
@@ -386,16 +417,20 @@ class SessionWorkflowController:
         conditions: list[Condition] = []
         saved_signatures: set[str] = set()
         used_ids: set[str] = set()
+        session_settings = self.app.current_settings()
         for index, (iid, saved) in enumerate(self.app.saved_conditions.items(), start=1):
             results = list(saved.get("results", []))
             backend = results[0].backend if results else "analytical"
             condition_id = self._unique_export_id(self._normalized_export_id(iid, f"condition_{index}"), used_ids)
-            condition = condition_from_settings(dict(saved["settings"]), list(saved["final_q_deg"]), condition_id, backend=backend)
+            settings = self._settings_with_student_identity(
+                dict(saved["settings"]), session_settings
+            )
+            condition = condition_from_settings(settings, list(saved["final_q_deg"]), condition_id, backend=backend)
             conditions.append(condition)
             saved_signatures.add(self._condition_export_signature(condition))
         current_backend = self.app.results[0].backend if self.app.results else "analytical"
         current = condition_from_settings(
-            self.app.current_settings(),
+            session_settings,
             [degrees(value) for value in self.app.final_q],
             "condition_courante",
             backend=current_backend,
@@ -404,7 +439,7 @@ class SessionWorkflowController:
             current_id = self._unique_export_id("condition_courante", used_ids)
             if current_id != current.condition_id:
                 current = condition_from_settings(
-                    self.app.current_settings(),
+                    session_settings,
                     [degrees(value) for value in self.app.final_q],
                     current_id,
                     backend=current_backend,
@@ -413,10 +448,11 @@ class SessionWorkflowController:
         return conditions
 
     def export_excel(self, path: str | Path) -> Path:
+        session_settings = self.app.current_settings()
         exports = [
             (
                 "condition_courante",
-                self.app.current_settings(),
+                session_settings,
                 [degrees(value) for value in self.app.final_q],
                 self.app.results[0].backend if self.app.results else "analytical",
             )
@@ -424,7 +460,9 @@ class SessionWorkflowController:
         exports.extend(
             (
                 f"condition_{condition['label']}",
-                dict(condition["settings"]),
+                self._settings_with_student_identity(
+                    dict(condition["settings"]), session_settings
+                ),
                 list(condition["final_q_deg"]),
                 condition["results"][0].backend if condition["results"] else "analytical",
             )

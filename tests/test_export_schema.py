@@ -165,10 +165,19 @@ class ExportSchemaTests(unittest.TestCase):
         self.assertEqual(standard[0]["frames"], 3)
         self.assertIn("cheville_torque_body_mass_normalized_Nm_kg", standard[0])
         self.assertIn("support_point_in_functional_base", standard[0])
+        self.assertIn("patellofemoral_stress_MPa", standard[0])
+        self.assertIn("patellofemoral_extrapolated", standard[0])
         self.assertNotIn("cheville_mass_acceleration_Nm", standard[0])
         self.assertNotIn("foot_weighted_com_x_kg_m", standard[0])
         self.assertIn("cheville_mass_acceleration_Nm", complete[0])
         self.assertIn("foot_weighted_com_x_kg_m", complete[0])
+        self.assertIn("patellofemoral_model", complete[0])
+        self.assertEqual(
+            workbook_contract()
+            .column_definition("patellofemoral_stress_MPa")
+            .status,
+            "expérimental",
+        )
 
     def test_excel_summary_contains_requested_student_metrics(self) -> None:
         rows = self.rows()
@@ -188,6 +197,14 @@ class ExportSchemaTests(unittest.TestCase):
             max(abs(float(row["cheville_torque_Nm"])) for row in rows),
         )
         self.assertIn(summary["limiting_joint"], ("cheville", "genou", "hanche"))
+        self.assertAlmostEqual(
+            float(summary["peak_patellofemoral_stress_MPa"]),
+            max(float(row["patellofemoral_stress_MPa"]) for row in rows),
+        )
+        self.assertEqual(
+            summary["patellofemoral_extrapolated_frames"],
+            sum(bool(row["patellofemoral_extrapolated"]) for row in rows),
+        )
 
     def test_global_com_is_the_sum_of_exported_segment_contributions(self) -> None:
         segments = ("foot", "shank", "thigh", "trunk", "bar")
@@ -258,11 +275,18 @@ class ExportSchemaTests(unittest.TestCase):
                 self.assertEqual(workbook[SUMMARY_SHEET].freeze_panes, "C2")
                 self.assertEqual(workbook[COMBINED_SHEET].freeze_panes, "C2")
                 self.assertEqual(workbook["contrat"].freeze_panes, "C2")
+                headers = [
+                    cell.value for cell in workbook[COMBINED_SHEET][1]
+                ]
+                delta_time_column = headers.index("delta_time_s") + 1
+                delta_time_cell = workbook[COMBINED_SHEET].cell(
+                    row=2, column=delta_time_column
+                )
                 self.assertEqual(
-                    workbook[COMBINED_SHEET]["E2"].value,
+                    delta_time_cell.value,
                     self.rows()[0]["delta_time_s"],
                 )
-                self.assertEqual(workbook[COMBINED_SHEET]["E2"].number_format, "0.000")
+                self.assertEqual(delta_time_cell.number_format, "0.000")
                 self.assertTrue(workbook[COMBINED_SHEET].tables)
                 self.assertTrue(workbook["contrat"].tables)
                 self.assertEqual(
@@ -306,7 +330,12 @@ class ExportSchemaTests(unittest.TestCase):
                                     )
                                 )
                             else:
-                                self.assertEqual(written_value, expected_value)
+                                # XLSX represents an optional empty string as an
+                                # empty cell; openpyxl reads that cell as None.
+                                if expected_value == "":
+                                    self.assertIsNone(written_value)
+                                else:
+                                    self.assertEqual(written_value, expected_value)
             finally:
                 workbook.close()
 

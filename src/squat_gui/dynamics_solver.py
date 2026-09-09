@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from math import degrees
 from typing import Any
 
 from .anthropometry import Anthropometry
@@ -24,9 +25,11 @@ from .kinematics import (
     MotionState,
     PhaseDurations,
     com_velocities,
+    joint_values_from_segment_values,
     motion_state,
     phase_durations,
 )
+from .patellofemoral import estimate_patellofemoral_load
 from .torque_capacity import joint_torque_capacities
 
 
@@ -126,6 +129,14 @@ def inverse_dynamics(
     for joint, torque in torques.items():
         capacity = torque_capacities[joint].available_torque_Nm
         effort_ratios[joint] = abs(torque) / capacity if capacity > 0.0 else None
+    knee_flexion_deg = abs(
+        degrees(joint_values_from_segment_values(state.q)["genou"])
+    )
+    patellofemoral = estimate_patellofemoral_load(
+        knee_flexion_deg,
+        torques["genou"],
+        anthro.body_mass,
+    )
     return DynamicsResult(
         ground_reaction=reaction,
         cop_x=cop_x,
@@ -134,6 +145,7 @@ def inverse_dynamics(
         powers=powers,
         effort_ratios=effort_ratios,
         torque_capacities=torque_capacities,
+        patellofemoral=patellofemoral,
         backend=backend,
         com=state.pose.com,
         com_velocity=com_velocity,

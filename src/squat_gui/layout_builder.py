@@ -126,8 +126,21 @@ class LayoutBuilder:
         gui.parameter_box.grid(row=1, column=0, sticky="ew", pady=(0, 8))
         gui.parameter_box.columnconfigure(0, weight=1)
         gui.parameter_box.columnconfigure(1, weight=1)
+        gui.student_box = ttk.LabelFrame(gui.parameter_box, text="Étudiant / Student")
+        gui.student_box.grid(row=0, column=0, columnspan=2, sticky="ew", padx=4, pady=3)
+        gui.student_box.columnconfigure(0, weight=2)
+        gui.student_box.columnconfigure(1, weight=1)
+        ttk.Label(gui.student_box, text="Nom (facultatif)").grid(row=0, column=0, sticky="w", padx=(4, 2))
+        ttk.Label(gui.student_box, text="Matricule (facultatif)").grid(row=0, column=1, sticky="w", padx=(2, 4))
+        gui.student_name_entry = ttk.Entry(gui.student_box, textvariable=gui.student_name_var)
+        gui.student_name_entry.grid(row=1, column=0, sticky="ew", padx=(4, 2), pady=(0, 4))
+        gui.student_id_entry = ttk.Entry(gui.student_box, textvariable=gui.student_id_var)
+        gui.student_id_entry.grid(row=1, column=1, sticky="ew", padx=(2, 4), pady=(0, 4))
+        for entry in (gui.student_name_entry, gui.student_id_entry):
+            entry.bind("<FocusOut>", gui.refresh_student_identity)
+            entry.bind("<Return>", gui.refresh_student_identity)
         gui.identity_box = ttk.Frame(gui.parameter_box)
-        gui.identity_box.grid(row=0, column=0, sticky="nsew", padx=(4, 2), pady=3)
+        gui.identity_box.grid(row=1, column=0, sticky="nsew", padx=(4, 2), pady=3)
         for column in range(2):
             gui.identity_box.columnconfigure(column, weight=1)
         ttk.Label(gui.identity_box, text="Sujet").grid(row=0, column=0, sticky="w")
@@ -139,7 +152,7 @@ class LayoutBuilder:
         gui.bar_menu.grid(row=1, column=1, sticky="ew", padx=(3, 0))
         gui.bar_menu.bind("<<ComboboxSelected>>", lambda _event: gui.on_parameter_changed())
         gui.charge_box = ttk.LabelFrame(gui.parameter_box, text="Charge %BW (sujet 70 kg)")
-        gui.charge_box.grid(row=0, column=1, sticky="nsew", padx=(2, 4), pady=3)
+        gui.charge_box.grid(row=1, column=1, sticky="nsew", padx=(2, 4), pady=3)
         gui.charge_box.columnconfigure(0, weight=1)
         gui.load_menu = ttk.Combobox(gui.charge_box, textvariable=gui.load_display_var, values=tuple(f"{value:g} %BW" for value in self.load_percent_options), state="readonly", width=10)
         gui.load_menu.grid(row=0, column=0, sticky="ew", padx=4, pady=3)
@@ -147,14 +160,14 @@ class LayoutBuilder:
         self._build_duration_panel()
         self._build_lengths_panel()
         gui.parameter_options = ttk.Frame(gui.parameter_box)
-        gui.parameter_options.grid(row=2, column=0, columnspan=2, sticky="ew", padx=4, pady=(3, 4))
+        gui.parameter_options.grid(row=3, column=0, columnspan=2, sticky="ew", padx=4, pady=(3, 4))
         ttk.Checkbutton(gui.parameter_options, text="wedge 20 deg", variable=gui.wedge_var, command=gui.on_parameter_changed).grid(row=0, column=0, sticky="w")
         ttk.Checkbutton(gui.parameter_options, text="CoM segments + barre", variable=gui.show_segment_com_var, command=gui.redraw).grid(row=0, column=1, sticky="w", padx=(8, 0))
 
     def _build_duration_panel(self) -> None:
         gui = self.gui
         gui.duration_box = ttk.LabelFrame(gui.parameter_box, text="Durée des phases (s)")
-        gui.duration_box.grid(row=1, column=0, sticky="nsew", padx=(4, 2), pady=3)
+        gui.duration_box.grid(row=2, column=0, sticky="nsew", padx=(4, 2), pady=3)
         durations = (("excent.", gui.eccentric_duration_var, DYNAMIC_PHASE_DURATION_OPTIONS), ("isomet.", gui.isometric_duration_var, ISOMETRIC_PHASE_DURATION_OPTIONS), ("concent.", gui.concentric_duration_var, DYNAMIC_PHASE_DURATION_OPTIONS))
         for column, (label, variable, values) in enumerate(durations):
             gui.duration_box.columnconfigure(column, weight=1)
@@ -171,7 +184,7 @@ class LayoutBuilder:
     def _build_lengths_panel(self) -> None:
         gui = self.gui
         gui.lengths_box = ttk.LabelFrame(gui.parameter_box, text="Longueurs (%)")
-        gui.lengths_box.grid(row=1, column=1, sticky="nsew", padx=(2, 4), pady=3)
+        gui.lengths_box.grid(row=2, column=1, sticky="nsew", padx=(2, 4), pady=3)
         for column, (label, variable) in enumerate((("tibia", gui.shank_var), ("cuisse", gui.thigh_var), ("tronc", gui.trunk_var))):
             gui.lengths_box.columnconfigure(column, weight=1)
             ttk.Label(gui.lengths_box, text=label).grid(row=0, column=column)

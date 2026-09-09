@@ -128,6 +128,95 @@ Le moment du contact externe est exporté séparément comme diagnostic et n'est
 pas soustrait du total utilisé pour les puissances ou ratios d'effort. Le résidu
 de reconstruction est également exporté.
 
+## Estimation fémoro-patellaire expérimentale
+
+Squat GUI fournit une estimation didactique de la charge fémoro-patellaire à
+partir de deux variables déjà calculées : la flexion du genou et le moment net
+d'extension issu de la dynamique inverse. Il s'agit d'un modèle analytique 2D
+générique, et non d'une mesure du cartilage ou d'une prédiction de douleur.
+
+Le modèle représente les deux membres inférieurs ensemble. Sous l'hypothèse
+d'un squat bilatéral symétrique, le moment extenseur attribué à un genou est :
+
+```text
+M_ext,genou = max(0, M_genou) / 2
+```
+
+Un moment net négatif n'est pas transformé en force compressive : il est ramené
+à zéro. Le bras de levier effectif du quadriceps `r_Q`, en mètres, dépend de la
+flexion positive `θ` du genou, en degrés :
+
+```text
+r_Q = (0,036 θ + 3,0) / 100       pour 0° <= θ < 30°
+r_Q = (-0,043 θ + 5,4) / 100      pour 30° <= θ < 60°
+r_Q = (-0,027 θ + 4,3) / 100      pour 60° <= θ < 90°
+r_Q = 2,0 / 100                   pour θ >= 90°
+```
+
+La force du quadriceps, l'angle du mécanisme patellaire et la force de réaction
+fémoro-patellaire par genou sont ensuite estimés par :
+
+```text
+F_Q = M_ext,genou / r_Q
+β = 30,46 + 0,53 θ
+F_PF = 2 F_Q sin(β / 2)
+```
+
+La relation linéaire utilisée pour `β` reprend la géométrie sagittale publiée
+par Matthews, Sonstegard et Henke (1977). Les équations restent ici une
+approximation générique de type poulie sans frottement, et non une
+reconstruction personnalisée de la patella.
+
+Dans le sinus, `β` est converti en radians. L'aire de contact générique et la
+contrainte moyenne estimée sont :
+
+```text
+A_PF = 0,0781 θ² + 0,6763 θ + 151,75       [mm²]
+σ_PF = F_PF / A_PF                         [N/mm² = MPa]
+```
+
+L'interface propose la courbe `contrainte femoro-patellaire`. L'animation
+affiche `PF/genou`, et les exports fournissent le moment par côté, le bras de
+levier, les forces, l'aire, la contrainte et leur statut de validité. La feuille
+Excel `Synthèse` contient notamment le pic de contrainte, son temps, sa frame,
+l'angle correspondant et le nombre de frames extrapolées.
+
+### Hypothèses et limites spécifiques
+
+- Le partage droite/gauche est fixé à 50/50. Une asymétrie réelle n'est pas
+  observable dans ce modèle sagittal.
+- Le moment de dynamique inverse est net. Sans EMG ni optimisation musculaire,
+  la cocontraction des ischiojambiers et du gastrocnémien n'est pas estimée ;
+  la force réelle du quadriceps peut donc être supérieure.
+- Le bras de levier, le mécanisme patellaire et l'aire de contact sont des
+  régressions génériques. La géométrie individuelle, le suivi médial-latéral,
+  la patella alta, la dysplasie et les lésions cartilagineuses sont absents.
+- La contrainte calculée est une moyenne `force/aire`, pas la contrainte locale
+  maximale dans le cartilage.
+- La normalisation `F_PF / poids corporel` utilise le poids du sujet sans la
+  barre, conformément à l'usage biomécanique courant. La charge externe agit
+  néanmoins sur le moment du genou et donc sur `F_PF`.
+- La plage 0–90° est indiquée comme plage directe. Au-delà de 90°, le calcul est
+  conservé pour explorer le squat profond, mais chaque valeur est explicitement
+  marquée `extrapolation_flexion_profonde`. En flexion profonde, le contact se
+  répartit différemment entre les facettes et l'aire ne suit pas nécessairement
+  la régression utilisée ici.
+- Aucun seuil de sécurité, de douleur ou de lésion n'est appliqué. Les valeurs
+  servent à comparer des conditions simulées sous les mêmes hypothèses.
+
+Références principales :
+
+- Matthews, Sonstegard et Henke (1977), [*Load bearing characteristics of the
+  patello-femoral joint*](https://doi.org/10.3109/17453677708989740) ;
+- van Eijden et coll. (1986), [*A mathematical model of the patellofemoral
+  joint*](https://doi.org/10.1016/0021-9290(86)90154-5) ;
+- Wallace et coll. (2002), [squat avec et sans charge
+  externe](https://doi.org/10.2519/jospt.2002.32.4.141) ;
+- Salem et Powers (2001), [squats de 70 à
+  110°](https://doi.org/10.1016/S0268-0033(01)00017-1) ;
+- Freedman, Sheehan et Lerner (2015), [aire de contact IRM jusqu'à
+  140°](https://doi.org/10.1016/j.knee.2015.06.012).
+
 ## Capacité couple-angle-vitesse
 
 La capacité active optionnelle suit Anderson, Madigan et Nussbaum (2007),

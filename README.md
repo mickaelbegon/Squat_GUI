@@ -24,7 +24,8 @@ vérifier que le ZIP provient bien de la page Releases du dépôt avant de conti
 
 ## Parcours conseillé
 
-1. Choisir le profil du sujet et la position de la barre.
+1. Saisir facultativement son nom et son matricule, puis choisir le profil du
+   sujet et la position de la barre.
 2. Régler la charge et les durées, puis déplacer la posture basse.
 3. Lire l'animation en mode `OBSERVATION` et formuler une hypothèse.
 4. Passer en `CINÉMATIQUE`, puis en `DYNAMIQUE` pour afficher les mesures.
@@ -33,15 +34,20 @@ vérifier que le ZIP provient bien de la page Releases du dépôt avant de conti
 
 L'export CSV standard privilégie les données biomécaniques essentielles à la
 comparaison (paramètres de condition, cinématique, couples et puissances, CoM,
-CoP/ZMP et force verticale). Les données intermédiaires et le niveau de détail
+CoP/ZMP, force verticale et estimation fémoro-patellaire expérimentale). Les
+données intermédiaires et le niveau de détail
 diagnostic/complet sont réservés à la documentation et aux usages de
 développement. Le bouton `CSV combiné` regroupe dans un seul fichier toutes les
 conditions enregistrées et la condition active lorsqu'elle est distincte. Chaque
-ligne porte un `condition_id`. L'export crée un lot neuf et remplace explicitement
+ligne porte un `condition_id`, ainsi que `student_name` et `student_id` lorsque
+ces champs ont été renseignés. L'identité est aussi conservée dans les sessions
+JSON et visible dans le titre de l'application pour identifier les captures.
+L'export crée un lot neuf et remplace explicitement
 le fichier choisi; il n'ajoute jamais des lignes à un ancien export. Les métriques
 de synthèse destinées aux étudiants restent disponibles dans le classeur Excel.
 Celui-ci commence par `Synthèse`, puis `Données combinées`, et ajoute une feuille
-par simulation avant le dictionnaire technique `Définitions`.
+par simulation avant le dictionnaire technique `Définitions`. Le nom et le
+matricule figurent également dans la synthèse Excel.
 
 ## Installation Python facultative
 

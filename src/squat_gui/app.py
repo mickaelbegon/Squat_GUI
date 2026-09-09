@@ -63,6 +63,7 @@ from .scene_model import (
 )
 from .session_persistence import ComparisonReference, SavedCondition
 from .session_workflow import SessionWorkflowController
+from .student_identity import StudentIdentity
 from .timeline import (
     TimeMode,
     time_axis_label,
@@ -111,6 +112,8 @@ class SquatGui(tk.Tk):
             BiorbdModelCache() if self.backend_status.biorbd_available else None
         )
 
+        self.student_name_var = tk.StringVar(value="")
+        self.student_id_var = tk.StringVar(value="")
         self.subject_profile_var = tk.StringVar(value="homme")
         self.bar_position_var = tk.StringVar(value="back")
         self.load_var = tk.DoubleVar(value=0.0)
@@ -574,6 +577,26 @@ class SquatGui(tk.Tk):
 
     def current_settings(self) -> dict[str, object]:
         return self._workflow().current_settings()
+
+    def student_identity(self) -> StudentIdentity:
+        """Return normalized optional ownership metadata from the form."""
+
+        return StudentIdentity.normalized(
+            self.student_name_var.get(), self.student_id_var.get()
+        )
+
+    def refresh_student_identity(
+        self, _event: tk.Event | None = None, *, redraw: bool = True
+    ) -> None:
+        """Commit identity edits without rerunning the biomechanical model."""
+
+        identity = self.student_identity()
+        self.student_name_var.set(identity.name)
+        self.student_id_var.set(identity.student_id)
+        suffix = f" — {identity.display_label()}" if not identity.is_empty else ""
+        self.title(f"Squat 2D - dynamique inverse{suffix}")
+        if redraw and hasattr(self, "pose_canvas"):
+            self.redraw()
 
     def apply_settings(self, settings: dict[str, object]) -> None:
         self._workflow().apply_settings(settings)

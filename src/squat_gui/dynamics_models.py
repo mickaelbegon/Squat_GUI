@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from .kinematics import Vector
+from .patellofemoral import PatellofemoralEstimate
 from .torque_capacity import TorqueCapacity
 
 
@@ -28,6 +29,7 @@ class DynamicsResult:
     support_point_source: str = "bilan dynamique analytique"
     contact_source: str = "moment géométrique de la GRF"
     backend_diagnostic: str = "Backend analytique sélectionné."
+    patellofemoral: PatellofemoralEstimate | None = None
 
 
 @dataclass(frozen=True)

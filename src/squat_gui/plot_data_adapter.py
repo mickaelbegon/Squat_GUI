@@ -163,6 +163,17 @@ class PlotDataAdapterMixin:
                             result.torque_components[joint][key] for result in results
                         ]
             return values
+        elif choice == "contrainte femoro-patellaire":
+            return {
+                "PF/genou": [
+                    (
+                        float("nan")
+                        if result.patellofemoral is None
+                        else result.patellofemoral.stress_MPa
+                    )
+                    for result in results
+                ]
+            }
         else:
             values = {
                 joint: [result.powers[joint] for result in results]

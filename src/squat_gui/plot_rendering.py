@@ -341,4 +341,6 @@ def plot_unit(choice: str, quantity: str) -> str:
         return "Nm"
     if choice == "couples normalises":
         return "% max"
+    if choice == "contrainte femoro-patellaire":
+        return "MPa"
     return "W"

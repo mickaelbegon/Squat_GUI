@@ -25,10 +25,16 @@
 - Décomposition canonique du couple, résidu de reconstruction et distinction entre
   base géométrique et zone d’appui fonctionnelle.
 - Capacité active angle-vitesse avec amplitude de base et provenance exportées.
+- Estimation fémoro-patellaire expérimentale par genou à partir du moment net
+  et de la flexion : force, aire de contact, contrainte moyenne et marquage
+  explicite des valeurs extrapolées au-delà de 90°.
 
 ### Exports et distribution
 
-- Schéma CSV/Excel 1.4.0; classeur étudiant organisé en synthèse, données
+- Schéma CSV/Excel 2.2.0; identité étudiante facultative (`student_name`,
+  `student_id`) conservée dans les sessions JSON, chaque ligne CSV et la
+  synthèse Excel, avec rappel dans le titre de l'application pour les captures.
+- Classeur étudiant organisé en synthèse, données
   combinées, une feuille par simulation et définitions.
 - Export CSV combiné de la session avec identifiants de condition uniques,
   déduplication de la condition active et remplacement atomique explicite.

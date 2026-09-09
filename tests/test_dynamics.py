@@ -363,6 +363,21 @@ class DynamicsTests(unittest.TestCase):
         self.assertTrue(zmp_in_support(pose, posterior))
         self.assertTrue(zmp_in_support(pose, anterior))
 
+    def test_default_foot_and_functional_zmp_interval_are_twenty_percent_larger(self) -> None:
+        reference = Anthropometry(foot_scale=1.0 / 1.2)
+        enlarged = Anthropometry()
+        reference_pose = pose_from_angles(reference, (0.0, 0.0, 0.0))
+        enlarged_pose = pose_from_angles(enlarged, (0.0, 0.0, 0.0))
+
+        reference_limits = functional_support_limits(reference_pose)
+        enlarged_limits = functional_support_limits(enlarged_pose)
+
+        self.assertAlmostEqual(enlarged.foot.length, 1.2 * reference.foot.length)
+        self.assertAlmostEqual(
+            enlarged_limits[1] - enlarged_limits[0],
+            1.2 * (reference_limits[1] - reference_limits[0]),
+        )
+
     def test_wedge_moves_posterior_zmp_limit_to_ankle_projection(self) -> None:
         anthro = Anthropometry(wedge_angle_deg=20.0)
         pose = pose_from_angles(anthro, (0.0, 0.0, 0.0))

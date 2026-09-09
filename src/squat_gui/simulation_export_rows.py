@@ -22,6 +22,7 @@ from .observables import (
     segment_anthropometry,
     support_margins,
 )
+from .patellofemoral import estimate_patellofemoral_load
 
 ExportRow = dict[str, object]
 
@@ -30,6 +31,8 @@ class ExportCondition(Protocol):
     """Subset of a condition required to build stable export records."""
 
     condition_id: str
+    student_name: str
+    student_id: str
     subject_profile: str
     bar_position: str
     wedge_20_deg: bool
@@ -91,9 +94,16 @@ def build_export_rows(
             joint: degrees(value)
             for joint, value in joint_values_from_segment_values(state.qddot).items()
         }
+        patellofemoral = result.patellofemoral or estimate_patellofemoral_load(
+            abs(joint_angles["genou"]),
+            result.torques["genou"],
+            anthro.body_mass,
+        )
         row: ExportRow = {
             "schema_version": SCHEMA_VERSION,
             "condition_id": condition.condition_id,
+            "student_name": condition.student_name,
+            "student_id": condition.student_id,
             "frame": frame,
             "time_s": state.time,
             "delta_time_s": info.delta_time_s,
@@ -170,6 +180,27 @@ def build_export_rows(
             "force_balance_residual_x_N": balance.residual_N[0],
             "force_balance_residual_y_N": balance.residual_N[1],
             "dynamic_moment_z_Nm": result.dynamic_moment_z,
+            "patellofemoral_knee_flexion_deg": patellofemoral.knee_flexion_deg,
+            "patellofemoral_knee_extension_moment_per_side_Nm": (
+                patellofemoral.knee_extension_moment_per_side_Nm
+            ),
+            "patellofemoral_quadriceps_moment_arm_m": (
+                patellofemoral.quadriceps_moment_arm_m
+            ),
+            "patellofemoral_quadriceps_force_per_side_N": (
+                patellofemoral.quadriceps_force_per_side_N
+            ),
+            "patellofemoral_reaction_force_per_side_N": (
+                patellofemoral.reaction_force_per_side_N
+            ),
+            "patellofemoral_reaction_force_body_weight_ratio": (
+                patellofemoral.reaction_force_body_weight_ratio
+            ),
+            "patellofemoral_contact_area_mm2": patellofemoral.contact_area_mm2,
+            "patellofemoral_stress_MPa": patellofemoral.stress_MPa,
+            "patellofemoral_extrapolated": patellofemoral.extrapolated,
+            "patellofemoral_validity": patellofemoral.validity,
+            "patellofemoral_model": patellofemoral.model,
         }
         for point, (x, y) in coordinates.items():
             row[f"{point}_x_m"] = x
@@ -332,7 +363,35 @@ def condition_summary(
         "exceeds_capacity": exceeds_capacity,
         "undefined_capacity_events": len(undefined_events),
     }
+    peak_patellofemoral_row = max(
+        rows,
+        key=lambda row: float(row["patellofemoral_stress_MPa"]),
+    )
+    patellofemoral_summary = {
+        "interpretation": "estimation expérimentale non clinique par genou",
+        "peak_reaction_force_per_side_N": max(
+            float(row["patellofemoral_reaction_force_per_side_N"])
+            for row in rows
+        ),
+        "peak_reaction_force_body_weight_ratio": max(
+            float(row["patellofemoral_reaction_force_body_weight_ratio"])
+            for row in rows
+        ),
+        "peak_stress_MPa": float(
+            peak_patellofemoral_row["patellofemoral_stress_MPa"]
+        ),
+        "peak_stress_frame": peak_patellofemoral_row["frame"],
+        "peak_stress_time_s": peak_patellofemoral_row["time_s"],
+        "peak_stress_knee_flexion_deg": peak_patellofemoral_row[
+            "patellofemoral_knee_flexion_deg"
+        ],
+        "extrapolated_frames": sum(
+            1 for row in rows if bool(row["patellofemoral_extrapolated"])
+        ),
+    }
     return {
+        "student_name": condition.student_name,
+        "student_id": condition.student_id,
         "condition": asdict(condition),
         "actual_backend": actual_backend,
         "frames": len(rows),
@@ -356,4 +415,5 @@ def condition_summary(
         ),
         "peaks": peaks,
         "mechanical_feasibility": mechanical_feasibility,
+        "patellofemoral": patellofemoral_summary,
     }

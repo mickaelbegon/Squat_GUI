@@ -131,7 +131,11 @@ class PlotSeriesTests(unittest.TestCase):
             "bar_position": "back",
             "load_percent_bw": 0.0,
         }
-        gui.current_settings = lambda: dict(base_settings)
+        gui.current_settings = lambda: {
+            **base_settings,
+            "student_name": "Marie Curie",
+            "student_id": "A-123",
+        }
         gui.final_q = (radians(22.0), radians(-58.0), radians(20.0))
         gui.saved_conditions = {
             "condition-1": {
@@ -158,6 +162,8 @@ class PlotSeriesTests(unittest.TestCase):
 
         condition_ids = {row["condition_id"] for row in rows}
         self.assertEqual(condition_ids, {"condition_1", "condition_1_2"})
+        self.assertEqual({row["student_name"] for row in rows}, {"Marie Curie"})
+        self.assertEqual({row["student_id"] for row in rows}, {"A-123"})
         self.assertNotIn("condition_courante", condition_ids)
         frames_per_condition = {
             row["condition_id"]: int(row["frames"]) for row in rows
@@ -432,6 +438,8 @@ class PlotSeriesTests(unittest.TestCase):
         trunk_call = draw_sprite.call_args_list[-1].args
         self.assertFalse(trunk_call[5])
         self.assertEqual(trunk_call[6], ("femme enceinte", "over-head"))
+        foot_call = draw_sprite.call_args_list[0].args
+        self.assertEqual(foot_call[8], 20.0)
 
     def gui_without_tk(self):
         anthro = Anthropometry()
@@ -475,7 +483,8 @@ class PlotSeriesTests(unittest.TestCase):
 
         visible_canvas = RecordingCanvas()
         gui.draw_animation_values(visible_canvas, sample)
-        self.assertEqual(len(visible_canvas.texts), 4)
+        self.assertEqual(len(visible_canvas.texts), 5)
+        self.assertIn("PF/genou", visible_canvas.texts[-1][1]["text"])
 
         gui.show_animation_torques_var.set(False)
         hidden_canvas = RecordingCanvas()
@@ -718,6 +727,19 @@ class PlotSeriesTests(unittest.TestCase):
         self.assertEqual(gui.plot_unit("couples normalises"), "% max")
         self.assertAlmostEqual(
             series["cheville"][0], 100.0 * gui.results[0].effort_ratios["cheville"]
+        )
+
+    def test_patellofemoral_stress_series_is_available_in_mpa(self):
+        gui = self.gui_without_tk()
+
+        self.assertIn("contrainte femoro-patellaire", PLOT_CHOICES)
+        series = gui.plot_series("contrainte femoro-patellaire")
+
+        self.assertEqual(list(series), ["PF/genou"])
+        self.assertEqual(gui.plot_unit("contrainte femoro-patellaire"), "MPa")
+        self.assertEqual(
+            series["PF/genou"][0],
+            gui.results[0].patellofemoral.stress_MPa,
         )
 
     def test_detailed_torque_series_include_all_components(self):

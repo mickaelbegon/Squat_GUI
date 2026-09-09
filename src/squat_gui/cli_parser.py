@@ -19,6 +19,8 @@ from .torque_capacity import (
 def add_condition_arguments(parser: argparse.ArgumentParser) -> None:
     """Add shared run/batch simulation options in their historical order."""
     parser.add_argument("--condition-id", default="condition_001")
+    parser.add_argument("--student-name", default="", help="Nom étudiant facultatif ajouté aux exports.")
+    parser.add_argument("--student-id", default="", help="Matricule facultatif ajouté aux exports.")
     parser.add_argument("--load-percent-bw", type=float, default=0.0, help="Charge de barre en pourcentage du poids de corps (sujet 70 kg).")
     parser.add_argument("--load", type=float, help="Compatibilite: charge de barre en kg, prioritaire sur --load-percent-bw.")
     parser.add_argument("--subject-profile", choices=("homme", "femme enceinte"), default="homme")

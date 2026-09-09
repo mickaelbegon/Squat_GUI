@@ -314,3 +314,18 @@ class SceneAnimationRendererMixin:
                         font=("Helvetica", 9),
                     )
                     y += 18
+                patellofemoral = result.patellofemoral
+                if patellofemoral is not None:
+                    status = "ext." if patellofemoral.extrapolated else "0-90°"
+                    canvas.create_text(
+                        x,
+                        y,
+                        text=(
+                            f"PF/genou: {patellofemoral.stress_MPa:.2f} MPa "
+                            f"({status})"
+                        ),
+                        anchor="nw",
+                        fill="#8a5a22" if patellofemoral.extrapolated else color,
+                        font=("Helvetica", 9),
+                    )
+                    y += 18

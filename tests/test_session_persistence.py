@@ -17,6 +17,8 @@ from squat_gui.timeline import TimeMode
 class SessionPersistenceTests(unittest.TestCase):
     def test_gui_snapshot_keeps_current_and_legacy_compatibility_keys(self) -> None:
         settings = GuiSettings(
+            student_name="Aurélie Côté",
+            student_id="A-123",
             subject_profile="femme",
             bar_position="front",
             load_percent_bw=50.0,
@@ -61,6 +63,8 @@ class SessionPersistenceTests(unittest.TestCase):
         self.assertEqual(settings["final_q_deg"], [22.0, -58.0, 20.0])
         self.assertFalse(settings["angle_adapt"])
         self.assertFalse(settings["velocity_adapt"])
+        self.assertEqual(settings["student_name"], "Aurélie Côté")
+        self.assertEqual(settings["student_id"], "A-123")
 
     def test_reader_centralizes_legacy_aliases(self) -> None:
         reader = SettingsReader.from_object(

@@ -62,10 +62,14 @@ class GuiSettings:
     show_phase_names: bool
     final_q_deg: list[float]
     frame_count: int
+    student_name: str = ""
+    student_id: str = ""
 
     def to_mapping(self) -> SettingsMap:
         """Return the historical JSON mapping, including compatibility keys."""
         return {
+            "student_name": self.student_name,
+            "student_id": self.student_id,
             "subject_profile": self.subject_profile,
             "bar_position": self.bar_position,
             "load_percent_bw": self.load_percent_bw,

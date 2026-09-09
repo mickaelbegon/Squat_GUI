@@ -20,6 +20,7 @@ PLOT_CHOICES = [
     "couples normalises",
     DETAILED_PLOT_CHOICE,
     "puissances articulaires",
+    "contrainte femoro-patellaire",
 ]
 
 JOINT_COLORS = {
