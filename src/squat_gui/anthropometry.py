@@ -18,6 +18,11 @@ BASE_MASS_FRACTIONS = {
     "trunk": 0.678,
 }
 
+# The teaching model uses a 20% longer reference foot than the original
+# Winter/Dempster length.  ``foot_scale`` remains a relative morphotype scale,
+# so 1.0 still means the reference size in both anthropometry modes.
+FOOT_LENGTH_FRACTION = 0.152 * 1.20
+
 
 @dataclass(frozen=True)
 class SegmentSpec:
@@ -102,7 +107,7 @@ class Anthropometry:
     def foot(self) -> SegmentSpec:
         return SegmentSpec(
             "pied",
-            0.152 * self.height * self.foot_scale,
+            FOOT_LENGTH_FRACTION * self.height * self.foot_scale,
             self._segment_mass("foot"),
             0.50,
             0.475,

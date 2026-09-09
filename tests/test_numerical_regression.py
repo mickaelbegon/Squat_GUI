@@ -77,12 +77,12 @@ def test_reference_kinematics_preserves_landmarks_and_com_derivatives() -> None:
     state = _reference_motion_state(anthro)
 
     expected_landmarks = {
-        "ankle": (0.1231143514686692, 0.10611943011389843),
-        "knee": (0.38243133304815424, 0.46303863523105804),
-        "hip": (-0.008627334055709868, 0.7169951030340049),
-        "shoulder": (0.3545572526283725, 1.106462889757262),
-        "bar": (0.46775573776390816, 1.0877914297595042),
-        "com": (0.31559506056520226, 0.8630846644923431),
+        "ankle": (0.1448264580909544, 0.11364924972640485),
+        "knee": (0.4041434396704395, 0.4705684548435644),
+        "hip": (0.013084772566575364, 0.7245249226465114),
+        "shoulder": (0.37626935925065774, 1.1139927093697684),
+        "bar": (0.4894678443861934, 1.0953212493720106),
+        "com": (0.33744371033145043, 0.8705854609636491),
     }
     for landmark, expected in expected_landmarks.items():
         _assert_analytical_vector(getattr(state.pose, landmark), expected)
@@ -133,12 +133,12 @@ def test_reference_analytical_dynamics_preserves_forces_and_joint_terms() -> Non
         (-0.19380183250103325, 0.38293873645248094),
     )
     assert result.cop_x == pytest.approx(
-        0.3326398628257226,
+        0.3546265952189223,
         rel=ANALYTICAL_REL_TOLERANCE,
         abs=ANALYTICAL_ABS_TOLERANCE,
     )
     assert result.dynamic_moment_z == pytest.approx(
-        430.4618517420983,
+        458.9143933567314,
         rel=ANALYTICAL_REL_TOLERANCE,
         abs=ANALYTICAL_ABS_TOLERANCE,
     )
@@ -194,12 +194,12 @@ def test_reference_slsqp_solution_stays_in_the_same_biomechanical_basin() -> Non
 
     # The baseline is pure analytical Python and therefore uses tight checks.
     assert result.before.horizontal_velocity_energy_m2_s == pytest.approx(
-        0.014003845984538476,
+        0.010554090413306013,
         rel=ANALYTICAL_REL_TOLERANCE,
         abs=ANALYTICAL_ABS_TOLERANCE,
     )
     assert result.before.horizontal_excursion_m == pytest.approx(
-        0.14265848811797896,
+        0.12413078763021548,
         rel=ANALYTICAL_REL_TOLERANCE,
         abs=ANALYTICAL_ABS_TOLERANCE,
     )
@@ -210,9 +210,9 @@ def test_reference_slsqp_solution_stays_in_the_same_biomechanical_basin() -> Non
         for joint, value in joint_values_from_segment_values(result.final_q).items()
     }
     expected_joints_deg = {
-        "cheville": 24.00092445568722,
-        "genou": -82.69480871056012,
-        "hanche": 103.00000000000047,
+        "cheville": 23.888282955501747,
+        "genou": -82.63587653375207,
+        "hanche": 103.0,
     }
     for joint, expected in expected_joints_deg.items():
         assert final_joints_deg[joint] == pytest.approx(
@@ -221,11 +221,11 @@ def test_reference_slsqp_solution_stays_in_the_same_biomechanical_basin() -> Non
         )
 
     assert result.after.horizontal_velocity_energy_m2_s == pytest.approx(
-        0.009057602731084882,
+        0.006270603214542522,
         rel=SLSQP_METRIC_REL_TOLERANCE,
     )
     assert result.after.horizontal_excursion_m == pytest.approx(
-        0.11359502443844302,
+        0.09371831612958811,
         rel=SLSQP_METRIC_REL_TOLERANCE,
     )
     assert result.after.deep_hip_height_m == pytest.approx(
@@ -239,9 +239,9 @@ def test_reference_slsqp_solution_stays_in_the_same_biomechanical_basin() -> Non
     assert (
         result.after.horizontal_velocity_energy_m2_s
         / result.before.horizontal_velocity_energy_m2_s
-        == pytest.approx(0.6467996414216215, abs=0.06)
+        == pytest.approx(0.5941396149721148, abs=0.06)
     )
     assert (
         result.after.horizontal_excursion_m / result.before.horizontal_excursion_m
-        == pytest.approx(0.7962613171114391, abs=0.04)
+        == pytest.approx(0.7549965477442562, abs=0.04)
     )

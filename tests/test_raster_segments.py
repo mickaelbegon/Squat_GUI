@@ -1,5 +1,5 @@
 import unittest
-from math import cos, hypot, radians, sin
+from math import atan2, cos, degrees, hypot, radians, sin
 from pathlib import Path
 from unittest.mock import patch
 
@@ -360,6 +360,25 @@ class RasterSegmentAnchorTest(unittest.TestCase):
                     distal_px[1] - clipped_anchor[1] + clipped.getbbox()[3],
                     floor_y + 1.0,
                 )
+
+    def test_ground_condition_rotates_only_the_foot_display_vector_backward(self):
+        target = (100.0, 30.0)
+
+        flat = raster_segments.display_target_vector("foot", target, 0.0)
+        wedge = raster_segments.display_target_vector("foot", target, 20.0)
+        shank = raster_segments.display_target_vector("shank", target, 20.0)
+
+        self.assertEqual(shank, target)
+        self.assertAlmostEqual(hypot(*flat), hypot(*target))
+        self.assertAlmostEqual(hypot(*wedge), hypot(*target))
+        self.assertAlmostEqual(
+            degrees(atan2(flat[1], flat[0])),
+            degrees(atan2(target[1], target[0])) - 3.0,
+        )
+        self.assertAlmostEqual(
+            degrees(atan2(wedge[1], wedge[0])),
+            degrees(atan2(target[1], target[0])) - 10.0,
+        )
 
 
 if __name__ == "__main__":

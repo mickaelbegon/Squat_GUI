@@ -385,6 +385,7 @@ class ScenePoseRendererMixin:
                     refined,
                     segment.variant,
                     0.0 if segment.name == "foot" else None,
+                    render_anthro.wedge_angle_deg,
                 )
                 for segment in scene.segments
             )

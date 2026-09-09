@@ -81,6 +81,14 @@ TRANSFORMED_SPRITE_CACHE_MAX_BYTES = 64 * 1024 * 1024
 TRANSFORMED_SPRITE_ANGLE_STEP_DEGREES = 0.05
 TRANSFORMED_SPRITE_LENGTH_STEP_PX = 1.0 / 16.0
 
+# Aligning the ankle-to-toe calibration axis exactly with the kinematic segment
+# makes the illustrated sole look as if it enters the ground.  A small tilt is
+# enough on flat ground, while the heel wedge needs a larger correction.  These
+# values affect only the silhouette: anatomical landmarks and support limits
+# continue to use the unmodified kinematic geometry.
+FOOT_FLAT_DISPLAY_ROTATION_DEGREES = -3.0
+FOOT_WEDGE_DISPLAY_ROTATION_DEGREES = -10.0
+
 
 TransformedSpriteCacheInfo = namedtuple(
     "TransformedSpriteCacheInfo",
@@ -390,6 +398,30 @@ def sprite_rotation_degrees(source_vector: Vector, target_vector: Vector) -> flo
     return degrees(source_angle - target_angle)
 
 
+def display_target_vector(
+    name: str,
+    target_vector: Vector,
+    wedge_angle_deg: float = 0.0,
+) -> Vector:
+    """Return the renderer-only target vector for a segment silhouette."""
+
+    if name != "foot":
+        return target_vector
+    if wedge_angle_deg > 0.0:
+        display_rotation_deg = max(
+            FOOT_WEDGE_DISPLAY_ROTATION_DEGREES,
+            -wedge_angle_deg,
+        )
+    else:
+        display_rotation_deg = FOOT_FLAT_DISPLAY_ROTATION_DEGREES
+    display_rotation = radians(display_rotation_deg)
+    x, y = target_vector
+    return (
+        x * cos(display_rotation) - y * sin(display_rotation),
+        x * sin(display_rotation) + y * cos(display_rotation),
+    )
+
+
 @lru_cache(maxsize=32)
 def _load_transparent_sprite(filename: str, refined: bool):
     from PIL import ImageDraw
@@ -594,13 +626,18 @@ def draw_sprite_segment(
     refined: bool = False,
     trunk_variant: tuple[str, str] | None = None,
     floor_world_y: float | None = None,
+    wedge_angle_deg: float = 0.0,
 ) -> bool:
     if not pillow_available():
         return False
     spec = sprite_spec(name, refined, trunk_variant)
     distal_px = world_to_canvas(distal_world)
     proximal_px = world_to_canvas(proximal_world)
-    target_vector = (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1])
+    target_vector = display_target_vector(
+        name,
+        (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1]),
+        wedge_angle_deg,
+    )
     image, anchor = transformed_sprite_image(spec, target_vector, refined)
     if floor_world_y is not None:
         floor_canvas_y = world_to_canvas((distal_world[0], floor_world_y))[1]

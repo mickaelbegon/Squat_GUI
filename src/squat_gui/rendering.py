@@ -13,7 +13,7 @@ from .kinematics import (
     segment_orientations,
 )
 from .observables import segment_anthropometry, support_margins
-from .raster_segments import sprite_spec, transformed_sprite_image
+from .raster_segments import display_target_vector, sprite_spec, transformed_sprite_image
 from .scene_model import (
     SceneGeometry,
     ViewportTransform,
@@ -97,14 +97,22 @@ def _draw_interval(draw, mapper, limits, offset: int, color: str, label: str) ->
 
 
 def _draw_sprites(
-    image, scene: SceneGeometry, mapper, refined: bool
+    image,
+    scene: SceneGeometry,
+    mapper,
+    refined: bool,
+    wedge_angle_deg: float = 0.0,
 ) -> bool:
     try:
         for segment in scene.segments:
             spec = sprite_spec(segment.name, refined, segment.variant)
             distal_px = mapper(segment.distal)
             proximal_px = mapper(segment.proximal)
-            target = (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1])
+            target = display_target_vector(
+                segment.name,
+                (proximal_px[0] - distal_px[0], proximal_px[1] - distal_px[1]),
+                wedge_angle_deg,
+            )
             sprite, anchor = transformed_sprite_image(spec, target, refined)
             image.alpha_composite(
                 sprite,
@@ -145,7 +153,13 @@ def render_animation_frame(
     pose = state.pose
     scene = build_scene_geometry(anthro, state, result.cop_x)
 
-    if not _draw_sprites(image, scene, mapper, layers.refined_sprites):
+    if not _draw_sprites(
+        image,
+        scene,
+        mapper,
+        layers.refined_sprites,
+        anthro.wedge_angle_deg,
+    ):
         chain = [
             scene.point(name)
             for name in ("heel", "toe", "ankle", "knee", "hip", "shoulder")
