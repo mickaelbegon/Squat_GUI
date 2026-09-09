@@ -7,9 +7,6 @@ import os
 import tempfile
 from pathlib import Path
 
-from squat_gui.app import main
-
-
 def _run_frozen_smoke_test() -> None:
     import math
     import tkinter as tk
@@ -129,4 +126,6 @@ if __name__ == "__main__":
                 Path(smoke_log).write_text(failure, encoding="utf-8")
             raise SystemExit(1)
         raise SystemExit(0)
+    from squat_gui.app import main
+
     main()

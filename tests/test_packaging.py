@@ -89,6 +89,10 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn('root.tk.call("package", "require", "Tk")', launcher)
         self.assertIn('os.environ.get("SQUAT_GUI_SMOKE_LOG")', launcher)
         self.assertIn("traceback.format_exc()", launcher)
+        self.assertLess(
+            launcher.index('if os.environ.get("SQUAT_GUI_SMOKE_TEST") == "1":'),
+            launcher.index("from squat_gui.app import main"),
+        )
 
     def test_external_release_validators_cover_clean_profiles_and_exports(self) -> None:
         macos = (ROOT / "packaging" / "validate_macos_release.sh").read_text(
