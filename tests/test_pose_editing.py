@@ -3,6 +3,7 @@ from math import atan2, radians
 
 from squat_gui.anthropometry import Anthropometry
 from squat_gui.kinematics import pose_from_angles
+from squat_gui.kinematics import clinical_joint_limits_deg
 from squat_gui.pose_editing import (
     apply_clinical_angle,
     clamp_segment_angles,
@@ -36,11 +37,21 @@ class PoseEditingTests(unittest.TestCase):
         q = clamp_segment_angles((radians(80.0), radians(-180.0), radians(100.0)))
         ankle, knee, hip = clinical_joint_angles_deg(q)
 
-        self.assertEqual(ankle, 40.0)
+        self.assertEqual(ankle, 45.0)
         self.assertGreaterEqual(knee, 0.0)
         self.assertLessEqual(knee, 140.0)
         self.assertGreaterEqual(hip, -15.0)
-        self.assertLessEqual(hip, 120.0)
+        self.assertAlmostEqual(hip, 125.0)
+
+    def test_pregnancy_profile_reduces_trunk_flexion_limit(self) -> None:
+        q = clamp_segment_angles(
+            (radians(22.0), radians(-58.0), radians(100.0)),
+            joint_limits_deg=clinical_joint_limits_deg("femme enceinte"),
+        )
+
+        _ankle, _knee, hip = clinical_joint_angles_deg(q)
+
+        self.assertEqual(hip, 115.0)
 
     def test_precise_angle_accepts_comma_decimal_and_preserves_other_joints(self) -> None:
         update = apply_clinical_angle(self.q, "genou", "110,5")
@@ -59,7 +70,7 @@ class PoseEditingTests(unittest.TestCase):
 
         self.assertTrue(clamped.accepted)
         self.assertTrue(clamped.was_clamped)
-        self.assertEqual(clamped.bounded_deg, 40.0)
+        self.assertEqual(clamped.bounded_deg, 45.0)
         self.assertFalse(invalid.accepted)
         self.assertIsNone(invalid.q)
         self.assertIn("angle invalide (genou)", invalid.error_message or "")

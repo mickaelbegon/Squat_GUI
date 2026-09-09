@@ -71,11 +71,11 @@ class BarPathOptimizationTests(unittest.TestCase):
 
         joint_angles = optimized_joints
         self.assertGreaterEqual(joint_angles["cheville"], math.radians(-30.0))
-        self.assertLessEqual(joint_angles["cheville"], math.radians(40.0))
+        self.assertLessEqual(joint_angles["cheville"], math.radians(45.0))
         self.assertGreaterEqual(joint_angles["genou"], math.radians(-140.0))
         self.assertLessEqual(joint_angles["genou"], 0.0)
         self.assertGreaterEqual(joint_angles["hanche"], math.radians(-15.0))
-        self.assertLessEqual(joint_angles["hanche"], math.radians(120.0))
+        self.assertLessEqual(joint_angles["hanche"], math.radians(125.0))
 
         requested_depth = pose_from_angles(
             self.anthro, result.requested_final_q
@@ -266,7 +266,7 @@ class BarPathOptimizationTests(unittest.TestCase):
 
         bounds = candidate_bounds(requested)
 
-        expected_degrees = ((34.0, 40.0), (-140.0, -134.0), (114.0, 120.0))
+        expected_degrees = ((34.0, 44.0), (-140.0, -134.0), (114.0, 124.0))
         for actual, expected in zip(bounds, expected_degrees):
             self.assertAlmostEqual(actual[0], math.radians(expected[0]))
             self.assertAlmostEqual(actual[1], math.radians(expected[1]))

@@ -347,7 +347,13 @@ class LayoutBuilder:
         gui.pose_canvas.bind("<ButtonPress-3>", gui.on_pose_context_menu)
         gui.optimize_bar_path_button = ttk.Button(gui.pose_canvas, text="Verticaliser la barre", command=gui.verticalize_bar)
         gui.optimize_bar_path_button.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
-        controller = PrecisePoseAngleDialog(gui, gui.pose_canvas, apply_angle=gui.apply_clinical_joint_angle, status_message=gui.status_var.get)
+        controller = PrecisePoseAngleDialog(
+            gui,
+            gui.pose_canvas,
+            apply_angle=gui.apply_clinical_joint_angle,
+            status_message=gui.status_var.get,
+            joint_limits=gui.pose_joint_limits,
+        )
         gui.pose_angle_controller = controller
         gui.pose_angle_dialog = controller.dialog
         gui.pose_angle_editor = controller.editor

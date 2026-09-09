@@ -47,6 +47,7 @@ from .kinematics_geometry import unit_from_vertical as unit_from_vertical
 from .kinematics_geometry import zmp_in_support as zmp_in_support
 from .kinematics_geometry import zmp_support_limits as zmp_support_limits
 from .kinematics_models import CLINICAL_JOINT_LIMITS_DEG as CLINICAL_JOINT_LIMITS_DEG
+from .kinematics_models import clinical_joint_limits_deg as clinical_joint_limits_deg
 from .kinematics_models import DEFAULT_SAMPLE_PERIOD_S as DEFAULT_SAMPLE_PERIOD_S
 from .kinematics_models import METATARSAL_HEAD_FRACTION as METATARSAL_HEAD_FRACTION
 from .kinematics_models import MotionState as MotionState

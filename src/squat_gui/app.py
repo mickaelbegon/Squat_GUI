@@ -1616,6 +1616,11 @@ class SquatGui(tk.Tk):
     ) -> tuple[float, float, float]:
         return self._pose_actions().clamp_final_q(q)
 
+    def pose_joint_limits(self) -> dict[str, tuple[float, float]]:
+        """Return the active profile's limits for the precise pose editor."""
+
+        return self._pose_actions().joint_limits()
+
     def project_on_force_line(
         self,
         joint: tuple[float, float],

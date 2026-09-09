@@ -773,11 +773,11 @@ class PlotSeriesTests(unittest.TestCase):
         q = gui.clamp_final_q((radians(80), radians(-180), radians(100)))
         ankle, knee, hip = gui.display_joint_angles(q)
 
-        self.assertAlmostEqual(ankle, 40.0)
+        self.assertAlmostEqual(ankle, 45.0)
         self.assertGreaterEqual(knee, 0.0)
         self.assertLessEqual(knee, 140.0)
         self.assertGreaterEqual(hip, -15.0)
-        self.assertLessEqual(hip, 120.0)
+        self.assertAlmostEqual(hip, 125.0)
 
     def test_context_pose_angle_commit_uses_positive_knee_flexion(self):
         gui = object.__new__(SquatGui)
@@ -805,7 +805,7 @@ class PlotSeriesTests(unittest.TestCase):
 
         self.assertTrue(accepted)
         for observed, expected in zip(
-            gui.display_joint_angles(gui.final_q), (40.0, 80.0, 78.0)
+            gui.display_joint_angles(gui.final_q), (45.0, 80.0, 78.0)
         ):
             self.assertAlmostEqual(observed, expected)
         self.assertIn("limite anatomique appliquée", gui.status_var.get())

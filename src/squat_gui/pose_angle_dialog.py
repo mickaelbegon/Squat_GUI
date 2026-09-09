@@ -8,13 +8,14 @@ joint limits remain in :mod:`squat_gui.pose_editing`.
 from __future__ import annotations
 
 import tkinter as tk
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from tkinter import ttk
 
 from .pose_editing import SegmentAngles, clinical_angle_editor_spec, format_pose_angle
 
 ApplyClinicalAngle = Callable[[str, str], bool]
 StatusMessage = Callable[[], str]
+JointLimits = Callable[[], Mapping[str, tuple[float, float]]]
 
 
 class PrecisePoseAngleDialog:
@@ -27,11 +28,13 @@ class PrecisePoseAngleDialog:
         *,
         apply_angle: ApplyClinicalAngle,
         status_message: StatusMessage,
+        joint_limits: JointLimits | None = None,
     ) -> None:
         self._parent = parent
         self._pose_canvas = pose_canvas
         self._apply_angle = apply_angle
         self._status_message = status_message
+        self._joint_limits = joint_limits
         self.active_joint: str | None = None
 
         self.dialog = tk.Toplevel(parent)
@@ -79,17 +82,22 @@ class PrecisePoseAngleDialog:
         self.dialog.bind("<KP_Enter>", self.confirm)
         self.dialog.bind("<Escape>", lambda _event: self.close())
 
+    def _limits(self) -> Mapping[str, tuple[float, float]] | None:
+        return self._joint_limits() if self._joint_limits is not None else None
+
     def synchronize(self, q: SegmentAngles) -> None:
         """Refresh an open editor after a drag without committing input."""
 
         if self.active_joint is not None:
-            spec = clinical_angle_editor_spec(self.active_joint, q)
+            spec = clinical_angle_editor_spec(
+                self.active_joint, q, joint_limits_deg=self._limits()
+            )
             self.value_var.set(format_pose_angle(spec.value_deg))
 
     def open(self, joint: str, q: SegmentAngles) -> None:
         """Replace any pending edit with ``joint`` and position the dialog."""
 
-        spec = clinical_angle_editor_spec(joint, q)
+        spec = clinical_angle_editor_spec(joint, q, joint_limits_deg=self._limits())
         self.active_joint = joint
         self.joint_var.set(spec.display_label)
         self.value_var.set(format_pose_angle(spec.value_deg))

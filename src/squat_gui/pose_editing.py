@@ -81,13 +81,21 @@ def nearest_named_point(
     return None
 
 
-def clamp_segment_angles(q: SegmentAngles) -> SegmentAngles:
+def clamp_segment_angles(
+    q: SegmentAngles,
+    *,
+    joint_limits_deg: Mapping[str, tuple[float, float]] | None = None,
+) -> SegmentAngles:
     """Keep the segment orientations within the displayed clinical limits."""
 
-    ankle = max(radians(-30.0), min(radians(40.0), q[0]))
-    knee = max(radians(-140.0), min(radians(0.0), q[1] - ankle))
+    limits = joint_limits_deg or CLINICAL_JOINT_LIMITS_DEG
+    ankle_lower_deg, ankle_upper_deg = limits["cheville"]
+    knee_lower_deg, knee_upper_deg = limits["genou"]
+    hip_lower_deg, hip_upper_deg = limits["hanche"]
+    ankle = max(radians(ankle_lower_deg), min(radians(ankle_upper_deg), q[0]))
+    knee = max(radians(-knee_upper_deg), min(radians(-knee_lower_deg), q[1] - ankle))
     thigh = ankle + knee
-    hip = max(radians(-15.0), min(radians(120.0), q[2] - thigh))
+    hip = max(radians(hip_lower_deg), min(radians(hip_upper_deg), q[2] - thigh))
     return (ankle, thigh, thigh + hip)
 
 
@@ -96,6 +104,8 @@ def drag_updated_q(
     handle: str,
     point: Vector,
     pose: Pose,
+    *,
+    joint_limits_deg: Mapping[str, tuple[float, float]] | None = None,
 ) -> SegmentAngles:
     """Rotate exactly one segment from a dragged pose handle and clamp it."""
 
@@ -112,7 +122,7 @@ def drag_updated_q(
         dx = point[0] - pose.hip[0]
         dy = point[1] - pose.hip[1]
         trunk = atan2(dx, dy)
-    return clamp_segment_angles((shank, thigh, trunk))
+    return clamp_segment_angles((shank, thigh, trunk), joint_limits_deg=joint_limits_deg)
 
 
 def clinical_joint_angles_deg(q: SegmentAngles) -> tuple[float, float, float]:
@@ -127,14 +137,18 @@ def clinical_joint_angles_deg(q: SegmentAngles) -> tuple[float, float, float]:
 
 
 def clinical_angle_editor_spec(
-    joint: str, q: SegmentAngles
+    joint: str,
+    q: SegmentAngles,
+    *,
+    joint_limits_deg: Mapping[str, tuple[float, float]] | None = None,
 ) -> ClinicalAngleEditorSpec:
     """Return the label, limits and current value for one clinical joint."""
 
     if joint not in CLINICAL_JOINT_LABELS:
         raise KeyError(joint)
     values = clinical_joint_values_from_segment_values(q)
-    lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
+    limits = joint_limits_deg or CLINICAL_JOINT_LIMITS_DEG
+    lower, upper = limits[joint]
     return ClinicalAngleEditorSpec(
         joint=joint,
         label=CLINICAL_JOINT_LABELS[joint],
@@ -145,7 +159,11 @@ def clinical_angle_editor_spec(
 
 
 def apply_clinical_angle(
-    q: SegmentAngles, joint: str, raw_value: str
+    q: SegmentAngles,
+    joint: str,
+    raw_value: str,
+    *,
+    joint_limits_deg: Mapping[str, tuple[float, float]] | None = None,
 ) -> ClinicalAngleUpdate:
     """Validate a user-entered angle and return a new clamped pose on success."""
 
@@ -167,14 +185,16 @@ def apply_clinical_angle(
         )
     if joint not in CLINICAL_JOINT_LABELS:
         raise KeyError(joint)
-    lower, upper = CLINICAL_JOINT_LIMITS_DEG[joint]
+    limits = joint_limits_deg or CLINICAL_JOINT_LIMITS_DEG
+    lower, upper = limits[joint]
     bounded = max(lower, min(upper, requested))
     values = clinical_joint_values_from_segment_values(q)
     values[joint] = radians(bounded)
     updated_q = clamp_segment_angles(
         segment_values_from_clinical_joint_values(
             values["cheville"], values["genou"], values["hanche"]
-        )
+        ),
+        joint_limits_deg=limits,
     )
     return ClinicalAngleUpdate(
         accepted=True,

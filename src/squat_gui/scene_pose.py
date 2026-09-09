@@ -458,7 +458,11 @@ class ScenePoseRendererMixin:
             self.app.draw_alert_banner(canvas, alerts, 74)
 
     def draw_pose_drag_preview(self) -> None:
-        """Draw a fast pose-only preview without stale dynamics or raster work."""
+        """Draw a pose-only preview with the normal raster sprite quality.
+
+        Dynamics remain deferred until the mouse is released, but the visible
+        subject uses the same sprite-quality setting as the normal pose editor.
+        """
 
         canvas = self.pose_canvas
         canvas.delete("all")
@@ -473,8 +477,9 @@ class ScenePoseRendererMixin:
             pose,
             "isometrique",
         )
+        refined_sprites = not self.low_quality_sprites_var.get()
         layers = replace(
-            self.render_layers(refined_sprites=False),
+            self.render_layers(refined_sprites=refined_sprites),
             cop_zmp=False,
             grf=False,
             weight=False,
@@ -483,7 +488,7 @@ class ScenePoseRendererMixin:
             capacity_rings=False,
             alerts=False,
             time_label=False,
-            refined_sprites=False,
+            refined_sprites=refined_sprites,
         )
         bounds = (
             self.app._pose_drag_bounds
@@ -498,9 +503,9 @@ class ScenePoseRendererMixin:
             with_handles=True,
             bounds=bounds,
             render_anthro=anthro,
-            refined_sprites=False,
+            refined_sprites=refined_sprites,
             layers=layers,
-            use_raster_sprites=False,
+            use_raster_sprites=True,
         )
         if layers.joint_angles:
             self.app.draw_squat_angle_labels(canvas, state, bounds)

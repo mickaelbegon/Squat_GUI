@@ -71,7 +71,9 @@ class BarPathOptimizationProblem:
         self.requested_joint_q = tuple(
             requested_joint_values[joint] for joint in JOINT_ORDER
         )
-        self.bounds = candidate_bounds(self.requested_joint_q)
+        self.bounds = candidate_bounds(
+            self.requested_joint_q, subject_profile=anthro.subject_profile
+        )
         self.velocity_scale = max(before.horizontal_velocity_energy_m2_s, 1e-8)
         self.anchor_scale = max(before.horizontal_rms_from_top_m**2, 1e-8)
         self._cache: dict[

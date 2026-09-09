@@ -13,10 +13,26 @@ Vector = tuple[float, float]
 METATARSAL_HEAD_FRACTION = 0.85
 DEFAULT_SAMPLE_PERIOD_S = 0.05
 CLINICAL_JOINT_LIMITS_DEG = {
-    "cheville": (-30.0, 40.0),
+    # The pose editor lets the tibia advance 5° farther than the former 40°
+    # dorsiflexion cap.  Keep this shared bound so drag, typed angles and the
+    # experimental bar-path optimizer describe the same feasible posture.
+    "cheville": (-30.0, 45.0),
     "genou": (0.0, 140.0),
-    "hanche": (-15.0, 120.0),
+    "hanche": (-15.0, 125.0),
 }
+
+
+def clinical_joint_limits_deg(subject_profile: str = "homme") -> dict[str, tuple[float, float]]:
+    """Return the editable joint limits for one subject profile.
+
+    The pregnant profile uses a 5° smaller trunk-flexion range than the male
+    reference profile, while the other clinical limits remain identical.
+    """
+
+    limits = dict(CLINICAL_JOINT_LIMITS_DEG)
+    if subject_profile == "femme enceinte":
+        limits["hanche"] = (-15.0, 115.0)
+    return limits
 
 
 @dataclass(frozen=True)

@@ -25,6 +25,7 @@ from .dynamics import DynamicsResult, simulate
 from .kinematics import (
     DEFAULT_SAMPLE_PERIOD_S,
     MotionState,
+    clinical_joint_limits_deg,
     frame_count_for_duration,
     pose_from_angles,
 )
@@ -50,6 +51,18 @@ class PoseConditionActionsController:
     def __init__(self, app: Any) -> None:
         self.app = app
         self._drag_start_q: tuple[float, float, float] | None = None
+
+    def joint_limits(self, anthro: Any | None = None) -> dict[str, tuple[float, float]]:
+        """Resolve profile-specific pose limits, defaulting safely to homme."""
+
+        if anthro is not None:
+            profile = getattr(anthro, "subject_profile", "homme")
+        else:
+            profile_var = self.app.__dict__.get("subject_profile_var")
+            profile = profile_var.get() if profile_var is not None else "homme"
+        return clinical_joint_limits_deg(
+            str(profile)
+        )
 
     @staticmethod
     def format_pose_angle(value: float) -> str:
@@ -112,7 +125,11 @@ class PoseConditionActionsController:
             or self.app.scene_bounds(),
         )
         updated_q = drag_updated_q(
-            self.app.final_q, self.app.drag_target, point, pose
+            self.app.final_q,
+            self.app.drag_target,
+            point,
+            pose,
+            joint_limits_deg=self.joint_limits(anthro),
         )
         if updated_q == self.app.final_q:
             return
@@ -140,7 +157,12 @@ class PoseConditionActionsController:
     def apply_clinical_joint_angle(self, joint: str, raw_value: str) -> bool:
         """Validate and commit one angle only after an explicit dialog action."""
 
-        update = apply_clinical_angle(self.app.final_q, joint, raw_value)
+        update = apply_clinical_angle(
+            self.app.final_q,
+            joint,
+            raw_value,
+            joint_limits_deg=self.joint_limits(),
+        )
         if not update.accepted:
             self.app.status_var.set(update.error_message or "angle invalide")
             return False
@@ -155,11 +177,12 @@ class PoseConditionActionsController:
             )
         return True
 
-    @staticmethod
     def clamp_final_q(
-        q: tuple[float, float, float]
+        self,
+        q: tuple[float, float, float],
+        anthro: Any | None = None,
     ) -> tuple[float, float, float]:
-        return clamp_segment_angles(q)
+        return clamp_segment_angles(q, joint_limits_deg=self.joint_limits(anthro))
 
     def on_pose_release(self, _event: tk.Event) -> None:
         pose_changed = (
@@ -251,7 +274,8 @@ class PoseConditionActionsController:
             tuple(
                 radians(value)
                 for value in self.app.normalized_final_q_deg(final_q_deg)
-            )
+            ),
+            anthro,
         )
         max_torques = {
             joint: float(

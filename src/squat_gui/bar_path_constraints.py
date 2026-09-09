@@ -8,7 +8,12 @@ from typing import Any, Callable
 
 from .anthropometry import Anthropometry
 from .dynamics import DynamicsResult
-from .kinematics import MotionState, functional_support_limits, pose_from_angles
+from .kinematics import (
+    MotionState,
+    clinical_joint_limits_deg,
+    functional_support_limits,
+    pose_from_angles,
+)
 
 
 ANGLE_PERTURBATION_RAD = radians(5.0)
@@ -17,16 +22,31 @@ COP_NUMERICAL_BUFFER_M = 1e-5
 MIN_VERTICAL_GRF_N = 1.0
 FEASIBILITY_TOLERANCE = 2e-6
 JOINT_ORDER = ("cheville", "genou", "hanche")
-ANATOMICAL_JOINT_LIMITS_RAD = (
-    (radians(-30.0), radians(40.0)),
-    (radians(-140.0), radians(0.0)),
-    (radians(-15.0), radians(120.0)),
-)
 FEASIBLE_START_LEVEL_ORDER = (0.0, -0.5, 0.5, -1.0, 1.0)
+
+
+def anatomical_joint_limits_rad(
+    subject_profile: str = "homme",
+) -> tuple[tuple[float, float], ...]:
+    """Return optimizer bounds in its signed-joint convention."""
+
+    limits = clinical_joint_limits_deg(subject_profile)
+    knee_lower, knee_upper = limits["genou"]
+    return (
+        tuple(radians(value) for value in limits["cheville"]),
+        (radians(-knee_upper), radians(-knee_lower)),
+        tuple(radians(value) for value in limits["hanche"]),
+    )
+
+
+# Compatibility export for callers using the male reference profile.
+ANATOMICAL_JOINT_LIMITS_RAD = anatomical_joint_limits_rad()
 
 
 def anatomical_constraint_values(
     final_q: tuple[float, float, float],
+    *,
+    subject_profile: str = "homme",
 ) -> tuple[float, ...]:
     """Return lower- and upper-limit margins for the three joint angles."""
 
@@ -37,7 +57,7 @@ def anatomical_constraint_values(
     return tuple(
         value
         for angle, (lower, upper) in zip(
-            joint_angles, ANATOMICAL_JOINT_LIMITS_RAD
+            joint_angles, anatomical_joint_limits_rad(subject_profile)
         )
         for value in (angle - lower, upper - angle)
     )
@@ -45,6 +65,8 @@ def anatomical_constraint_values(
 
 def candidate_bounds(
     requested_joint_q: tuple[float, float, float],
+    *,
+    subject_profile: str = "homme",
 ) -> list[tuple[float, float]]:
     """Combine the anatomical limits with the experimental ±5° bounds."""
 
@@ -54,7 +76,7 @@ def candidate_bounds(
             min(upper, requested_angle + ANGLE_PERTURBATION_RAD),
         )
         for requested_angle, (lower, upper) in zip(
-            requested_joint_q, ANATOMICAL_JOINT_LIMITS_RAD
+            requested_joint_q, anatomical_joint_limits_rad(subject_profile)
         )
     ]
 
@@ -68,7 +90,11 @@ def trajectory_constraint_values(
 ) -> tuple[float, ...]:
     """Return the complete SLSQP inequality vector (feasible values >= 0)."""
 
-    values = list(anatomical_constraint_values(candidate_final_q))
+    values = list(
+        anatomical_constraint_values(
+            candidate_final_q, subject_profile=anthro.subject_profile
+        )
+    )
     candidate_depth = pose_from_angles(anthro, candidate_final_q).hip[1]
     values.extend(
         (
