@@ -36,7 +36,7 @@ jobs:
           - os: windows-latest
             platform: Windows-x64
           - os: macos-14
-            platform: macOS
+            platform: macOS-arm64
     runs-on: ${{ matrix.os }}
     timeout-minutes: 35
     steps:
@@ -56,6 +56,13 @@ jobs:
         shell: pwsh
         run: |
           Compress-Archive -Path "dist\Squat GUI" -DestinationPath "Squat_GUI-${{ needs.validate-version.outputs.version }}-${{ matrix.platform }}.zip"
+      - name: Validate Windows archive
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          & ".\packaging\validate_windows_release.ps1" `
+            -ArchivePath "Squat_GUI-${{ needs.validate-version.outputs.version }}-${{ matrix.platform }}.zip" `
+            -ExpectedVersion "${{ needs.validate-version.outputs.version }}"
       - name: Build and smoke-test macOS application
         if: runner.os == 'macOS'
         shell: bash
@@ -64,6 +71,12 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: ditto -c -k --sequesterRsrc --keepParent "dist/Squat GUI.app" "Squat_GUI-${{ needs.validate-version.outputs.version }}-${{ matrix.platform }}.zip"
+      - name: Validate macOS archive
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS: "0"
+        run: bash packaging/validate_macos_release.sh "Squat_GUI-${{ needs.validate-version.outputs.version }}-${{ matrix.platform }}.zip" "${{ needs.validate-version.outputs.version }}"
       - uses: actions/upload-artifact@v4
         with:
           name: Squat-GUI-${{ matrix.platform }}

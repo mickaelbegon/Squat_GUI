@@ -107,6 +107,16 @@ class PackagingContractTests(unittest.TestCase):
             self.assertIn("0.2.0", validator)
         self.assertIn("CFBundleShortVersionString", macos)
         self.assertIn("ProductVersion", windows)
+        self.assertIn('SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS:-0', macos)
+
+        workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Validate Windows archive", workflow)
+        self.assertIn("validate_windows_release.ps1", workflow)
+        self.assertIn("Validate macOS archive", workflow)
+        self.assertIn("validate_macos_release.sh", workflow)
+        self.assertIn("platform: macOS-arm64", workflow)
 
     def test_windows_build_and_recette_reject_missing_runtime_resources(self) -> None:
         build = (ROOT / "packaging" / "build_windows.ps1").read_text(
