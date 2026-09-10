@@ -77,7 +77,7 @@ jobs:
         env:
           SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS: "0"
         run: bash packaging/validate_macos_release.sh "Squat_GUI-${{ needs.validate-version.outputs.version }}-${{ matrix.platform }}.zip" "${{ needs.validate-version.outputs.version }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Squat-GUI-${{ matrix.platform }}
           path: Squat_GUI-${{ needs.validate-version.outputs.version }}-${{ matrix.platform }}.zip
@@ -87,7 +87,8 @@ jobs:
     needs: [validate-version, build]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v7
         with:
           pattern: Squat-GUI-*
           path: release-assets

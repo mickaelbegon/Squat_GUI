@@ -117,6 +117,13 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn("Validate macOS archive", workflow)
         self.assertIn("validate_macos_release.sh", workflow)
         self.assertIn("platform: macOS-arm64", workflow)
+        self.assertIn("uses: actions/upload-artifact@v7", workflow)
+        self.assertIn("uses: actions/download-artifact@v7", workflow)
+        publish_job = workflow.split("\n  publish:\n", maxsplit=1)[1]
+        self.assertLess(
+            publish_job.index("uses: actions/checkout@v7"),
+            publish_job.index("gh release create"),
+        )
 
     def test_windows_build_and_recette_reject_missing_runtime_resources(self) -> None:
         build = (ROOT / "packaging" / "build_windows.ps1").read_text(
