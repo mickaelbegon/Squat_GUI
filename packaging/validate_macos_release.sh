@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-ARCHIVE_PATH="${1:-$ROOT_DIR/outputs/release_candidate_20260812_0.2.0/Squat_GUI-0.2.0-macOS-arm64.zip}"
-EXPECTED_VERSION="${2:-0.2.0}"
+EXPECTED_VERSION="${2:-0.2.1}"
+ARCHIVE_PATH="${1:-$ROOT_DIR/Squat_GUI-$EXPECTED_VERSION-macOS-arm64.zip}"
 INCLUDE_BIORBD="${SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS:-0}"
 
 if [[ ! -f "$ARCHIVE_PATH" ]]; then

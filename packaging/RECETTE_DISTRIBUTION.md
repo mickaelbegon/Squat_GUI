@@ -1,4 +1,4 @@
-# Recette de distribution Squat GUI 0.2.0
+# Recette de distribution Squat GUI 0.2.1
 
 Ces contrôles s'exécutent sur une machine différente de celle du build. Ils ne
 remplacent pas la recette manuelle par double-clic, mais vérifient l'intégrité du
@@ -26,7 +26,7 @@ si ces deux ressources sont absentes du dossier extrait.
 3. Depuis une copie du dépôt contenant le validateur, lancer :
 
    ```bash
-   bash packaging/validate_macos_release.sh /chemin/Squat_GUI-0.2.0-macOS-arm64.zip
+   bash packaging/validate_macos_release.sh /chemin/Squat_GUI-0.2.1-macOS-arm64.zip
    ```
 
 4. Décompresser à nouveau le ZIP avec Finder, puis ouvrir l'application par
@@ -34,9 +34,9 @@ si ces deux ressources sont absentes du dossier extrait.
    clic droit → `Ouvrir` → `Ouvrir`.
 5. Exécuter la recette manuelle commune ci-dessous.
 
-Le validateur exige la version 0.2.0, l'architecture arm64 et une signature interne
+Le validateur exige la version 0.2.1, l'architecture arm64 et une signature interne
 cohérente. Il lance le bundle avec un profil vierge, sans Node.js, puis vérifie Excel,
-MP4, assets et biorbd.
+MP4, ressources, saisie des angles et, si inclus dans le build, biorbd.
 
 ## Windows 10/11 64 bits
 
@@ -46,15 +46,15 @@ Construire sur Windows dans l'environnement canonique :
 conda activate squat-gui
 $env:SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS = "1"
 powershell -ExecutionPolicy Bypass -File packaging\build_windows.ps1
-Compress-Archive -Path "dist\Squat GUI" -DestinationPath "Squat_GUI-0.2.0-Windows-x64.zip"
-Get-FileHash "Squat_GUI-0.2.0-Windows-x64.zip" -Algorithm SHA256
+Compress-Archive -Path "dist\Squat GUI" -DestinationPath "Squat_GUI-0.2.1-Windows-x64.zip"
+Get-FileHash "Squat_GUI-0.2.1-Windows-x64.zip" -Algorithm SHA256
 ```
 
 Copier ensuite le ZIP sur une seconde machine Windows et lancer :
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File packaging\validate_windows_release.ps1 `
-  -ArchivePath "C:\chemin\Squat_GUI-0.2.0-Windows-x64.zip" -IncludeBiorbd
+  -ArchivePath "C:\chemin\Squat_GUI-0.2.1-Windows-x64.zip" -IncludeBiorbd
 ```
 
 Sans biorbd dans le build, omettre `-IncludeBiorbd`. Le validateur contrôle les
@@ -67,6 +67,8 @@ et teste Excel/MP4 sans Node.js.
 - Vérifier les images des segments et le tutoriel Observation → Cinématique → Dynamique.
 - Changer sujet, prise de barre, wedge, charge et durées.
 - Déplacer la posture basse puis parcourir le mouvement avec le curseur.
+- Faire un clic secondaire sur une articulation, puis valider un angle.
+  Sur macOS, vérifier aussi `Ctrl + clic`.
 - Activer les coordonnées articulaires au survol, CoM, appuis et forces.
 - Ajouter une condition, la dupliquer, modifier un paramètre et comparer les deux.
 - Sauvegarder puis recharger les conditions JSON.

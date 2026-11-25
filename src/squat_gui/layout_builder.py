@@ -357,7 +357,10 @@ class LayoutBuilder:
         gui.pose_canvas.bind("<ButtonPress-1>", gui.on_pose_press)
         gui.pose_canvas.bind("<B1-Motion>", gui.on_pose_drag)
         gui.pose_canvas.bind("<ButtonRelease-1>", gui.on_pose_release)
-        gui.pose_canvas.bind("<ButtonPress-3>", gui.on_pose_context_menu)
+        # Tk maps the context click to the native button (2 on Aqua, 3 elsewhere).
+        gui.pose_canvas.bind("<<ContextMenu>>", gui.on_pose_context_menu)
+        if root.tk.call("tk", "windowingsystem") == "aqua":
+            gui.pose_canvas.bind("<Control-ButtonPress-1>", gui.on_pose_context_menu)
         gui.optimize_bar_path_button = ttk.Button(gui.pose_canvas, text="Verticaliser la barre", command=gui.verticalize_bar)
         gui.optimize_bar_path_button.place(relx=1.0, rely=1.0, x=-10, y=-10, anchor="se")
         controller = PrecisePoseAngleDialog(

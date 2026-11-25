@@ -9,18 +9,18 @@ from pathlib import Path
 
 def _run_frozen_smoke_test() -> None:
     import math
-    import tkinter as tk
 
     import imageio.v2 as imageio
     import imageio_ffmpeg
     import numpy
 
     from squat_gui.anthropometry import Anthropometry
+    from squat_gui.app import SquatGui
     from squat_gui.backend import BiorbdModelCache
     from squat_gui.cli import condition_from_settings, simulate_condition
     from squat_gui.dynamics import simulate
     import squat_gui.export_schema as export_schema
-    from squat_gui.kinematics import PhaseDurations
+    from squat_gui.kinematics import PhaseDurations, pose_from_angles
     from squat_gui.rendering import RenderLayers
     from squat_gui.resources import asset_path
     from squat_gui.video_export import export_mp4
@@ -30,14 +30,31 @@ def _run_frozen_smoke_test() -> None:
     assert imageio_ffmpeg.get_ffmpeg_exe()
     assert numpy.__version__
 
-    root = tk.Tk()
+    app = SquatGui()
     try:
-        root.withdraw()
-        root.update_idletasks()
-        assert root.tk.call("info", "patchlevel")
-        assert root.tk.call("package", "require", "Tk")
+        app.update()
+        is_aqua = app.tk.call("tk", "windowingsystem") == "aqua"
+        gestures = (
+            ("<ButtonPress-2>", "<Control-ButtonPress-1>")
+            if is_aqua else ("<ButtonPress-3>",)
+        )
+        before = app.final_q
+        pose = pose_from_angles(app.anthro(), before)
+        x, y = app.world_to_canvas(app.pose_canvas, pose.knee, app._pose_editor_bounds)
+        for gesture in gestures:
+            app.pose_canvas.event_generate(gesture, x=round(x), y=round(y))
+            app.update_idletasks()
+            assert app._active_pose_angle_joint == "genou", gesture
+            assert app.pose_angle_dialog.winfo_viewable(), gesture
+            assert app.drag_target is None and app.final_q == before, gesture
+            app.close_pose_angle_editor()
+        app.pose_canvas.event_generate(gestures[0], x=round(x), y=round(y))
+        app.pose_angle_value_var.set("110")
+        app.pose_angle_apply_button.invoke()
+        assert app.final_q != before
+        assert app._active_pose_angle_joint is None
     finally:
-        root.destroy()
+        app.destroy()
 
     anthropometry = Anthropometry()
     states, results = simulate(
@@ -107,7 +124,7 @@ def _run_frozen_smoke_test() -> None:
             )
             assert all(result.backend == "biorbd" for result in biorbd_results)
 
-    print("Squat GUI frozen smoke test OK: Tk, assets, video, Excel builder, biorbd")
+    print("Squat GUI frozen smoke test OK: Tk, angle editor, assets, video, Excel builder, biorbd")
 
 
 if __name__ == "__main__":

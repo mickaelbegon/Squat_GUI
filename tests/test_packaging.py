@@ -38,7 +38,7 @@ class PackagingContractTests(unittest.TestCase):
             encoding="utf-8"
         )
         for source in (project, package, spec, windows_version):
-            self.assertIn('0.2.0', source)
+            self.assertIn('0.2.1', source)
 
     def test_build_scripts_install_video_runtime(self) -> None:
         macos = (ROOT / "packaging" / "build_macos.sh").read_text(encoding="utf-8")
@@ -85,8 +85,9 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn('import_module("biorbd")', launcher)
         self.assertIn('result.backend == "biorbd"', launcher)
         self.assertIn('excel_report["writer"] == "openpyxl"', launcher)
-        self.assertIn("root = tk.Tk()", launcher)
-        self.assertIn('root.tk.call("package", "require", "Tk")', launcher)
+        self.assertIn("app = SquatGui()", launcher)
+        self.assertIn("app.pose_canvas.event_generate", launcher)
+        self.assertIn("app.pose_angle_dialog.winfo_viewable()", launcher)
         self.assertIn('os.environ.get("SQUAT_GUI_SMOKE_LOG")', launcher)
         self.assertIn("traceback.format_exc()", launcher)
         self.assertLess(
@@ -104,7 +105,7 @@ class PackagingContractTests(unittest.TestCase):
         for validator in (macos, windows):
             self.assertIn("SQUAT_GUI_SMOKE_TEST", validator)
             self.assertIn("SQUAT_GUI_NODE", validator)
-            self.assertIn("0.2.0", validator)
+            self.assertIn("0.2.1", validator)
         self.assertIn("CFBundleShortVersionString", macos)
         self.assertIn("ProductVersion", windows)
         self.assertIn('SQUAT_GUI_INCLUDE_OPTIONAL_BACKENDS:-0', macos)

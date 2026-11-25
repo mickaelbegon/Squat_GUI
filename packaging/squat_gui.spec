@@ -125,7 +125,7 @@ if sys.platform == "darwin":
         bundle_identifier="ca.umontreal.squat-gui",
         info_plist={
             "NSHighResolutionCapable": "True",
-            "CFBundleShortVersionString": "0.2.0",
+            "CFBundleShortVersionString": "0.2.1",
             "CFBundleDisplayName": "Squat GUI",
         },
     )

@@ -5,6 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import patch
 
+import pytest
+
 from squat_gui.layout_builder import LayoutBuilder
 
 
@@ -61,7 +63,10 @@ def _builder(gui: object) -> LayoutBuilder:
     )
 
 
-def test_pose_canvas_bindings_and_verticalize_command_are_preserved() -> None:
+@pytest.mark.parametrize("windowing_system", ("aqua", "win32", "x11"))
+def test_pose_canvas_bindings_and_verticalize_command_are_preserved(
+    windowing_system: str,
+) -> None:
     gui = SimpleNamespace(
         schedule_redraw=lambda _event=None: None,
         on_pose_press=lambda _event: None,
@@ -74,6 +79,7 @@ def test_pose_canvas_bindings_and_verticalize_command_are_preserved() -> None:
         status_var=SimpleNamespace(get=lambda: ""),
     )
     root = RecordingWidget()
+    root.tk = SimpleNamespace(call=lambda *_args: windowing_system)
 
     with (
         patch("squat_gui.layout_builder.ttk.Frame", RecordingWidget),
@@ -83,17 +89,24 @@ def test_pose_canvas_bindings_and_verticalize_command_are_preserved() -> None:
     ):
         _builder(gui)._build_pose_panel(root)
 
-    assert set(gui.pose_canvas.bindings) == {
+    bindings = {
         "<Configure>",
         "<ButtonPress-1>",
         "<B1-Motion>",
         "<ButtonRelease-1>",
-        "<ButtonPress-3>",
+        "<<ContextMenu>>",
     }
+    if windowing_system == "aqua":
+        bindings.add("<Control-ButtonPress-1>")
+        assert (
+            gui.pose_canvas.bindings["<Control-ButtonPress-1>"]
+            == gui.on_pose_context_menu
+        )
+    assert set(gui.pose_canvas.bindings) == bindings
     assert gui.pose_canvas.bindings["<ButtonPress-1>"] == gui.on_pose_press
     assert gui.pose_canvas.bindings["<B1-Motion>"] == gui.on_pose_drag
     assert gui.pose_canvas.bindings["<ButtonRelease-1>"] == gui.on_pose_release
-    assert gui.pose_canvas.bindings["<ButtonPress-3>"] == gui.on_pose_context_menu
+    assert gui.pose_canvas.bindings["<<ContextMenu>>"] == gui.on_pose_context_menu
     assert gui.optimize_bar_path_button.options["command"] == gui.verticalize_bar
 
 

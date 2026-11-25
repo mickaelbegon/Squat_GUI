@@ -1,5 +1,12 @@
 # Journal des changements
 
+## 0.2.1 — 2026-11-25
+
+- Sur macOS, le clic secondaire et `Ctrl + clic` sur la cheville, le genou ou
+  la hanche ouvrent la saisie précise de l’angle de la posture.
+- Le test des applications compilées vérifie l’ouverture de cet éditeur et
+  l’application d’un angle à la pose.
+
 ## 0.2.0 — 2026-08-12
 
 ### Interface et pédagogie

@@ -213,7 +213,7 @@ class GuiLayoutTests(unittest.TestCase):
         self.assertIs(self.app.pose_angle_editor.master, self.app.pose_angle_dialog)
         self.assertFalse(self.app.pose_angle_dialog.winfo_viewable())
         self.assertFalse(hasattr(self.app, "pose_angle_spinboxes"))
-        self.assertTrue(self.app.pose_canvas.bind("<ButtonPress-3>"))
+        self.assertTrue(self.app.pose_canvas.bind("<<ContextMenu>>"))
 
     def test_angle_window_replaces_selection_without_applying(self):
         before = self.app.final_q

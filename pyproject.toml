@@ -1,6 +1,6 @@
 [project]
 name = "squat-gui"
-version = "0.2.0"
+version = "0.2.1"
 description = "Interface 2D pour explorer la cinematique et la dynamique inverse d'un squat."
 requires-python = ">=3.9"
 dependencies = [
