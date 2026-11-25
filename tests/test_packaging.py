@@ -118,6 +118,9 @@ class PackagingContractTests(unittest.TestCase):
         self.assertIn("Validate macOS archive", workflow)
         self.assertIn("validate_macos_release.sh", workflow)
         self.assertIn("platform: macOS-arm64", workflow)
+        self.assertIn("os: macos-15", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertEqual(workflow.count("ref: refs/tags/${{ env.RELEASE_TAG }}"), 2)
         self.assertIn("uses: actions/upload-artifact@v7", workflow)
         self.assertIn("uses: actions/download-artifact@v7", workflow)
         publish_job = workflow.split("\n  publish:\n", maxsplit=1)[1]
